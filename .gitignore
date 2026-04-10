@@ -1,6 +1,12 @@
 bin/
 obj/
-publish/
+publish/publish/
+publish/*.exe
+publish/*.pdb
+publish/WhatsApp/node_modules/
+publish/WhatsApp/.wwebjs_auth/
+publish/WhatsApp/.wwebjs_cache/
+publish/WhatsApp/screenshots/
 *.user
 .vs/
 .idea/

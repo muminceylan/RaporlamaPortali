@@ -1,0 +1,12 @@
+{
+  "SmtpServer": "smtp.office365.com",
+  "SmtpPort": 587,
+  "UseSsl": true,
+  "GondericiMail": "muminceylan@doguscay.com.tr",
+  "GondericiAdi": "Muhasebe Raporlar\u0131",
+  "Sifre": "",
+  "Alicilar": [],
+  "GonderimSaati": "12:00:00",
+  "OtomatikGonderimAktif": false,
+  "SonGonderimZamani": null
+}
