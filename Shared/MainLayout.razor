@@ -1,0 +1,89 @@
+@inherits LayoutComponentBase
+
+<MudLayout>
+    <MudAppBar Elevation="1">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@ToggleDrawer" />
+        <MudText Typo="Typo.h5" Class="ml-3">
+            <MudIcon Icon="@Icons.Material.Filled.Factory" Class="mr-2" />
+            Raporlama Portali
+        </MudText>
+        <MudSpacer />
+        <MudText Typo="Typo.body2" Class="mr-4">Doğuş Çay - Afyon Şeker Fabrikası</MudText>
+        <MudIconButton Icon="@Icons.Material.Filled.Refresh" Color="Color.Inherit" Title="Yenile" OnClick="@(() => NavigationManager.NavigateTo(NavigationManager.Uri, true))" />
+    </MudAppBar>
+    
+    <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="2">
+        <MudNavMenu>
+            <MudText Typo="Typo.h6" Class="px-4 py-3" Style="color: #1B5E20;">
+                📊 Raporlar
+            </MudText>
+            <MudDivider />
+            
+            <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">
+                Ana Sayfa
+            </MudNavLink>
+            
+            <MudNavGroup Title="Yan Ürünler" Icon="@Icons.Material.Filled.Inventory" Expanded="true">
+                <MudNavLink Href="/yan-urunler" Icon="@Icons.Material.Filled.Assessment">
+                    Özet Rapor
+                </MudNavLink>
+                <MudNavLink Href="/yan-urunler/melas" Icon="@Icons.Material.Filled.WaterDrop">
+                    Melas
+                </MudNavLink>
+                <MudNavLink Href="/yan-urunler/kuspe" Icon="@Icons.Material.Filled.Grass">
+                    Küspe
+                </MudNavLink>
+                <MudNavLink Href="/yan-urunler/alkol" Icon="@Icons.Material.Filled.Science">
+                    Etil Alkol
+                </MudNavLink>
+            </MudNavGroup>
+            
+            <MudNavGroup Title="Şeker Satış" Icon="@Icons.Material.Filled.Cake" Expanded="false">
+                <MudNavLink Href="/seker-satis" Icon="@Icons.Material.Filled.Assessment">
+                    Özet Rapor
+                </MudNavLink>
+            </MudNavGroup>
+            
+            <MudNavGroup Title="Pancar Ödemeleri" Icon="@Icons.Material.Filled.Agriculture" Expanded="false">
+                <MudNavLink Href="/pancar-raporu" Icon="@Icons.Material.Filled.Assessment">
+                    Pancar Raporu
+                </MudNavLink>
+                <MudNavLink Href="/pancar-odeme" Icon="@Icons.Material.Filled.Payments" Disabled="true">
+                    Ödemeler (Yakında)
+                </MudNavLink>
+            </MudNavGroup>
+            
+            <MudDivider Class="my-2" />
+            
+            <MudNavLink Href="/mail-ayarlari" Icon="@Icons.Material.Filled.Email">
+                Mail Ayarları
+            </MudNavLink>
+
+            <MudNavLink Href="/whatsapp-ayarlari" Icon="@Icons.Material.Filled.Chat" Style="color:#25D366">
+                WhatsApp Ayarları
+            </MudNavLink>
+
+            <MudNavLink Href="/ayarlar" Icon="@Icons.Material.Filled.Settings">
+                Ayarlar
+            </MudNavLink>
+        </MudNavMenu>
+    </MudDrawer>
+    
+    <MudMainContent>
+        <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
+            @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    private bool _drawerOpen = true;
+    
+    [Inject]
+    private NavigationManager NavigationManager { get; set; } = default!;
+    
+    private void ToggleDrawer()
+    {
+        _drawerOpen = !_drawerOpen;
+    }
+}

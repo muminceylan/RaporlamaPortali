@@ -1,0 +1,464 @@
+@page "/mail-ayarlari"
+@using RaporlamaPortali.Services
+@inject MailAyarlariService AyarlarService
+@inject SekerSatisService SekerService
+@inject YanUrunlerService YanUrunlerService
+@inject HtmlRaporService HtmlService
+@inject ILogger<MailAyarlari> Logger
+@inject ISnackbar Snackbar
+
+<PageTitle>Mail Ayarları</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.Email" Class="mr-2" />
+    Otomatik Mail Ayarları
+</MudText>
+
+<MudGrid>
+    @* Sol Panel - Genel Ayarlar *@
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.h6" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.Settings" Class="mr-2" />
+                Genel Ayarlar
+            </MudText>
+
+            @* Otomatik Gönderim Açık/Kapalı *@
+            <MudCard Class="mb-4" Style="@(_ayarlar.OtomatikGonderimAktif ? "background-color: #e8f5e9; border: 2px solid #4caf50;" : "background-color: #ffebee; border: 2px solid #f44336;")">
+                <MudCardContent>
+                    <div class="d-flex align-center justify-space-between">
+                        <div>
+                            <MudText Typo="Typo.subtitle1" Style="font-weight: 600;">
+                                @if (_ayarlar.OtomatikGonderimAktif)
+                                {
+                                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Class="mr-2" />
+                                    <span style="color: #2e7d32;">Otomatik Gönderim AÇIK</span>
+                                }
+                                else
+                                {
+                                    <MudIcon Icon="@Icons.Material.Filled.Cancel" Color="Color.Error" Class="mr-2" />
+                                    <span style="color: #c62828;">Otomatik Gönderim KAPALI</span>
+                                }
+                            </MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                                @if (_ayarlar.OtomatikGonderimAktif)
+                                {
+                                    <span>Her gün saat @_ayarlar.GonderimSaati.ToString(@"hh\:mm")'de otomatik gönderilecek.</span>
+                                }
+                                else
+                                {
+                                    <span>Otomatik mail gönderimi devre dışı.</span>
+                                }
+                            </MudText>
+                        </div>
+                        <MudSwitch T="bool" 
+                                   Value="@_ayarlar.OtomatikGonderimAktif" 
+                                   ValueChanged="@OtomatikGonderimDegistir"
+                                   Color="Color.Success" />
+                    </div>
+                </MudCardContent>
+            </MudCard>
+
+            @* Gönderim Saati *@
+            <MudTextField T="string" 
+                          Label="Gönderim Saati" 
+                          @bind-Value="_gonderimSaatiStr"
+                          Placeholder="12:00"
+                          HelperText="Saat:Dakika formatında (örn: 12:00, 08:30, 17:45)"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Schedule"
+                          Class="mb-4"
+                          Disabled="@(!_ayarlar.OtomatikGonderimAktif)" />
+
+            @* Gönderici Mail *@
+            <MudTextField T="string" 
+                          Label="Gönderici Mail Adresi" 
+                          @bind-Value="_ayarlar.GondericiMail"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.AlternateEmail"
+                          Class="mb-4" />
+
+            @* Gönderici Adı *@
+            <MudTextField T="string" 
+                          Label="Gönderici Adı" 
+                          @bind-Value="_ayarlar.GondericiAdi"
+                          HelperText="Mailde görünecek isim"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Badge"
+                          Class="mb-4" />
+
+            @* Outlook Bilgisi *@
+            <MudAlert Severity="Severity.Success" Dense="true" Class="mb-4">
+                <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Class="mr-2" />
+                <strong>Outlook Entegrasyonu:</strong> Mail, bilgisayarinizdaki Outlook uygulamasi uzerinden gonderilir. Sifre gerektirmez!
+            </MudAlert>
+
+            @* Kaydet Butonu *@
+            <MudButton Variant="Variant.Filled" 
+                       Color="Color.Primary" 
+                       StartIcon="@Icons.Material.Filled.Save"
+                       OnClick="AyarlariKaydetAsync"
+                       Disabled="@_kaydediliyor"
+                       FullWidth="true"
+                       Size="Size.Large">
+                @if (_kaydediliyor)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    <span>Kaydediliyor...</span>
+                }
+                else
+                {
+                    <span>AYARLARI KAYDET</span>
+                }
+            </MudButton>
+
+            @* Son Gönderim Bilgisi *@
+            @if (_ayarlar.SonGonderimZamani.HasValue)
+            {
+                <MudAlert Severity="Severity.Info" Class="mt-4" Dense="true">
+                    <strong>Son Gonderim:</strong> @_ayarlar.SonGonderimZamani.Value.ToString("dd.MM.yyyy HH:mm")
+                </MudAlert>
+            }
+        </MudPaper>
+    </MudItem>
+
+    @* Sağ Panel - Alıcı Listesi *@
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.h6" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.People" Class="mr-2" />
+                Alıcı Listesi (BCC - Gizli)
+            </MudText>
+
+            <MudAlert Severity="Severity.Success" Dense="true" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.Security" Class="mr-1" />
+                Tüm alıcılar <strong>BCC (Gizli Kopya)</strong> olarak eklenir. Kimse diğer alıcıları göremez.
+            </MudAlert>
+
+            @* Yeni Alıcı Ekleme *@
+            <div class="d-flex gap-2 mb-4">
+                <MudTextField T="string" 
+                              @bind-Value="_yeniAlici"
+                              Label="Yeni Mail Adresi"
+                              Placeholder="ornek@doguscay.com.tr"
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.PersonAdd"
+                              Style="flex: 1;"
+                              OnKeyDown="@(async (e) => { if (e.Key == "Enter") await AliciEkleAsync(); })" />
+                <MudButton Variant="Variant.Filled" 
+                           Color="Color.Success" 
+                           StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="AliciEkleAsync"
+                           Disabled="@(string.IsNullOrWhiteSpace(_yeniAlici))">
+                    Ekle
+                </MudButton>
+            </div>
+
+            @* Alıcı Listesi *@
+            @if (_ayarlar.Alicilar.Count == 0)
+            {
+                <MudAlert Severity="Severity.Warning">
+                    <MudIcon Icon="@Icons.Material.Filled.Warning" Class="mr-2" />
+                    Henüz alıcı eklenmemiş. Yukarıdan mail adresi ekleyin.
+                </MudAlert>
+            }
+            else
+            {
+                <MudList T="string" Dense="true">
+                    @foreach (var alici in _ayarlar.Alicilar.ToList())
+                    {
+                        <MudListItem T="string">
+                            <div class="d-flex align-center justify-space-between" style="width: 100%;">
+                                <div class="d-flex align-center">
+                                    <MudIcon Icon="@Icons.Material.Filled.Email" Color="Color.Primary" Class="mr-2" />
+                                    <MudText>@alici</MudText>
+                                </div>
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete" 
+                                               Color="Color.Error" 
+                                               Size="Size.Small"
+                                               OnClick="@(() => AliciSilAsync(alici))"
+                                               Title="Sil" />
+                            </div>
+                        </MudListItem>
+                        <MudDivider />
+                    }
+                </MudList>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
+                    <MudIcon Icon="@Icons.Material.Filled.Group" Size="Size.Small" Class="mr-1" />
+                    Toplam: @_ayarlar.Alicilar.Count alıcı
+                </MudText>
+            }
+        </MudPaper>
+
+        @* Test ve Manuel Gönderim *@
+        <MudPaper Class="pa-4 mt-4">
+            <MudText Typo="Typo.h6" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.Science" Class="mr-2" />
+                Test ve Manuel Gönderim
+            </MudText>
+
+            <MudButton Variant="Variant.Filled" 
+                       Color="Color.Info" 
+                       StartIcon="@Icons.Material.Filled.Send"
+                       OnClick="TestMailGonderAsync"
+                       Disabled="@_gonderiliyor"
+                       FullWidth="true"
+                       Class="mb-3">
+                @if (_gonderiliyor)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    <span>Gönderiliyor...</span>
+                }
+                else
+                {
+                    <span>🧪 Test Maili Gönder (Sadece Kendime)</span>
+                }
+            </MudButton>
+
+            <MudButton Variant="Variant.Outlined" 
+                       Color="Color.Primary" 
+                       StartIcon="@Icons.Material.Filled.TableChart"
+                       OnClick="RaporMailiGonderAsync"
+                       Disabled="@(_gonderiliyor || _ayarlar.Alicilar.Count == 0)"
+                       FullWidth="true">
+                @if (_gonderiliyor)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    <span>Gönderiliyor...</span>
+                }
+                else
+                {
+                    <span>📊 Şeker Raporunu Şimdi Gönder</span>
+                }
+            </MudButton>
+
+            @if (_ayarlar.Alicilar.Count == 0)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Warning" Class="mt-2">
+                    ⚠️ Rapor göndermek için en az bir alıcı ekleyin.
+                </MudText>
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private MailAyarlariModel _ayarlar = new();
+    private string _yeniAlici = "";
+    private string _gonderimSaatiStr = "12:00";
+    private bool _kaydediliyor = false;
+    private bool _gonderiliyor = false;
+
+    protected override void OnInitialized()
+    {
+        _ayarlar = AyarlarService.GetAyarlar();
+        _gonderimSaatiStr = _ayarlar.GonderimSaati.ToString(@"hh\:mm");
+    }
+
+    private async Task OtomatikGonderimDegistir(bool yeniDeger)
+    {
+        _ayarlar.OtomatikGonderimAktif = yeniDeger;
+        await AyarlarService.KaydetAsync(_ayarlar);
+        
+        if (yeniDeger)
+            Snackbar.Add("✅ Otomatik gönderim açıldı!", Severity.Success);
+        else
+            Snackbar.Add("⏹️ Otomatik gönderim kapatıldı.", Severity.Info);
+    }
+
+    private async Task AyarlariKaydetAsync()
+    {
+        _kaydediliyor = true;
+        StateHasChanged();
+
+        try
+        {
+            // Saati parse et
+            if (TimeSpan.TryParse(_gonderimSaatiStr, out var saat))
+            {
+                _ayarlar.GonderimSaati = saat;
+            }
+            else
+            {
+                Snackbar.Add("❌ Geçersiz saat formatı! Örnek: 12:00", Severity.Error);
+                return;
+            }
+
+            // Mail formatını kontrol et
+            if (!string.IsNullOrEmpty(_ayarlar.GondericiMail) && !_ayarlar.GondericiMail.Contains('@'))
+            {
+                Snackbar.Add("❌ Geçersiz mail adresi!", Severity.Error);
+                return;
+            }
+
+            var basarili = await AyarlarService.KaydetAsync(_ayarlar);
+            
+            if (basarili)
+            {
+                Snackbar.Add("✅ Ayarlar başarıyla kaydedildi!", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("❌ Ayarlar kaydedilemedi!", Severity.Error);
+            }
+        }
+        finally
+        {
+            _kaydediliyor = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task AliciEkleAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_yeniAlici))
+            return;
+
+        var email = _yeniAlici.Trim().ToLowerInvariant();
+
+        if (!email.Contains('@'))
+        {
+            Snackbar.Add("❌ Geçersiz mail adresi!", Severity.Error);
+            return;
+        }
+
+        if (_ayarlar.Alicilar.Contains(email))
+        {
+            Snackbar.Add("⚠️ Bu mail adresi zaten ekli!", Severity.Warning);
+            return;
+        }
+
+        var basarili = await AyarlarService.AliciEkleAsync(email);
+        
+        if (basarili)
+        {
+            _ayarlar = AyarlarService.GetAyarlar(); // Listeyi yenile
+            _yeniAlici = "";
+            Snackbar.Add("✅ " + email + " eklendi!", Severity.Success);
+        }
+    }
+
+    private async Task AliciSilAsync(string email)
+    {
+        var basarili = await AyarlarService.AliciSilAsync(email);
+        
+        if (basarili)
+        {
+            _ayarlar = AyarlarService.GetAyarlar(); // Listeyi yenile
+            Snackbar.Add(email + " silindi.", Severity.Info);
+        }
+    }
+
+    private async Task TestMailGonderAsync()
+    {
+        _gonderiliyor = true;
+        StateHasChanged();
+
+        try
+        {
+            var htmlBody = "<html><body style='font-family: Segoe UI, sans-serif; padding: 20px;'>" +
+                "<h2 style='color: #059669;'>Test Maili Basarili!</h2>" +
+                "<p>Bu bir test mailidir. Mail ayarlariniz dogru calisiyor.</p>" +
+                "<hr>" +
+                "<p><strong>Gonderim Zamani:</strong> " + DateTime.Now.ToString("dd.MM.yyyy HH:mm:ss") + "</p>" +
+                "<p><strong>Alici Sayisi:</strong> " + _ayarlar.Alicilar.Count + " kisi</p>" +
+                "<p><strong>Otomatik Gonderim:</strong> " + (_ayarlar.OtomatikGonderimAktif ? "Acik" : "Kapali") + "</p>" +
+                "<p><strong>Gonderim Saati:</strong> " + _ayarlar.GonderimSaati.ToString("hh\\:mm") + "</p>" +
+                "<hr>" +
+                "<p style='color: #666; font-size: 12px;'>RaporlamaPortali - Dogus Cay Afyon Seker Fabrikasi</p>" +
+                "</body></html>";
+
+            // Outlook üzerinden gönder (şifre gerektirmez)
+            var sonuc = await ZamanliMailService.OutlookMailGonderAsync(_ayarlar, "Test Maili - RaporlamaPortali", htmlBody);
+            
+            if (sonuc.Basarili)
+            {
+                Snackbar.Add("Test maili basariyla gonderildi! (" + sonuc.AliciSayisi + " alici)", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("Hata: " + sonuc.Mesaj, Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Hata: " + ex.Message, Severity.Error);
+            Logger.LogError(ex, "Test mail gonderiminde hata");
+        }
+        finally
+        {
+            _gonderiliyor = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RaporMailiGonderAsync()
+    {
+        _gonderiliyor = true;
+        StateHasChanged();
+
+        try
+        {
+            if (_ayarlar.Alicilar.Count == 0)
+            {
+                Snackbar.Add("Lutfen en az bir alici ekleyin!", Severity.Error);
+                return;
+            }
+
+            // Verileri çek
+            var baslangic = new DateTime(2025, 9, 1);
+            var bitis = DateTime.Today;
+            
+            Snackbar.Add("Seker verileri cekiliyor...", Severity.Info);
+            var sekerVerileri = await SekerService.GetSekerSatisOzetAsync(baslangic, bitis);
+            
+            Snackbar.Add("Yan urun verileri cekiliyor...", Severity.Info);
+            var yanUrunVerileri = await YanUrunlerService.GetYanUrunlerOzetAsync(baslangic, bitis);
+
+            Snackbar.Add("Alkol verileri cekiliyor...", Severity.Info);
+            var alkolVerileri = await YanUrunlerService.GetAlkolOzetAsync(baslangic, bitis);
+            foreach (var a in alkolVerileri)
+            {
+                yanUrunVerileri.Add(new RaporlamaPortali.Models.YanUrunOzet
+                {
+                    MalzemeKodu      = a.MalzemeKodu,
+                    MalzemeAdi       = a.MalzemeAdi,
+                    Kategori         = "ALKOL",
+                    DevirStok        = a.DevirStok,
+                    SatinAlmaMiktari = a.SatinAlmaMiktari,
+                    UretimMiktari    = a.UretimMiktari,
+                    SatisMiktari     = a.SatisMiktari,
+                    SatisTutari      = a.SatisTutari,
+                    IadeMiktari      = a.IadeMiktari,
+                    IadeTutari       = a.IadeTutari
+                });
+            }
+
+            Snackbar.Add("Rapor hazirlaniyor...", Severity.Info);
+            var htmlIcerik = HtmlService.BirlesikRaporHtmlOlustur(sekerVerileri, yanUrunVerileri, baslangic, bitis);
+
+            // Outlook üzerinden mail gönder
+            var konu = "Afyon Seker Fabrikasi Yan Urunler ve Seker Uretim-Satis-Stok Tablosu (" + bitis.ToString("dd.MM.yyyy") + ")";
+            var sonuc = await ZamanliMailService.OutlookMailGonderAsync(_ayarlar, konu, htmlIcerik);
+
+            if (sonuc.Basarili)
+            {
+                Snackbar.Add("Rapor basariyla gonderildi! (" + sonuc.AliciSayisi + " alici - BCC)", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("Hata: " + sonuc.Mesaj, Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Hata: " + ex.Message, Severity.Error);
+            Logger.LogError(ex, "Rapor mail gonderiminde hata");
+        }
+        finally
+        {
+            _gonderiliyor = false;
+            StateHasChanged();
+        }
+    }
+}

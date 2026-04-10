@@ -1,0 +1,281 @@
+@page "/seker-satis"
+@inject SekerSatisService SekerSatisService
+@inject ExcelExportService ExcelExportService
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+
+<PageTitle>Şeker Satış Raporu</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.Cake" Class="mr-2" />
+    Şeker Üretim - Satış - Stok Tablosu
+</MudText>
+
+@* Tarih Filtresi *@
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid>
+        <MudItem xs="12" sm="4" md="3">
+            <MudDatePicker Label="Başlangıç Tarihi" @bind-Date="_baslangicTarihi" 
+                           DateFormat="dd.MM.yyyy" Editable="true" />
+        </MudItem>
+        <MudItem xs="12" sm="4" md="3">
+            <MudDatePicker Label="Bitiş Tarihi" @bind-Date="_bitisTarihi" 
+                           DateFormat="dd.MM.yyyy" Editable="true" />
+        </MudItem>
+        <MudItem xs="12" sm="4" md="3" Class="d-flex align-end">
+            <MudButtonGroup Color="Color.Primary" Variant="Variant.Filled">
+                <MudButton OnClick="RaporuGetir" Disabled="@_yukleniyor">
+                    @if (_yukleniyor)
+                    {
+                        <MudProgressCircular Class="mr-2" Size="Size.Small" Indeterminate="true" />
+                    }
+                    <MudIcon Icon="@Icons.Material.Filled.Search" Class="mr-1" />
+                    Rapor Getir
+                </MudButton>
+                <MudButton OnClick="ExcelIndir" Disabled="@(_yukleniyor || _sekerler == null)">
+                    <MudIcon Icon="@Icons.Material.Filled.Download" Class="mr-1" />
+                    Excel
+                </MudButton>
+            </MudButtonGroup>
+        </MudItem>
+        <MudItem xs="12" sm="12" md="3" Class="d-flex align-end justify-end">
+            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
+                <MudButton OnClick="@(() => SetTarihAraligi(0))">Bu Ay</MudButton>
+                <MudButton OnClick="@(() => SetTarihAraligi(1))">Kampanya</MudButton>
+                <MudButton OnClick="@(() => SetTarihAraligi(2))">Geçen Ay</MudButton>
+            </MudButtonGroup>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@if (_hata != null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">@_hata</MudAlert>
+}
+
+@if (_sekerler != null)
+{
+    @* ŞEKER SATIŞ TABLOSU - VBA Formatında *@
+    <MudPaper Class="pa-4 mb-4">
+        <MudText Typo="Typo.h6" Class="mb-3" Style="color: #059669;">
+            <MudIcon Icon="@Icons.Material.Filled.TableChart" Class="mr-2" />
+            ŞEKER ÜRETİM - SATIŞ - STOK TABLOSU <small style="color: #666;">(Birim: TON)</small>
+        </MudText>
+        
+        <div style="overflow-x: auto;">
+        <MudSimpleTable Hover="true" Dense="true" Style="font-size: 0.8rem;" Bordered="true">
+            <thead>
+                <tr style="background-color: #4a5568; color: white;">
+                    <th style="padding: 10px 6px; text-align: left; border: 1px solid #2d3748;">KATEGORİ</th>
+                    <th style="padding: 10px 6px; text-align: right; border: 1px solid #2d3748;">Devir (Ton)</th>
+                    <th style="padding: 10px 6px; text-align: right; border: 1px solid #2d3748;">Üretim (Ton)</th>
+                    <th style="padding: 10px 6px; text-align: right; border: 1px solid #2d3748;">Satın Alma (Ton)</th>
+                    <th style="padding: 10px 6px; text-align: right; border: 1px solid #2d3748;">Satıştan İade (Ton)</th>
+                    <th style="padding: 10px 6px; text-align: right; border: 1px solid #2d3748;">Satınalma İade (Ton)</th>
+                    <th style="padding: 10px 6px; text-align: right; border: 1px solid #2d3748;">Satış (Ton)</th>
+                    <th style="padding: 10px 6px; text-align: right; border: 1px solid #2d3748;">Promosyon (Ton)</th>
+                    <th style="padding: 10px 6px; text-align: right; border: 1px solid #2d3748;">Sarf (Ton)</th>
+                    <th style="padding: 10px 6px; text-align: right; border: 1px solid #2d3748; background-color: #059669;">Stok (Ton)</th>
+                    <th style="padding: 10px 6px; text-align: right; border: 1px solid #2d3748; background-color: #0284c7;">Satış Tutarı (₺)</th>
+                    <th style="padding: 10px 6px; text-align: right; border: 1px solid #2d3748; background-color: #7c3aed;">Ort. Fiyat (₺/Kg)</th>
+                </tr>
+            </thead>
+            <tbody>
+                @{ int satirNo = 0; }
+                @foreach (var seker in _sekerler)
+                {
+                    var bgColor = satirNo % 2 == 0 ? "#ffffff" : "#f8fafc";
+                    var stokRenk = seker.StokTon < 0 ? "color: #dc2626; font-weight: 600;" : "";
+                    satirNo++;
+                    
+                    <tr style="background-color: @bgColor;">
+                        <td style="padding: 8px 6px; border: 1px solid #e2e8f0; font-weight: 600;">@seker.KategoriAdi</td>
+                        <td style="padding: 8px 6px; text-align: right; border: 1px solid #e2e8f0; font-family: Consolas, monospace;">@seker.DevirStokTon.ToString("N2")</td>
+                        <td style="padding: 8px 6px; text-align: right; border: 1px solid #e2e8f0; font-family: Consolas, monospace;">@seker.UretimTon.ToString("N2")</td>
+                        <td style="padding: 8px 6px; text-align: right; border: 1px solid #e2e8f0; font-family: Consolas, monospace;">@seker.SatinAlmaTon.ToString("N2")</td>
+                        <td style="padding: 8px 6px; text-align: right; border: 1px solid #e2e8f0; font-family: Consolas, monospace;">@seker.IadeTon.ToString("N2")</td>
+                        <td style="padding: 8px 6px; text-align: right; border: 1px solid #e2e8f0; font-family: Consolas, monospace;">@seker.SatinAlmaIadeTon.ToString("N2")</td>
+                        <td style="padding: 8px 6px; text-align: right; border: 1px solid #e2e8f0; font-family: Consolas, monospace;">@seker.SatisTon.ToString("N2")</td>
+                        <td style="padding: 8px 6px; text-align: right; border: 1px solid #e2e8f0; font-family: Consolas, monospace;">@seker.PromosyonTon.ToString("N2")</td>
+                        <td style="padding: 8px 6px; text-align: right; border: 1px solid #e2e8f0; font-family: Consolas, monospace;">@seker.SarfTon.ToString("N2")</td>
+                        <td style="padding: 8px 6px; text-align: right; border: 1px solid #e2e8f0; font-family: Consolas, monospace; @stokRenk">@seker.StokTon.ToString("N2")</td>
+                        <td style="padding: 8px 6px; text-align: right; border: 1px solid #e2e8f0; font-family: Consolas, monospace; color: #0284c7;">@seker.SatisTutari.ToString("N2")</td>
+                        <td style="padding: 8px 6px; text-align: right; border: 1px solid #e2e8f0; font-family: Consolas, monospace; color: #7c3aed;">@seker.OrtalamaFiyat.ToString("N2")</td>
+                    </tr>
+                }
+                
+                @* TOPLAM Satırı *@
+                @{
+                    var toplamSatisTutari = _sekerler.Sum(x => x.SatisTutari);
+                    var toplamSatisMiktari = _sekerler.Sum(x => x.SatisMiktari);
+                    var toplamOrtFiyat = toplamSatisMiktari > 0 ? toplamSatisTutari / toplamSatisMiktari : 0;
+                }
+                <tr style="background-color: #fef08a; font-weight: 700;">
+                    <td style="padding: 10px 6px; border: 1px solid #ca8a04; color: #059669;">TOPLAM</td>
+                    <td style="padding: 10px 6px; text-align: right; border: 1px solid #ca8a04; font-family: Consolas, monospace; color: #059669;">@_sekerler.Sum(x => x.DevirStokTon).ToString("N2")</td>
+                    <td style="padding: 10px 6px; text-align: right; border: 1px solid #ca8a04; font-family: Consolas, monospace; color: #059669;">@_sekerler.Sum(x => x.UretimTon).ToString("N2")</td>
+                    <td style="padding: 10px 6px; text-align: right; border: 1px solid #ca8a04; font-family: Consolas, monospace; color: #059669;">@_sekerler.Sum(x => x.SatinAlmaTon).ToString("N2")</td>
+                    <td style="padding: 10px 6px; text-align: right; border: 1px solid #ca8a04; font-family: Consolas, monospace; color: #059669;">@_sekerler.Sum(x => x.IadeTon).ToString("N2")</td>
+                    <td style="padding: 10px 6px; text-align: right; border: 1px solid #ca8a04; font-family: Consolas, monospace; color: #059669;">@_sekerler.Sum(x => x.SatinAlmaIadeTon).ToString("N2")</td>
+                    <td style="padding: 10px 6px; text-align: right; border: 1px solid #ca8a04; font-family: Consolas, monospace; color: #059669;">@_sekerler.Sum(x => x.SatisTon).ToString("N2")</td>
+                    <td style="padding: 10px 6px; text-align: right; border: 1px solid #ca8a04; font-family: Consolas, monospace; color: #059669;">@_sekerler.Sum(x => x.PromosyonTon).ToString("N2")</td>
+                    <td style="padding: 10px 6px; text-align: right; border: 1px solid #ca8a04; font-family: Consolas, monospace; color: #059669;">@_sekerler.Sum(x => x.SarfTon).ToString("N2")</td>
+                    <td style="padding: 10px 6px; text-align: right; border: 1px solid #ca8a04; font-family: Consolas, monospace; color: #059669;">@_sekerler.Sum(x => x.StokTon).ToString("N2")</td>
+                    <td style="padding: 10px 6px; text-align: right; border: 1px solid #ca8a04; font-family: Consolas, monospace; color: #0284c7;">@toplamSatisTutari.ToString("N2")</td>
+                    <td style="padding: 10px 6px; text-align: right; border: 1px solid #ca8a04; font-family: Consolas, monospace; color: #7c3aed;">@toplamOrtFiyat.ToString("N2")</td>
+                </tr>
+            </tbody>
+        </MudSimpleTable>
+        </div>
+
+        @* Özet Kartlar *@
+        <MudGrid Class="mt-4">
+            <MudItem xs="6" sm="4" md="2">
+                <MudCard Style="background-color: #E8F5E9;">
+                    <MudCardContent Class="pa-2">
+                        <MudText Typo="Typo.caption">Toplam Devir</MudText>
+                        <MudText Typo="Typo.subtitle1" Style="font-weight: 600;">@_sekerler.Sum(x => x.DevirStokTon).ToString("N0") Ton</MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+            <MudItem xs="6" sm="4" md="2">
+                <MudCard Style="background-color: #E3F2FD;">
+                    <MudCardContent Class="pa-2">
+                        <MudText Typo="Typo.caption">Toplam Üretim</MudText>
+                        <MudText Typo="Typo.subtitle1" Style="font-weight: 600;">@_sekerler.Sum(x => x.UretimTon).ToString("N0") Ton</MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+            <MudItem xs="6" sm="4" md="2">
+                <MudCard Style="background-color: #FFF3E0;">
+                    <MudCardContent Class="pa-2">
+                        <MudText Typo="Typo.caption">Toplam Satın Alma</MudText>
+                        <MudText Typo="Typo.subtitle1" Style="font-weight: 600;">@_sekerler.Sum(x => x.SatinAlmaTon).ToString("N0") Ton</MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+            <MudItem xs="6" sm="4" md="2">
+                <MudCard Style="background-color: #FCE4EC;">
+                    <MudCardContent Class="pa-2">
+                        <MudText Typo="Typo.caption">Toplam Satış</MudText>
+                        <MudText Typo="Typo.subtitle1" Style="font-weight: 600;">@_sekerler.Sum(x => x.SatisTon).ToString("N0") Ton</MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+            <MudItem xs="6" sm="4" md="2">
+                <MudCard Style="background-color: #F3E5F5;">
+                    <MudCardContent Class="pa-2">
+                        <MudText Typo="Typo.caption">Diğer Çıkış</MudText>
+                        <MudText Typo="Typo.subtitle1" Style="font-weight: 600;">@((_sekerler.Sum(x => x.PromosyonTon) + _sekerler.Sum(x => x.SarfTon)).ToString("N0")) Ton</MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+            <MudItem xs="6" sm="4" md="2">
+                <MudCard Style="background-color: #059669; color: white;">
+                    <MudCardContent Class="pa-2">
+                        <MudText Typo="Typo.caption" Style="color: #A7F3D0;">Mevcut Stok</MudText>
+                        <MudText Typo="Typo.subtitle1" Style="font-weight: 600;">@_sekerler.Sum(x => x.StokTon).ToString("N0") Ton</MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+    
+    @* Bilgi Notu *@
+    <MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">
+        <strong>Hesaplama Mantığı:</strong> Stok = Devir + Üretim + Satın Alma + Satıştan İade - Satınalma İade - Satış - Promosyon - Sarf
+        <br />
+        <small>Üretim → A Kotası'na, Satın Alma → Ticari Mal'a, Satış/Promosyon/Sarf → Önce A Kotası, yetmezse Ticari Mal'dan düşülür.</small>
+    </MudAlert>
+}
+else if (!_yukleniyor)
+{
+    <MudAlert Severity="Severity.Info">
+        Rapor görüntülemek için tarih aralığı seçip "Rapor Getir" butonuna tıklayın.
+    </MudAlert>
+}
+
+@code {
+    private DateTime? _baslangicTarihi = new DateTime(2025, 9, 1); // VBA'daki varsayılan
+    private DateTime? _bitisTarihi = DateTime.Now;
+    private bool _yukleniyor = false;
+    private string? _hata = null;
+    
+    private List<SekerSatisOzet>? _sekerler;
+
+    private async Task RaporuGetir()
+    {
+        if (_baslangicTarihi == null || _bitisTarihi == null)
+        {
+            Snackbar.Add("Lütfen tarih aralığı seçin!", Severity.Warning);
+            return;
+        }
+
+        _yukleniyor = true;
+        _hata = null;
+        
+        try
+        {
+            var baslangic = _baslangicTarihi.Value;
+            var bitis = _bitisTarihi.Value;
+            
+            _sekerler = await SekerSatisService.GetSekerSatisOzetAsync(baslangic, bitis);
+            
+            Snackbar.Add($"Rapor başarıyla yüklendi! ({_sekerler.Count} kategori)", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _hata = $"Rapor yüklenirken hata oluştu: {ex.Message}";
+            Snackbar.Add(_hata, Severity.Error);
+        }
+        finally
+        {
+            _yukleniyor = false;
+        }
+    }
+
+    private async Task ExcelIndir()
+    {
+        if (_sekerler == null) return;
+        
+        try
+        {
+            var excelBytes = ExcelExportService.ExportSekerSatisRaporu(
+                _sekerler, 
+                _baslangicTarihi!.Value,
+                _bitisTarihi!.Value);
+            
+            var fileName = $"SekerSatis_{_baslangicTarihi:yyyyMMdd}_{_bitisTarihi:yyyyMMdd}.xlsx";
+            
+            await JS.InvokeVoidAsync("downloadFile", fileName, Convert.ToBase64String(excelBytes), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            
+            Snackbar.Add("Excel dosyası indirildi!", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Excel oluşturulurken hata: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void SetTarihAraligi(int tip)
+    {
+        var today = DateTime.Today;
+        
+        switch (tip)
+        {
+            case 0: // Bu Ay
+                _baslangicTarihi = new DateTime(today.Year, today.Month, 1);
+                _bitisTarihi = today;
+                break;
+            case 1: // Kampanya (01.09.2025'ten bugüne)
+                _baslangicTarihi = new DateTime(2025, 9, 1);
+                _bitisTarihi = today;
+                break;
+            case 2: // Geçen Ay
+                var gecenAy = today.AddMonths(-1);
+                _baslangicTarihi = new DateTime(gecenAy.Year, gecenAy.Month, 1);
+                _bitisTarihi = new DateTime(gecenAy.Year, gecenAy.Month, DateTime.DaysInMonth(gecenAy.Year, gecenAy.Month));
+                break;
+        }
+    }
+}

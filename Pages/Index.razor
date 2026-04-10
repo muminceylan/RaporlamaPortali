@@ -1,0 +1,129 @@
+@page "/"
+
+<PageTitle>Ana Sayfa - Raporlama Portali</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.Dashboard" Class="mr-2" />
+    Hoş Geldiniz
+</MudText>
+
+<MudGrid>
+    <MudItem xs="12" md="6" lg="4">
+        <MudCard Class="mud-height-full" Style="cursor: pointer;" @onclick="@(() => NavigationManager.NavigateTo("/yan-urunler"))">
+            <MudCardHeader>
+                <CardHeaderAvatar>
+                    <MudAvatar Color="Color.Success" Size="Size.Large">
+                        <MudIcon Icon="@Icons.Material.Filled.Inventory" />
+                    </MudAvatar>
+                </CardHeaderAvatar>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Yan Ürünler</MudText>
+                    <MudText Typo="Typo.body2">Melas, Küspe, Alkol</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudText Typo="Typo.body2" Class="mb-2">
+                    Yan ürün satış, üretim ve iade raporları. Melas, yaş/kuru küspe ve etil alkol takibi.
+                </MudText>
+                <MudChipSet>
+                    <MudChip Color="Color.Success" Size="Size.Small">Aktif</MudChip>
+                </MudChipSet>
+            </MudCardContent>
+            <MudCardActions>
+                <MudButton Variant="Variant.Text" Color="Color.Primary">Raporlara Git</MudButton>
+            </MudCardActions>
+        </MudCard>
+    </MudItem>
+    
+    <MudItem xs="12" md="6" lg="4">
+        <MudCard Class="mud-height-full" Style="opacity: 0.7;">
+            <MudCardHeader>
+                <CardHeaderAvatar>
+                    <MudAvatar Color="Color.Warning" Size="Size.Large">
+                        <MudIcon Icon="@Icons.Material.Filled.Store" />
+                    </MudAvatar>
+                </CardHeaderAvatar>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Şeker Satış</MudText>
+                    <MudText Typo="Typo.body2">A/B/C Kotası, Ticari Mal</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudText Typo="Typo.body2" Class="mb-2">
+                    Şeker satış raporları. Kota bazlı satış takibi ve ticari mal yönetimi.
+                </MudText>
+                <MudChipSet>
+                    <MudChip Color="Color.Warning" Size="Size.Small">Yakında</MudChip>
+                </MudChipSet>
+            </MudCardContent>
+            <MudCardActions>
+                <MudButton Variant="Variant.Text" Color="Color.Default" Disabled="true">Geliştiriliyor</MudButton>
+            </MudCardActions>
+        </MudCard>
+    </MudItem>
+    
+    <MudItem xs="12" md="6" lg="4">
+        <MudCard Class="mud-height-full" Style="opacity: 0.7;">
+            <MudCardHeader>
+                <CardHeaderAvatar>
+                    <MudAvatar Color="Color.Info" Size="Size.Large">
+                        <MudIcon Icon="@Icons.Material.Filled.Agriculture" />
+                    </MudAvatar>
+                </CardHeaderAvatar>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Pancar Ödemeleri</MudText>
+                    <MudText Typo="Typo.body2">Çiftçi Borç/Alacak</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudText Typo="Typo.body2" Class="mb-2">
+                    Pancar ödemeleri ve çiftçi hesap takibi. Avans, kantar ve kesinti raporları.
+                </MudText>
+                <MudChipSet>
+                    <MudChip Color="Color.Warning" Size="Size.Small">Yakında</MudChip>
+                </MudChipSet>
+            </MudCardContent>
+            <MudCardActions>
+                <MudButton Variant="Variant.Text" Color="Color.Default" Disabled="true">Geliştiriliyor</MudButton>
+            </MudCardActions>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+<MudDivider Class="my-6" />
+
+<MudGrid>
+    <MudItem xs="12">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.h6" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.Info" Class="mr-2" />
+                Sistem Bilgileri
+            </MudText>
+            <MudSimpleTable Hover="true">
+                <tbody>
+                    <tr>
+                        <td><strong>Sunucu</strong></td>
+                        <td>192.168.0.50\DOGUSLGSRV</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Veritabanı</strong></td>
+                        <td>DOGUSNDB</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Firma No</strong></td>
+                        <td>211</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Uygulama Versiyonu</strong></td>
+                        <td>1.0.0</td>
+                    </tr>
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    [Inject]
+    private NavigationManager NavigationManager { get; set; } = default!;
+}

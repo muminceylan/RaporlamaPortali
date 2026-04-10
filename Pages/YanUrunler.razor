@@ -1,0 +1,283 @@
+@page "/yan-urunler"
+@inject YanUrunlerService YanUrunlerService
+@inject ExcelExportService ExcelExportService
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+
+<PageTitle>Yan Ürünler Raporu</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.Inventory" Class="mr-2" />
+    Yan Ürünler Satış Raporu
+</MudText>
+
+@* Tarih Filtresi *@
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid>
+        <MudItem xs="12" sm="4" md="3">
+            <MudDatePicker Label="Başlangıç Tarihi" @bind-Date="_baslangicTarihi" 
+                           DateFormat="dd.MM.yyyy" Editable="true" />
+        </MudItem>
+        <MudItem xs="12" sm="4" md="3">
+            <MudDatePicker Label="Bitiş Tarihi" @bind-Date="_bitisTarihi" 
+                           DateFormat="dd.MM.yyyy" Editable="true" />
+        </MudItem>
+        <MudItem xs="12" sm="4" md="3" Class="d-flex align-end">
+            <MudButtonGroup Color="Color.Primary" Variant="Variant.Filled">
+                <MudButton OnClick="RaporuGetir" Disabled="@_yukleniyor">
+                    @if (_yukleniyor)
+                    {
+                        <MudProgressCircular Class="mr-2" Size="Size.Small" Indeterminate="true" />
+                    }
+                    <MudIcon Icon="@Icons.Material.Filled.Search" Class="mr-1" />
+                    Rapor Getir
+                </MudButton>
+                <MudButton OnClick="ExcelIndir" Disabled="@(_yukleniyor || _yanUrunler == null)">
+                    <MudIcon Icon="@Icons.Material.Filled.Download" Class="mr-1" />
+                    Excel
+                </MudButton>
+            </MudButtonGroup>
+        </MudItem>
+        <MudItem xs="12" sm="12" md="3" Class="d-flex align-end justify-end">
+            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
+                <MudButton OnClick="@(() => SetTarihAraligi(0))">Bu Ay</MudButton>
+                <MudButton OnClick="@(() => SetTarihAraligi(1))">Bu Yıl</MudButton>
+                <MudButton OnClick="@(() => SetTarihAraligi(2))">Geçen Ay</MudButton>
+            </MudButtonGroup>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@if (_hata != null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">@_hata</MudAlert>
+}
+
+@if (_yanUrunler != null)
+{
+    @* YAN ÜRÜNLER TABLOSU *@
+    <MudPaper Class="pa-4 mb-4">
+        <MudText Typo="Typo.h6" Class="mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.Grass" Class="mr-2" />
+            Yan Ürünler (Melas, Küspe) - <small>Birim: TON</small>
+        </MudText>
+        
+        <MudSimpleTable Hover="true" Striped="true" Dense="true" Style="font-size: 0.85rem;" Bordered="true">
+            <thead>
+                <tr style="background-color: #E8F5E9;">
+                    <th style="border: 1px solid #ccc;">Malzeme</th>
+                    <th style="text-align: right; border: 1px solid #ccc;">Devir Stok</th>
+                    <th style="text-align: right; border: 1px solid #ccc;">Üretim</th>
+                    <th style="text-align: right; border: 1px solid #ccc;">Satın Alma</th>
+                    <th style="text-align: right; border: 1px solid #ccc;">Satış</th>
+                    <th style="text-align: right; border: 1px solid #ccc;">İade</th>
+                    <th style="text-align: right; border: 1px solid #ccc;">Tüketim</th>
+                    <th style="text-align: right; background-color: #C8E6C9; border: 1px solid #ccc;"><strong>STOK</strong></th>
+                    <th style="text-align: right; border: 1px solid #ccc;">Satış Tutarı (TL)</th>
+                    <th style="text-align: right; border: 1px solid #ccc;">Ort. Fiyat</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var kategori in new[] { "MELAS", "YAS_KUSPE", "KURU_KUSPE", "DIGER" })
+                {
+                    var kategoridekiler = _yanUrunler.Where(x => x.Kategori == kategori).ToList();
+                    if (!kategoridekiler.Any()) continue;
+                    
+                    @foreach (var urun in kategoridekiler)
+                    {
+                        <tr>
+                            <td style="border: 1px solid #ddd;">@urun.MalzemeAdi</td>
+                            <td style="text-align: right; border: 1px solid #ddd;">@urun.DevirStokTon.ToString("N2")</td>
+                            <td style="text-align: right; border: 1px solid #ddd;">@urun.UretimTon.ToString("N2")</td>
+                            <td style="text-align: right; border: 1px solid #ddd;">@urun.SatinAlmaTon.ToString("N2")</td>
+                            <td style="text-align: right; border: 1px solid #ddd;">@urun.SatisTon.ToString("N2")</td>
+                            <td style="text-align: right; border: 1px solid #ddd;">@urun.IadeTon.ToString("N2")</td>
+                            <td style="text-align: right; border: 1px solid #ddd;">@urun.TuketimTon.ToString("N2")</td>
+                            <td style="text-align: right; background-color: #E8F5E9; border: 1px solid #ddd;"><strong>@urun.StokTon.ToString("N2")</strong></td>
+                            <td style="text-align: right; border: 1px solid #ddd;">@urun.SatisTutari.ToString("N2")</td>
+                            <td style="text-align: right; border: 1px solid #ddd;">@urun.OrtalamaFiyat.ToString("N2")</td>
+                        </tr>
+                    }
+                    
+                    @if (kategori == "YAS_KUSPE" || kategori == "KURU_KUSPE")
+                    {
+                        var toplam = YanUrunlerService.HesaplaKategoriToplam(_yanUrunler, kategori);
+                        var bgColor = kategori == "YAS_KUSPE" ? "#90EE90" : "#FFDAB9";
+                        <tr style="background-color: @bgColor; font-weight: bold;">
+                            <td style="border: 1px solid #ddd;">@toplam.MalzemeAdi</td>
+                            <td style="text-align: right; border: 1px solid #ddd;">@toplam.DevirStokTon.ToString("N2")</td>
+                            <td style="text-align: right; border: 1px solid #ddd;">@toplam.UretimTon.ToString("N2")</td>
+                            <td style="text-align: right; border: 1px solid #ddd;">@toplam.SatinAlmaTon.ToString("N2")</td>
+                            <td style="text-align: right; border: 1px solid #ddd;">@toplam.SatisTon.ToString("N2")</td>
+                            <td style="text-align: right; border: 1px solid #ddd;">@toplam.IadeTon.ToString("N2")</td>
+                            <td style="text-align: right; border: 1px solid #ddd;">@toplam.TuketimTon.ToString("N2")</td>
+                            <td style="text-align: right; border: 1px solid #ddd;">@toplam.StokTon.ToString("N2")</td>
+                            <td style="text-align: right; border: 1px solid #ddd;">@toplam.SatisTutari.ToString("N2")</td>
+                            <td style="text-align: right; border: 1px solid #ddd;">@toplam.OrtalamaFiyat.ToString("N2")</td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+
+    @* ALKOL TABLOSU *@
+    <MudPaper Class="pa-4 mb-4">
+        <MudText Typo="Typo.h6" Class="mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.Science" Class="mr-2" />
+            Etil Alkol Satış Raporu - <small>Birim: TON (Lt/1000)</small>
+        </MudText>
+        
+        <MudSimpleTable Hover="true" Striped="true" Dense="true" Style="font-size: 0.85rem;" Bordered="true">
+            <thead>
+                <tr style="background-color: #E3F2FD;">
+                    <th style="border: 1px solid #ccc;">Alkol Türü</th>
+                    <th style="text-align: right; border: 1px solid #ccc;">Devir Stok</th>
+                    <th style="text-align: right; border: 1px solid #ccc;">Üretim</th>
+                    <th style="text-align: right; border: 1px solid #ccc;">Satın Alma</th>
+                    <th style="text-align: right; border: 1px solid #ccc;">Satış</th>
+                    <th style="text-align: right; border: 1px solid #ccc;">İade</th>
+                    <th style="text-align: right; background-color: #BBDEFB; border: 1px solid #ccc;"><strong>STOK</strong></th>
+                    <th style="text-align: right; border: 1px solid #ccc;">Satış Tutarı (TL)</th>
+                    <th style="text-align: right; border: 1px solid #ccc;">Ort. Fiyat</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (_alkoller != null)
+                {
+                    @foreach (var alkol in _alkoller)
+                    {
+                        <tr>
+                            <td style="border: 1px solid #ddd;">@alkol.MalzemeAdi</td>
+                            <td style="text-align: right; border: 1px solid #ddd;">@alkol.DevirStokTon.ToString("N2")</td>
+                            <td style="text-align: right; border: 1px solid #ddd;">@alkol.UretimTon.ToString("N2")</td>
+                            <td style="text-align: right; border: 1px solid #ddd;">@alkol.SatinAlmaTon.ToString("N2")</td>
+                            <td style="text-align: right; border: 1px solid #ddd;">@alkol.SatisTon.ToString("N2")</td>
+                            <td style="text-align: right; border: 1px solid #ddd;">@alkol.IadeTon.ToString("N2")</td>
+                            <td style="text-align: right; background-color: #E3F2FD; border: 1px solid #ddd;"><strong>@alkol.StokTon.ToString("N2")</strong></td>
+                            <td style="text-align: right; border: 1px solid #ddd;">@alkol.SatisTutari.ToString("N2")</td>
+                            <td style="text-align: right; border: 1px solid #ddd;">@alkol.OrtalamaFiyat.ToString("N2")</td>
+                        </tr>
+                    }
+                    
+                    @* Alkol Toplam *@
+                    <tr style="background-color: #FFB6C1; font-weight: bold;">
+                        <td style="border: 1px solid #ddd;">ALKOL TOPLAMI</td>
+                        <td style="text-align: right; border: 1px solid #ddd;">@_alkoller.Sum(x => x.DevirStokTon).ToString("N2")</td>
+                        <td style="text-align: right; border: 1px solid #ddd;">@_alkoller.Sum(x => x.UretimTon).ToString("N2")</td>
+                        <td style="text-align: right; border: 1px solid #ddd;">@_alkoller.Sum(x => x.SatinAlmaTon).ToString("N2")</td>
+                        <td style="text-align: right; border: 1px solid #ddd;">@_alkoller.Sum(x => x.SatisTon).ToString("N2")</td>
+                        <td style="text-align: right; border: 1px solid #ddd;">@_alkoller.Sum(x => x.IadeTon).ToString("N2")</td>
+                        <td style="text-align: right; border: 1px solid #ddd;">@_alkoller.Sum(x => x.StokTon).ToString("N2")</td>
+                        <td style="text-align: right; border: 1px solid #ddd;">@_alkoller.Sum(x => x.SatisTutari).ToString("N2")</td>
+                        <td style="text-align: right; border: 1px solid #ddd;">@(_alkoller.Sum(x => x.SatisMiktari) > 0 ? (_alkoller.Sum(x => x.SatisTutari) / _alkoller.Sum(x => x.SatisMiktari)).ToString("N2") : "0")</td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+        
+        @* Tüketilen Melas *@
+        @{
+            var melasTuketim = _yanUrunler?.FirstOrDefault(x => x.Kategori == "MELAS")?.TuketimTon ?? 0;
+        }
+        <MudAlert Severity="Severity.Info" Class="mt-4" Dense="true">
+            <strong>Alkol Üretimi için Tüketilen Melas:</strong> @melasTuketim.ToString("N2") Ton
+        </MudAlert>
+    </MudPaper>
+}
+else if (!_yukleniyor)
+{
+    <MudAlert Severity="Severity.Info">
+        Rapor görüntülemek için tarih aralığı seçip "Rapor Getir" butonuna tıklayın.
+    </MudAlert>
+}
+
+@code {
+    private DateTime? _baslangicTarihi = new DateTime(DateTime.Now.Year, 1, 1);
+    private DateTime? _bitisTarihi = DateTime.Now;
+    private bool _yukleniyor = false;
+    private string? _hata = null;
+    
+    private List<YanUrunOzet>? _yanUrunler;
+    private List<AlkolOzet>? _alkoller;
+
+    private async Task RaporuGetir()
+    {
+        if (_baslangicTarihi == null || _bitisTarihi == null)
+        {
+            Snackbar.Add("Lütfen tarih aralığı seçin!", Severity.Warning);
+            return;
+        }
+
+        _yukleniyor = true;
+        _hata = null;
+        
+        try
+        {
+            var baslangic = _baslangicTarihi.Value;
+            var bitis = _bitisTarihi.Value;
+            
+            _yanUrunler = await YanUrunlerService.GetYanUrunlerOzetAsync(baslangic, bitis);
+            _alkoller = await YanUrunlerService.GetAlkolOzetAsync(baslangic, bitis);
+            
+            Snackbar.Add("Rapor başarıyla yüklendi!", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _hata = $"Rapor yüklenirken hata oluştu: {ex.Message}";
+            Snackbar.Add(_hata, Severity.Error);
+        }
+        finally
+        {
+            _yukleniyor = false;
+        }
+    }
+
+    private async Task ExcelIndir()
+    {
+        if (_yanUrunler == null || _alkoller == null) return;
+        
+        try
+        {
+            var melasTuketim = _yanUrunler.FirstOrDefault(x => x.Kategori == "MELAS")?.TuketimMiktari ?? 0;
+            var excelBytes = ExcelExportService.ExportYanUrunlerRaporu(
+                _yanUrunler, 
+                _alkoller, 
+                melasTuketim,
+                _baslangicTarihi!.Value,
+                _bitisTarihi!.Value);
+            
+            var fileName = $"YanUrunler_{_baslangicTarihi:yyyyMMdd}_{_bitisTarihi:yyyyMMdd}.xlsx";
+            
+            await JS.InvokeVoidAsync("downloadFile", fileName, Convert.ToBase64String(excelBytes), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            
+            Snackbar.Add("Excel dosyası indirildi!", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Excel oluşturulurken hata: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void SetTarihAraligi(int tip)
+    {
+        var today = DateTime.Today;
+        
+        switch (tip)
+        {
+            case 0: // Bu Ay
+                _baslangicTarihi = new DateTime(today.Year, today.Month, 1);
+                _bitisTarihi = today;
+                break;
+            case 1: // Bu Yıl
+                _baslangicTarihi = new DateTime(today.Year, 1, 1);
+                _bitisTarihi = today;
+                break;
+            case 2: // Geçen Ay
+                var gecenAy = today.AddMonths(-1);
+                _baslangicTarihi = new DateTime(gecenAy.Year, gecenAy.Month, 1);
+                _bitisTarihi = new DateTime(gecenAy.Year, gecenAy.Month, DateTime.DaysInMonth(gecenAy.Year, gecenAy.Month));
+                break;
+        }
+    }
+}

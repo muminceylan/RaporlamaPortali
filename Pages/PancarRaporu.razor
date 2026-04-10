@@ -1,0 +1,314 @@
+@page "/pancar-raporu"
+@using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
+@inject PancarRaporService PancarService
+@inject HtmlRaporService HtmlService
+@inject ZamanliMailService MailService
+@inject IServiceProvider Services
+
+<PageTitle>Pancar Raporu</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-1">
+    <MudIcon Icon="@Icons.Material.Filled.Agriculture" Class="mr-2" Style="color:#1a237e" />
+    Pancar Raporu — Kampanya @PancarRaporService.KampanyaYili()
+</MudText>
+<MudText Typo="Typo.caption" Class="mb-4" Color="Color.Secondary">
+    Afyon Şeker Fabrikası · Veri kaynağı: SabNetPMHS
+</MudText>
+
+@if (_yukleniyor)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-4" />
+    <MudText>Veriler yükleniyor...</MudText>
+}
+else
+{
+    <!-- ÖZET KARTLAR -->
+    <MudGrid Class="mb-4">
+        <MudItem xs="6" sm="4" md="2">
+            <MudPaper Elevation="2" Class="pa-3 text-center">
+                <MudText Typo="Typo.h5" Color="Color.Primary">@_ozet.ToplamCiftci.ToString("N0")</MudText>
+                <MudText Typo="Typo.caption">Toplam Çiftçi</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="4" md="2">
+            <MudPaper Elevation="2" Class="pa-3 text-center">
+                <MudText Typo="Typo.h5" Color="Color.Success">@((_ozet.ToplamTaahhut/1000).ToString("N0")) ton</MudText>
+                <MudText Typo="Typo.caption">Toplam Taahhüt</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="4" md="2">
+            <MudPaper Elevation="2" Class="pa-3 text-center">
+                <MudText Typo="Typo.h5" Color="Color.Warning">@((_ozet.ToplamNet/1000).ToString("N1")) ton</MudText>
+                <MudText Typo="Typo.caption">Gelen Net</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="4" md="2">
+            <MudPaper Elevation="2" Class="pa-3 text-center">
+                <MudText Typo="Typo.h5" Color="Color.Error">%@_ozet.OrtFireOrani.ToString("N2")</MudText>
+                <MudText Typo="Typo.caption">Fire Oranı</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="4" md="2">
+            <MudPaper Elevation="2" Class="pa-3 text-center">
+                <MudText Typo="Typo.h5" Color="Color.Info">%@_ozet.OrtPolar.ToString("N2")</MudText>
+                <MudText Typo="Typo.caption">Polar Oranı</MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <MudGrid>
+        <MudItem xs="12" sm="8" md="6" lg="5">
+            <MudCard Elevation="3">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">
+                            <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Class="mr-1" />
+                            Avans Raporu
+                        </MudText>
+                    </CardHeaderContent>
+                    <CardHeaderActions>
+                        <MudIconButton Icon="@Icons.Material.Filled.Refresh" OnClick="YenileAsync" Title="Yenile" />
+                    </CardHeaderActions>
+                </MudCardHeader>
+                <MudCardContent Class="pa-0">
+                    <table style="width:100%;border-collapse:collapse;font-size:0.88em;">
+
+                        <!-- BAŞLIK -->
+                        <tr style="background:#C62828;color:white;font-weight:bold;">
+                            <td style="padding:9px 14px;">AVANS ADI</td>
+                            <td style="padding:9px 14px;text-align:right;">TUTAR</td>
+                        </tr>
+
+                        <!-- NAKDİ AVANS -->
+                        @foreach (var r in _nakdiRows)
+                        {
+                            <tr style="border-bottom:1px solid #f0f0f0;">
+                                <td style="padding:5px 14px;">@r.Ad</td>
+                                <td style="padding:5px 14px;text-align:right;">@r.Tutar.ToString("N2")</td>
+                            </tr>
+                        }
+                        <tr style="background:#FDD835;font-weight:bold;">
+                            <td style="padding:7px 14px;">NAKDİ AVANS TOPLAMI</td>
+                            <td style="padding:7px 14px;text-align:right;">@_nakdiToplam.ToString("N2")</td>
+                        </tr>
+
+                        <!-- AYNİ AVANS -->
+                        @foreach (var r in _ayniRows)
+                        {
+                            <tr style="border-bottom:1px solid #f0f0f0;">
+                                <td style="padding:5px 14px;">@r.Ad</td>
+                                <td style="padding:5px 14px;text-align:right;">@r.Tutar.ToString("N2")</td>
+                            </tr>
+                        }
+                        <tr style="background:#388E3C;color:white;font-weight:bold;">
+                            <td style="padding:7px 14px;">AYNİ AVANS TOPLAMI</td>
+                            <td style="padding:7px 14px;text-align:right;">@_ayniToplam.ToString("N2")</td>
+                        </tr>
+
+                        <!-- PANCAR BEDELİ ÖDEMESİ -->
+                        <tr style="border-bottom:1px solid #f0f0f0;">
+                            <td style="padding:5px 14px;">PANCAR BEDELİ ÖDEMESİ</td>
+                            <td style="padding:5px 14px;text-align:right;">0,00</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid #f0f0f0;">
+                            <td style="padding:5px 14px;">Ödenen Kota Fazlası Bedeli</td>
+                            <td style="padding:5px 14px;text-align:right;">@_finans.KotaFazlasi.ToString("N2")</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid #f0f0f0;">
+                            <td style="padding:5px 14px;">Ödenen C Pancar Bedeli</td>
+                            <td style="padding:5px 14px;text-align:right;">@_finans.CPancari.ToString("N2")</td>
+                        </tr>
+                        <tr style="background:#E53935;color:white;font-weight:bold;">
+                            <td style="padding:7px 14px;">PANCAR BEDELİ ÖDEMESİ</td>
+                            <td style="padding:7px 14px;text-align:right;">@_pancarBedeliToplam.ToString("N2")</td>
+                        </tr>
+
+                        <!-- AVANS TOPLAMI -->
+                        <tr style="background:#B71C1C;color:white;font-weight:bold;font-size:1.05em;">
+                            <td style="padding:9px 14px;">AVANS TOPLAMI</td>
+                            <td style="padding:9px 14px;text-align:right;">@_avansToplami.ToString("N2")</td>
+                        </tr>
+
+                        <!-- FİNANSAL SATIRLAR -->
+                        <tr style="border-bottom:1px solid #f0f0f0;background:#fffde7;">
+                            <td style="padding:5px 14px;">AVANS KDV Sİ</td>
+                            <td style="padding:5px 14px;text-align:right;">@_finans.AvansKdv.ToString("N2")</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid #f0f0f0;">
+                            <td style="padding:5px 14px;">STOPAJ</td>
+                            <td style="padding:5px 14px;text-align:right;">@_finans.AlimStopaji.ToString("N2")</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid #f0f0f0;">
+                            <td style="padding:5px 14px;">Ödenen Nakliye Primi</td>
+                            <td style="padding:5px 14px;text-align:right;">@_finans.NakliyePrimi.ToString("N2")</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid #f0f0f0;">
+                            <td style="padding:5px 14px;">Kota Cezası</td>
+                            <td style="padding:5px 14px;text-align:right;">0,00</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid #f0f0f0;">
+                            <td style="padding:5px 14px;">Ödenen Bağkur Primi</td>
+                            <td style="padding:5px 14px;text-align:right;">@_finans.BagkurBorcu.ToString("N2")</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid #f0f0f0;">
+                            <td style="padding:5px 14px;">Borsa Tescil</td>
+                            <td style="padding:5px 14px;text-align:right;">@_finans.BorsaTescil.ToString("N2")</td>
+                        </tr>
+
+                        <!-- GENEL TOPLAM -->
+                        <tr style="background:#B71C1C;color:white;font-weight:bold;font-size:1.08em;">
+                            <td style="padding:9px 14px;">AVANSLAR GENEL TOPLAMI</td>
+                            <td style="padding:9px 14px;text-align:right;">@_genelToplam.ToString("N2")</td>
+                        </tr>
+                    </table>
+                </MudCardContent>
+                <MudCardActions>
+                    <MudButton StartIcon="@Icons.Material.Filled.Email"
+                               Color="Color.Primary" Variant="Variant.Filled"
+                               OnClick="MailGonderAsync" Disabled="_mailGonderiliyor">
+                        @(_mailGonderiliyor ? "Gönderiliyor..." : "Mail Gönder")
+                    </MudButton>
+                    @if (_mailSonucu != null)
+                    {
+                        <MudAlert Severity="@(_mailBasarili ? Severity.Success : Severity.Error)"
+                                  Dense="true" Class="ml-2">
+                            @_mailSonucu
+                        </MudAlert>
+                    }
+                </MudCardActions>
+            </MudCard>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    private bool    _yukleniyor       = true;
+    private bool    _mailGonderiliyor = false;
+    private bool    _mailBasarili     = false;
+    private string? _mailSonucu       = null;
+
+    private List<PancarAvansKayit> _avans  = new();
+    private PancarFinansOzet       _finans = new();
+    private PancarOzetIstatistik   _ozet   = new();
+
+    // Hesaplanan satır listeleri
+    private record AvansRow(string Ad, decimal Tutar);
+    private List<AvansRow> _nakdiRows = new();
+    private List<AvansRow> _ayniRows  = new();
+
+    private decimal _nakdiToplam;
+    private decimal _ayniToplam;
+    private decimal _pancarBedeliToplam;
+    private decimal _avansToplami;
+    private decimal _genelToplam;
+
+    // Nakdi avans grubunun gösterim adı ve sıralama
+    private static readonly (string Grup, string Ad, int Sira)[] NakdiSira = {
+        ("Pancar Avansı",         "Pancar Avansı",         1),
+        ("Hasat Makinesi Avansı", "Hasat Makinesi Avansı", 2),
+        ("1. Avans",              "1. Avans",              3),
+        ("2. Avans",              "2. Avans",              4),
+        ("3. Avans",              "3. Avans",              5),
+        ("4. Avans",              "4. Avans",              6),
+        ("5. Avans",              "5. Avans",              7),
+        ("6. Avans",              "6. Avans",              8),
+        ("Küspe",                 "Küspe Avansı",          9),
+        ("Söküm Avansı",          "Söküm Avansı",         10),
+    };
+
+    // Ayni avans grubunun gösterim adı ve sıralama
+    private static readonly (string Grup, string Ad, int Sira)[] AyniSira = {
+        ("Gübre",                      "Gübre Avansı",                  1),
+        ("İlaç",                       "İlaç Avansı",                   2),
+        ("Tohum",                      "Tohum Avansı",                  3),
+        ("Çay",                        "Çay Avansı",                    4),
+        ("Şeker",                      "Şeker Avansı",                  5),
+        ("Küspe",                      "Küspe Avansı",                  6),
+        ("Fatura Edilen Söküm Avansı", "Fatura Edilen Söküm Avansı",    7),
+        ("Söküm Avansı",               "Söküm Avansı",                  8),
+    };
+
+    protected override async Task OnInitializedAsync() => await YenileAsync();
+
+    private async Task YenileAsync()
+    {
+        _yukleniyor = true;
+        StateHasChanged();
+
+        _ozet   = await PancarService.GetOzetIstatistikAsync();
+        _avans  = await PancarService.GetAvansAsync();
+        _finans = await PancarService.GetFinansOzetAsync();
+
+        Hesapla();
+        _yukleniyor = false;
+    }
+
+    private void Hesapla()
+    {
+        var nakdiDict = _avans.Where(x => x.KaynakEvrak.Contains("NAKD"))
+                              .ToDictionary(x => x.AvansGrubu.Trim(), x => x.TutarToplami);
+        var ayniDict  = _avans.Where(x => x.KaynakEvrak.Contains("AYN"))
+                              .ToDictionary(x => x.AvansGrubu.Trim(), x => x.TutarToplami);
+
+        decimal Get(Dictionary<string, decimal> d, string k) =>
+            d.TryGetValue(k, out var v) ? v : 0m;
+
+        // NAKDİ satırları — önce predefined sıraya göre, sonra kalanlar
+        _nakdiRows = new();
+        var nakdiEklenmiş = new HashSet<string>();
+        foreach (var (grup, ad, _) in NakdiSira)
+        {
+            _nakdiRows.Add(new AvansRow(ad, Get(nakdiDict, grup)));
+            nakdiEklenmiş.Add(grup);
+        }
+        foreach (var kv in nakdiDict.Where(kv => !nakdiEklenmiş.Contains(kv.Key)))
+            _nakdiRows.Add(new AvansRow(kv.Key, kv.Value));
+
+        // AYNİ satırları
+        _ayniRows = new();
+        var ayniEklenmiş = new HashSet<string>();
+        foreach (var (grup, ad, _) in AyniSira)
+        {
+            _ayniRows.Add(new AvansRow(ad, Get(ayniDict, grup)));
+            ayniEklenmiş.Add(grup);
+        }
+        foreach (var kv in ayniDict.Where(kv => !ayniEklenmiş.Contains(kv.Key)))
+            _ayniRows.Add(new AvansRow(kv.Key, kv.Value));
+
+        _nakdiToplam       = nakdiDict.Values.Sum();
+        _ayniToplam        = ayniDict.Values.Sum();
+        _pancarBedeliToplam = _finans.KotaFazlasi + _finans.CPancari;
+        _avansToplami      = _nakdiToplam + _ayniToplam + _pancarBedeliToplam;
+        _genelToplam       = _avansToplami
+                            + _finans.AvansKdv
+                            + _finans.AlimStopaji
+                            + _finans.NakliyePrimi
+                            + _finans.BagkurBorcu
+                            + _finans.BorsaTescil;
+    }
+
+    private async Task MailGonderAsync()
+    {
+        _mailGonderiliyor = true;
+        _mailSonucu = null;
+        StateHasChanged();
+
+        try
+        {
+            using var scope = Services.CreateScope();
+            var sonuc = await MailService.PancarRaporManuelGonder(scope.ServiceProvider);
+            _mailBasarili = sonuc;
+            _mailSonucu   = sonuc ? "Mail başarıyla gönderildi!" : "Mail gönderilemedi.";
+        }
+        catch (Exception ex)
+        {
+            _mailBasarili = false;
+            _mailSonucu   = "Hata: " + ex.Message;
+        }
+
+        _mailGonderiliyor = false;
+        await Task.Delay(5000);
+        _mailSonucu = null;
+    }
+}

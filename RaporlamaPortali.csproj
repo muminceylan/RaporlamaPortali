@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>RaporlamaPortali</RootNamespace>
+    
+    <!-- Tek EXE dosyası olarak derle -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    
+    <!-- Uygulama bilgileri -->
+    <AssemblyName>RaporlamaPortali</AssemblyName>
+    <Product>Raporlama Portali</Product>
+    <Company>Doğuş Çay - Afyon Şeker Fabrikası</Company>
+    <Authors>Mumin Ceylan</Authors>
+    <Description>Yan Ürünler, Şeker Satış ve Pancar Ödeme Raporları</Description>
+    <Version>1.0.0</Version>
+    
+    <!-- Konsol penceresi gizle (Windows uygulaması gibi) -->
+    <OutputType>WinExe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MudBlazor" Version="6.19.1" />
+    <PackageReference Include="Dapper" Version="2.1.28" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.0" />
+    <PackageReference Include="ClosedXML" Version="0.102.2" />
+    <PackageReference Include="QRCoder" Version="1.6.0" />
+  </ItemGroup>
+
+  <!-- WhatsApp Node.js dosyaları (exe yanına kopyalanır, node_modules hariç) -->
+  <ItemGroup>
+    <None Update="WhatsApp\index.js"     CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" />
+    <Content Update="WhatsApp\package.json" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" />
+  </ItemGroup>
+
+</Project>

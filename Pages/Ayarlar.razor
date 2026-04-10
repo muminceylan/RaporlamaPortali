@@ -1,0 +1,187 @@
+@page "/ayarlar"
+@inject DatabaseService DatabaseService
+@inject ISnackbar Snackbar
+
+<PageTitle>Ayarlar</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.Settings" Class="mr-2" />
+    Sistem Ayarları
+</MudText>
+
+<MudGrid>
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.h6" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.Storage" Class="mr-2" />
+                Veritabanı Bağlantısı
+            </MudText>
+            
+            <MudTextField Label="Connection String" 
+                          Value="@_maskedConnectionString" 
+                          ReadOnly="true" 
+                          Variant="Variant.Outlined"
+                          FullWidth="true"
+                          Class="mb-3" />
+            
+            <MudTextField Label="Firma No" 
+                          Value="@DatabaseService.FirmaNo.ToString()" 
+                          ReadOnly="true" 
+                          Variant="Variant.Outlined"
+                          Class="mb-3" />
+            
+            <MudButton Variant="Variant.Filled" 
+                       Color="Color.Primary" 
+                       OnClick="TestConnection"
+                       Disabled="@_testEdiliyor"
+                       FullWidth="true">
+                @if (_testEdiliyor)
+                {
+                    <MudProgressCircular Class="mr-2" Size="Size.Small" Indeterminate="true" />
+                }
+                <MudIcon Icon="@Icons.Material.Filled.NetworkCheck" Class="mr-1" />
+                Bağlantıyı Test Et
+            </MudButton>
+            
+            @if (_baglantıSonucu != null)
+            {
+                <MudAlert Severity="@(_baglantıBasarili ? Severity.Success : Severity.Error)" Class="mt-3">
+                    @_baglantıSonucu
+                </MudAlert>
+            }
+        </MudPaper>
+    </MudItem>
+    
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.h6" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.Info" Class="mr-2" />
+                Uygulama Bilgileri
+            </MudText>
+            
+            <MudSimpleTable Dense="true" Hover="true">
+                <tbody>
+                    <tr>
+                        <td><strong>Uygulama Adı</strong></td>
+                        <td>Raporlama Portali</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Versiyon</strong></td>
+                        <td>1.0.0</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Framework</strong></td>
+                        <td>.NET 8 Blazor Server</td>
+                    </tr>
+                    <tr>
+                        <td><strong>UI Kütüphanesi</strong></td>
+                        <td>MudBlazor 6.19</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Veritabanı</strong></td>
+                        <td>SQL Server (Logo ERP)</td>
+                    </tr>
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+    
+    <MudItem xs="12">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.h6" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.TableChart" Class="mr-2" />
+                Logo ERP Tablo Bilgileri
+            </MudText>
+            
+            <MudText Typo="Typo.body2" Class="mb-2">
+                Bu uygulama aşağıdaki Logo ERP tablolarını kullanmaktadır:
+            </MudText>
+            
+            <MudSimpleTable Dense="true" Hover="true" Striped="true">
+                <thead>
+                    <tr>
+                        <th>Tablo Adı</th>
+                        <th>Açıklama</th>
+                        <th>Kullanım</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>@DatabaseService.GetTableName("ITEMS")</code></td>
+                        <td>Malzeme Kartları</td>
+                        <td>Ürün bilgileri, malzeme kodları</td>
+                    </tr>
+                    <tr>
+                        <td><code>@DatabaseService.GetTableName("STFICHE")</code></td>
+                        <td>Stok Fiş Başlıkları</td>
+                        <td>Satış, üretim, iade fişleri</td>
+                    </tr>
+                    <tr>
+                        <td><code>@DatabaseService.GetTableName("STLINE")</code></td>
+                        <td>Stok Fiş Satırları</td>
+                        <td>Fiş detayları, miktar ve tutarlar</td>
+                    </tr>
+                    <tr>
+                        <td><code>@DatabaseService.GetTableName("CLCARD")</code></td>
+                        <td>Cari Hesap Kartları</td>
+                        <td>Müşteri/tedarikçi bilgileri</td>
+                    </tr>
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private bool _testEdiliyor = false;
+    private string? _baglantıSonucu = null;
+    private bool _baglantıBasarili = false;
+    
+    private string _maskedConnectionString => MaskConnectionString(DatabaseService.ConnectionString);
+    
+    private string MaskConnectionString(string connStr)
+    {
+        // Şifreyi gizle
+        var parts = connStr.Split(';');
+        var masked = parts.Select(p => 
+        {
+            if (p.TrimStart().StartsWith("Password", StringComparison.OrdinalIgnoreCase) ||
+                p.TrimStart().StartsWith("Pwd", StringComparison.OrdinalIgnoreCase))
+            {
+                var eqIndex = p.IndexOf('=');
+                if (eqIndex > 0)
+                    return p.Substring(0, eqIndex + 1) + "********";
+            }
+            return p;
+        });
+        return string.Join(";", masked);
+    }
+    
+    private async Task TestConnection()
+    {
+        _testEdiliyor = true;
+        _baglantıSonucu = null;
+        
+        try
+        {
+            var (success, message) = await DatabaseService.TestConnectionAsync();
+            _baglantıBasarili = success;
+            _baglantıSonucu = message;
+            
+            if (success)
+                Snackbar.Add("Veritabanı bağlantısı başarılı!", Severity.Success);
+            else
+                Snackbar.Add("Bağlantı başarısız!", Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            _baglantıBasarili = false;
+            _baglantıSonucu = $"Hata: {ex.Message}";
+            Snackbar.Add("Bağlantı testi sırasında hata oluştu!", Severity.Error);
+        }
+        finally
+        {
+            _testEdiliyor = false;
+        }
+    }
+}

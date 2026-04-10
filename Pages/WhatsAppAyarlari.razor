@@ -1,0 +1,366 @@
+@page "/whatsapp-ayarlari"
+@using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
+@inject WhatsAppAyarlariService AyarlarService
+@inject WhatsAppProcessService  ProcessService
+@implements IDisposable
+
+<PageTitle>WhatsApp Ayarları</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.Chat" Class="mr-2" Style="color:#25D366" />
+    WhatsApp Rapor Botu
+</MudText>
+
+<!-- DURUM KARTI -->
+<MudCard Class="mb-4" Elevation="2">
+    <MudCardContent>
+        <MudGrid AlignItems="AlignItems.Center">
+            <MudItem xs="12" md="6">
+                <MudText Typo="Typo.h6" Class="mb-2">Bağlantı Durumu</MudText>
+                @{
+                    var (renk, ikon, etiket) = _durum.Durum switch
+                    {
+                        "BAGLI"       => (Color.Success, Icons.Material.Filled.CheckCircle,    "Bağlı"),
+                        "QR_BEKLIYOR" => (Color.Warning, Icons.Material.Filled.QrCode2,        "QR Okutun"),
+                        "HATA"        => (Color.Error,   Icons.Material.Filled.Error,           "Hata"),
+                        _             => (Color.Default, Icons.Material.Filled.RadioButtonUnchecked, "Bağlı Değil")
+                    };
+                }
+                <MudChip T="string" Color="@renk" Icon="@ikon" Size="Size.Large">@etiket</MudChip>
+
+                @if (_durum.Guncelleme != DateTime.MinValue)
+                {
+                    <MudText Typo="Typo.caption" Class="ml-2">
+                        @_durum.Guncelleme.ToLocalTime().ToString("HH:mm:ss")
+                    </MudText>
+                }
+
+                @if (ProcessService.SonHata != null)
+                {
+                    <MudAlert Severity="Severity.Error" Class="mt-2">@ProcessService.SonHata</MudAlert>
+                }
+            </MudItem>
+
+            <MudItem xs="12" md="6" Class="d-flex justify-end gap-2">
+                @if (ProcessService.CalisiyorMu)
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Warning"
+                               StartIcon="@Icons.Material.Filled.Refresh"
+                               OnClick="YenidenBaslatAsync">Yeniden Başlat</MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Error"
+                               StartIcon="@Icons.Material.Filled.Stop"
+                               OnClick="DurdurAsync">Durdur</MudButton>
+                }
+                else
+                {
+                    <MudButton Variant="Variant.Filled" Color="Color.Success"
+                               StartIcon="@Icons.Material.Filled.PlayArrow"
+                               OnClick="BaslatAsync">Başlat</MudButton>
+                }
+            </MudItem>
+        </MudGrid>
+
+        <!-- QR KOD -->
+        @if (_durum.Durum == "QR_BEKLIYOR" && !string.IsNullOrEmpty(_durum.QrString))
+        {
+            var qrDataUrl = WhatsAppAyarlariService.QrStringToDataUrl(_durum.QrString);
+            <MudDivider Class="my-3" />
+            <MudText Typo="Typo.body1" Class="mb-2">
+                <MudIcon Icon="@Icons.Material.Filled.PhoneIphone" Class="mr-1" />
+                WhatsApp uygulamasından bu QR kodu okutun:
+            </MudText>
+            @if (!string.IsNullOrEmpty(qrDataUrl))
+            {
+                <img src="@qrDataUrl" style="width:220px;height:220px;border:2px solid #ddd;border-radius:8px;" />
+            }
+        }
+    </MudCardContent>
+</MudCard>
+
+<MudGrid>
+    <!-- YETKİLİ NUMARALAR -->
+    <MudItem xs="12" md="6">
+        <MudCard Elevation="2">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">
+                        <MudIcon Icon="@Icons.Material.Filled.Phone" Class="mr-1" />
+                        Yetkili Numaralar
+                    </MudText>
+                    <MudText Typo="Typo.caption">Ülke kodu dahil (örn: 905538828703)</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudGrid>
+                    <MudItem xs="9">
+                        <MudTextField @bind-Value="_yeniNumara"
+                                      Label="Numara ekle"
+                                      Variant="Variant.Outlined"
+                                      Placeholder="905XXXXXXXXX"
+                                      OnKeyDown="NumaraKeyDown"
+                                      Immediate="true" />
+                    </MudItem>
+                    <MudItem xs="3" Class="d-flex align-center">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                   OnClick="NumaraEkle" FullWidth="true">Ekle</MudButton>
+                    </MudItem>
+                </MudGrid>
+
+                <MudList T="string" Dense="true" Class="mt-2">
+                    @foreach (var numara in _ayarlar.YetkiliNumaralar)
+                    {
+                        var n = numara;
+                        <MudListItem T="string">
+                            <div class="d-flex align-center justify-space-between">
+                                <MudText>@n</MudText>
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                               Color="Color.Error" Size="Size.Small"
+                                               OnClick="@(() => NumaraSil(n))" />
+                            </div>
+                        </MudListItem>
+                    }
+                </MudList>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <!-- TETİKLEYİCİ KELİMELER -->
+    <MudItem xs="12" md="6">
+        <MudCard Elevation="2">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">
+                        <MudIcon Icon="@Icons.Material.Filled.TextFields" Class="mr-1" />
+                        Tetikleyici Kelimeler
+                    </MudText>
+                    <MudText Typo="Typo.caption">Bu mesaj gelince rapor gönderilir</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudGrid>
+                    <MudItem xs="9">
+                        <MudTextField @bind-Value="_yeniKelime"
+                                      Label="Kelime ekle"
+                                      Variant="Variant.Outlined"
+                                      Placeholder="tüm rapor"
+                                      OnKeyDown="KelimeKeyDown"
+                                      Immediate="true" />
+                    </MudItem>
+                    <MudItem xs="3" Class="d-flex align-center">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                   OnClick="KelimeEkle" FullWidth="true">Ekle</MudButton>
+                    </MudItem>
+                </MudGrid>
+
+                <MudList T="string" Dense="true" Class="mt-2">
+                    @foreach (var kelime in _ayarlar.Tetikleyiciler)
+                    {
+                        var k = kelime;
+                        <MudListItem T="string">
+                            <div class="d-flex align-center justify-space-between">
+                                <MudChip T="string" Size="Size.Small" Color="Color.Primary">@k</MudChip>
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                               Color="Color.Error" Size="Size.Small"
+                                               OnClick="@(() => KelimeSil(k))" />
+                            </div>
+                        </MudListItem>
+                    }
+                </MudList>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <!-- GELIŞMIŞ AYARLAR -->
+    <MudItem xs="12">
+        <MudCard Elevation="2">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">
+                        <MudIcon Icon="@Icons.Material.Filled.Settings" Class="mr-1" />
+                        Gelişmiş Ayarlar
+                    </MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudGrid>
+                    <MudItem xs="12" md="6">
+                        <MudTextField @bind-Value="_ayarlar.RaporApiUrl"
+                                      Label="Rapor API Adresi"
+                                      Variant="Variant.Outlined"
+                                      HelperText="SQL raporunun alındığı adres" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudTextField @bind-Value="_ayarlar.ExcelDosyasi"
+                                      Label="Excel Yedek Dosyası (tam yol)"
+                                      Variant="Variant.Outlined"
+                                      HelperText="API kapalıyken kullanılır" />
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudSwitch @bind-Value="_ayarlar.OtomatikBaslat"
+                                   Label="Portal açılınca WhatsApp botunu otomatik başlat"
+                                   Color="Color.Success" />
+                    </MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+<div class="mt-4 d-flex gap-2">
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Save"
+               OnClick="KaydetAsync">Kaydet</MudButton>
+    @if (_kaydedildi)
+    {
+        <MudAlert Severity="Severity.Success" Dense="true">Ayarlar kaydedildi!</MudAlert>
+    }
+</div>
+
+<!-- RAPOR LOG -->
+<MudCard Class="mt-4" Elevation="2">
+    <MudCardHeader>
+        <CardHeaderContent>
+            <MudText Typo="Typo.h6">
+                <MudIcon Icon="@Icons.Material.Filled.History" Class="mr-1" />
+                Rapor Talep Geçmişi
+            </MudText>
+        </CardHeaderContent>
+        <CardHeaderActions>
+            <MudIconButton Icon="@Icons.Material.Filled.Refresh" OnClick="LogYenile" Title="Yenile" />
+        </CardHeaderActions>
+    </MudCardHeader>
+    <MudCardContent>
+        @if (_loglar.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Henüz rapor talebi gelmedi.</MudText>
+        }
+        else
+        {
+            <MudTable Items="_loglar" Dense="true" Striped="true" Hover="true">
+                <HeaderContent>
+                    <MudTh>Tarih / Saat</MudTh>
+                    <MudTh>Numara</MudTh>
+                    <MudTh>Mesaj</MudTh>
+                    <MudTh>Sonuç</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.Tarih.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss")</MudTd>
+                    <MudTd>@context.Numara</MudTd>
+                    <MudTd>@context.Mesaj</MudTd>
+                    <MudTd>
+                        @if (context.Sonuc == "Gonderildi")
+                        {
+                            <MudChip T="string" Color="Color.Success" Size="Size.Small">Gönderildi</MudChip>
+                        }
+                        else if (context.Sonuc.StartsWith("HATA"))
+                        {
+                            <MudChip T="string" Color="Color.Error" Size="Size.Small">@context.Sonuc</MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Color="Color.Warning" Size="Size.Small">@context.Sonuc</MudChip>
+                        }
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudCardContent>
+</MudCard>
+
+@code {
+    private WhatsAppAyarlariModel    _ayarlar  = new();
+    private WhatsAppDurumModel       _durum    = new();
+    private List<WhatsAppLogKayit>   _loglar   = new();
+    private string  _yeniNumara  = "";
+    private string  _yeniKelime  = "";
+    private bool    _kaydedildi  = false;
+    private System.Threading.Timer? _timer;
+
+    protected override void OnInitialized()
+    {
+        _ayarlar = AyarlarService.GetAyarlar();
+        _durum   = AyarlarService.GetDurum();
+        _loglar  = AyarlarService.GetLoglar();
+
+        // Her 3 saniyede durumu ve logları güncelle
+        _timer = new System.Threading.Timer(async _ =>
+        {
+            _durum  = AyarlarService.GetDurum();
+            _loglar = AyarlarService.GetLoglar();
+            await InvokeAsync(StateHasChanged);
+        }, null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3));
+    }
+
+    private void NumaraEkle()
+    {
+        var numara = _yeniNumara.Trim().Replace(" ", "").Replace("+", "");
+        if (!string.IsNullOrEmpty(numara) && !_ayarlar.YetkiliNumaralar.Contains(numara))
+        {
+            _ayarlar.YetkiliNumaralar.Add(numara);
+        }
+        _yeniNumara = "";
+    }
+
+    private void NumaraSil(string numara) => _ayarlar.YetkiliNumaralar.Remove(numara);
+
+    private void KelimeEkle()
+    {
+        var kelime = _yeniKelime.Trim();
+        if (!string.IsNullOrEmpty(kelime) && !_ayarlar.Tetikleyiciler.Contains(kelime))
+        {
+            _ayarlar.Tetikleyiciler.Add(kelime);
+        }
+        _yeniKelime = "";
+    }
+
+    private void KelimeSil(string kelime) => _ayarlar.Tetikleyiciler.Remove(kelime);
+
+    private void NumaraKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") NumaraEkle();
+    }
+
+    private void KelimeKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") KelimeEkle();
+    }
+
+    private async Task KaydetAsync()
+    {
+        AyarlarService.Kaydet(_ayarlar);
+        _kaydedildi = true;
+        StateHasChanged();
+        await Task.Delay(3000);
+        _kaydedildi = false;
+    }
+
+    private async Task BaslatAsync()
+    {
+        await ProcessService.BotBaslatAsync();
+        StateHasChanged();
+    }
+
+    private void DurdurAsync()
+    {
+        ProcessService.BotDurdur();
+        StateHasChanged();
+    }
+
+    private async Task YenidenBaslatAsync()
+    {
+        await ProcessService.BotYenidenBaslatAsync();
+        StateHasChanged();
+    }
+
+    private void LogYenile()
+    {
+        _loglar = AyarlarService.GetLoglar();
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+    }
+}

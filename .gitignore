@@ -1,0 +1,15 @@
+bin/
+obj/
+publish/
+*.user
+.vs/
+.idea/
+*.suo
+*.log
+WhatsApp/.wwebjs_auth/
+WhatsApp/.wwebjs_cache/
+WhatsApp/node_modules/
+WhatsApp/screenshots/
+WhatsApp/whatsapp-status.json
+WhatsApp/whatsapp-log.json
+appsettings.Development.json
