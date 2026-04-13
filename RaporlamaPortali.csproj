@@ -32,10 +32,10 @@
     <PackageReference Include="QRCoder" Version="1.6.0" />
   </ItemGroup>
 
-  <!-- WhatsApp Node.js dosyaları (exe yanına kopyalanır, node_modules hariç) -->
+  <!-- WhatsApp index.js publish'e dahil et -->
   <ItemGroup>
-    <Content Include="WhatsApp\index.js"   CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" />
-    <Content Include="WhatsApp\package.json" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" />
+    <Content Include="WhatsApp\index.js" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" />
+    <Content Update="WhatsApp\package.json" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" />
   </ItemGroup>
 
 </Project>
