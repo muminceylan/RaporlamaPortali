@@ -53,6 +53,28 @@ public class PancarCiftciDetay
     public decimal OrtalamaPolar { get; set; }
 }
 
+public class PancarIcmalDetay
+{
+    // KarakanRaporu_Detay_2026'dan genel özetler
+    public decimal NetMiktarTon       { get; set; }   // SUM(NetMiktar)/1000
+    public decimal APancariTon        { get; set; }   // SUM(APancari)/1000
+    public decimal APancariBedeli     { get; set; }
+    public decimal CPancariTon        { get; set; }
+    public decimal CPancariBedeli     { get; set; }
+    public decimal KotaFazlasiTon     { get; set; }
+    public decimal KotaFazlasiBedeli  { get; set; }
+    public decimal KuspePrimi         { get; set; }   // KuspePrimiA + KuspePrimiC
+    public decimal KotaTamamlamaPrimi { get; set; }
+    public decimal MustahsilNakliye   { get; set; }   // OdenenNakliyePrimi
+
+    // Hesaplanan
+    public decimal PancarBedeliToplam => APancariBedeli + CPancariBedeli + KotaFazlasiBedeli;
+    public decimal ABirimFiyati       => APancariTon    > 0 ? APancariBedeli    / APancariTon    : 0;
+    public decimal CBirimFiyati       => CPancariTon    > 0 ? CPancariBedeli    / CPancariTon    : 0;
+    public decimal KFBirimFiyati      => KotaFazlasiTon > 0 ? KotaFazlasiBedeli / KotaFazlasiTon : 0;
+    public decimal HakedisToplamı     => PancarBedeliToplam + MustahsilNakliye + KuspePrimi + KotaTamamlamaPrimi;
+}
+
 public class PancarDetayTam
 {
     public string  HesapKodu         { get; set; } = "";

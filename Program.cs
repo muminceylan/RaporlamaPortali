@@ -1,6 +1,9 @@
 using MudBlazor.Services;
 using RaporlamaPortali.Services;
 using System.Diagnostics;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication;
 
 var exeDir = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
@@ -17,9 +20,25 @@ builder.WebHost.ConfigureKestrel(options =>
 });
 
 // Add services to the container.
-builder.Services.AddRazorPages();
+builder.Services.AddRazorPages(options =>
+{
+    // Tüm Razor Pages giriş gerektirsin, sadece Giris sayfası anonim
+    options.Conventions.AuthorizeFolder("/");
+    options.Conventions.AllowAnonymousToPage("/Giris");
+});
 builder.Services.AddServerSideBlazor();
 builder.Services.AddMudServices();
+
+// Cookie Authentication
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.LoginPath = "/giris";
+        options.Cookie.Name = "RaporPortalAuth";
+        options.ExpireTimeSpan = TimeSpan.FromDays(7);
+        options.SlidingExpiration = true;
+    });
+builder.Services.AddAuthorization();
 
 // Database connection
 builder.Services.AddSingleton<DatabaseService>();
@@ -42,6 +61,9 @@ builder.Services.AddSingleton<WhatsAppAyarlariService>();
 builder.Services.AddSingleton<WhatsAppProcessService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<WhatsAppProcessService>());
 
+// Giriş servisi
+builder.Services.AddSingleton<GirisAyarlariService>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -52,9 +74,37 @@ if (!app.Environment.IsDevelopment())
 
 app.UseStaticFiles();
 app.UseRouting();
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapBlazorHub();
-app.MapFallbackToPage("/_Host");
+app.MapRazorPages();
+
+// Giriş endpoint'i (anonim)
+app.MapPost("/giris-yap", async (HttpContext ctx, GirisAyarlariService girisService) =>
+{
+    var form = await ctx.Request.ReadFormAsync();
+    var kullanici = form["kullanici"].FirstOrDefault() ?? "";
+    var sifre     = form["sifre"].FirstOrDefault() ?? "";
+    var returnUrl = form["returnUrl"].FirstOrDefault() ?? "/";
+    if (!returnUrl.StartsWith("/")) returnUrl = "/";
+
+    if (girisService.GirisKontrol(kullanici, sifre))
+    {
+        var claims   = new List<Claim> { new Claim(ClaimTypes.Name, kullanici) };
+        var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+        await ctx.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity));
+        return Results.Redirect(returnUrl);
+    }
+    return Results.Redirect("/giris?hata=1");
+}).AllowAnonymous();
+
+// Çıkış endpoint'i
+app.MapGet("/cikis", async (HttpContext ctx) =>
+{
+    await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+    return Results.Redirect("/giris");
+}).AllowAnonymous();
 
 // WhatsApp entegrasyonu için rapor API endpoint'i
 // GET /api/rapor → Yan Ürünler + Şeker HTML raporunu döndürür
@@ -100,7 +150,7 @@ app.MapGet("/api/rapor", async (HttpContext context) =>
         context.Response.StatusCode = 500;
         await context.Response.WriteAsync("Hata: " + ex.Message);
     }
-});
+}).AllowAnonymous();
 
 // Pancar raporu API endpoint'i
 // GET /api/pancar-raporu → Pancar İCMAL + Çiftçi listesi HTML raporunu döndürür
@@ -112,12 +162,16 @@ app.MapGet("/api/pancar-raporu", async (HttpContext context) =>
         var pancarService = scope.ServiceProvider.GetRequiredService<PancarRaporService>();
         var htmlService   = scope.ServiceProvider.GetRequiredService<HtmlRaporService>();
 
-        var icmal     = await pancarService.GetIcmalAsync();
-        var ciftciler = await pancarService.GetCiftciListesiAsync();
-        var avans     = await pancarService.GetAvansAsync();
-        var finans    = await pancarService.GetFinansOzetAsync();
+        var t1 = pancarService.GetIcmalAsync();
+        var t2 = pancarService.GetCiftciListesiAsync();
+        var t3 = pancarService.GetAvansAsync();
+        var t4 = pancarService.GetFinansOzetAsync();
+        var t5 = pancarService.GetIcmalDetayAsync();
+        var t6 = pancarService.GetOzetIstatistikAsync();
+        await Task.WhenAll(t1, t2, t3, t4, t5, t6);
 
-        var html = htmlService.PancarRaporHtmlOlustur(icmal, ciftciler, DateTime.Today, avans, finans);
+        var html = htmlService.PancarRaporHtmlOlustur(
+            t1.Result, t2.Result, DateTime.Today, t3.Result, t4.Result, t5.Result, t6.Result);
         context.Response.ContentType = "text/html; charset=utf-8";
         await context.Response.WriteAsync(html);
     }
@@ -126,7 +180,10 @@ app.MapGet("/api/pancar-raporu", async (HttpContext context) =>
         context.Response.StatusCode = 500;
         await context.Response.WriteAsync("Hata: " + ex.Message);
     }
-});
+}).AllowAnonymous();
+
+// Blazor fallback — giriş zorunlu
+app.MapFallbackToPage("/_Host").RequireAuthorization();
 
 // Uygulama başladığında tarayıcıyı otomatik aç
 var url = "http://localhost:5050";

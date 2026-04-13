@@ -1,5 +1,6 @@
 @page "/ayarlar"
 @inject DatabaseService DatabaseService
+@inject GirisAyarlariService GirisAyarlariService
 @inject ISnackbar Snackbar
 
 <PageTitle>Ayarlar</PageTitle>
@@ -52,6 +53,48 @@
         </MudPaper>
     </MudItem>
     
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.h6" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.Lock" Class="mr-2" />
+                Giriş Bilgileri
+            </MudText>
+
+            <MudTextField Label="Kullanıcı Adı"
+                          @bind-Value="_yeniKullanici"
+                          Variant="Variant.Outlined"
+                          FullWidth="true"
+                          Class="mb-3" />
+
+            <MudTextField Label="Yeni Şifre"
+                          @bind-Value="_yeniSifre"
+                          InputType="InputType.Password"
+                          Variant="Variant.Outlined"
+                          FullWidth="true"
+                          Class="mb-3" />
+
+            <MudTextField Label="Şifreyi Onayla"
+                          @bind-Value="_sifretekrar"
+                          InputType="InputType.Password"
+                          Variant="Variant.Outlined"
+                          FullWidth="true"
+                          Class="mb-3" />
+
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       OnClick="SifreDegistir"
+                       Disabled="@_sifreKaydediliyor"
+                       FullWidth="true">
+                @if (_sifreKaydediliyor)
+                {
+                    <MudProgressCircular Class="mr-2" Size="Size.Small" Indeterminate="true" />
+                }
+                <MudIcon Icon="@Icons.Material.Filled.Save" Class="mr-1" />
+                Kaydet
+            </MudButton>
+        </MudPaper>
+    </MudItem>
+
     <MudItem xs="12" md="6">
         <MudPaper Class="pa-4">
             <MudText Typo="Typo.h6" Class="mb-3">
@@ -136,6 +179,58 @@
     private bool _testEdiliyor = false;
     private string? _baglantıSonucu = null;
     private bool _baglantıBasarili = false;
+
+    private string _yeniKullanici = "";
+    private string _yeniSifre = "";
+    private string _sifretekrar = "";
+    private bool _sifreKaydediliyor = false;
+
+    protected override void OnInitialized()
+    {
+        var ayarlar = GirisAyarlariService.GetAyarlar();
+        _yeniKullanici = ayarlar.KullaniciAdi;
+    }
+
+    private async Task SifreDegistir()
+    {
+        if (string.IsNullOrWhiteSpace(_yeniKullanici))
+        {
+            Snackbar.Add("Kullanıcı adı boş olamaz!", Severity.Warning);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_yeniSifre))
+        {
+            Snackbar.Add("Şifre boş olamaz!", Severity.Warning);
+            return;
+        }
+        if (_yeniSifre != _sifretekrar)
+        {
+            Snackbar.Add("Şifreler eşleşmiyor!", Severity.Error);
+            return;
+        }
+
+        _sifreKaydediliyor = true;
+        try
+        {
+            var basarili = await GirisAyarlariService.SifreDegistirAsync(_yeniKullanici, _yeniSifre);
+            if (basarili)
+            {
+                Snackbar.Add("Giriş bilgileri güncellendi!", Severity.Success);
+                _yeniSifre = "";
+                _sifretekrar = "";
+            }
+            else
+                Snackbar.Add("Kaydetme başarısız!", Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Hata: " + ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _sifreKaydediliyor = false;
+        }
+    }
     
     private string _maskedConnectionString => MaskConnectionString(DatabaseService.ConnectionString);
     

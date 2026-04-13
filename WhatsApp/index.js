@@ -99,6 +99,8 @@ client.on('ready', () => {
     config = configOku();
     console.log('[WhatsApp] Baglandi!');
     durumYaz('BAGLI', '');
+    // Puppeteer browser'ı önceden başlat — ilk rapor talebinde gecikme olmasın
+    browserGetir().catch(err => console.error('[Puppeteer] On-hazirlik hatasi:', err.message));
 });
 
 client.on('disconnected', (reason) => {
@@ -145,7 +147,7 @@ client.on('message', async (message) => {
             try {
                 const pancarApiUrl = (config.raporApiUrl || 'http://localhost:5050/api/rapor')
                     .replace('/api/rapor', '/api/pancar-raporu');
-                const pancarHtml = await sqlRaporuGetir(pancarApiUrl);
+                const pancarHtml = await sqlRaporuGetirRetry(pancarApiUrl);
                 if (pancarHtml) {
                     await htmldenPngOlusturVeGonder(message, pancarHtml, 'pancar');
                     logYaz(gonderenNumara, message.body, 'Gonderildi');
@@ -185,7 +187,7 @@ async function raporOlusturVeGonder(message) {
     const apiUrl = config.raporApiUrl || 'http://localhost:5050/api/rapor';
 
     console.log('SQL raporu deneniyor:', apiUrl);
-    const sqlHtml = await sqlRaporuGetir(apiUrl);
+    const sqlHtml = await sqlRaporuGetirRetry(apiUrl);
 
     if (sqlHtml) {
         console.log('SQL raporu alindi, PNG ye cevriliyor...');
@@ -206,9 +208,9 @@ async function raporOlusturVeGonder(message) {
 // SQL RAPORU
 // =====================================================
 
-function sqlRaporuGetir(apiUrl) {
+function sqlRaporuGetir(apiUrl, timeoutMs = 60000) {
     return new Promise((resolve) => {
-        const req = http.get(apiUrl, { timeout: 15000 }, (res) => {
+        const req = http.get(apiUrl, { timeout: timeoutMs }, (res) => {
             if (res.statusCode !== 200) {
                 console.log('API hata kodu:', res.statusCode);
                 resolve(null);
@@ -235,12 +237,41 @@ function sqlRaporuGetir(apiUrl) {
     });
 }
 
+// API'yi yeniden deneme ile çağırır — ilk istek DB soğuk başladığında başarısız olabilir
+async function sqlRaporuGetirRetry(apiUrl) {
+    let html = await sqlRaporuGetir(apiUrl, 60000);
+    if (!html) {
+        console.log('İlk API denemesi başarısız, 5 saniye sonra tekrar deneniyor...');
+        await new Promise(r => setTimeout(r, 5000));
+        html = await sqlRaporuGetir(apiUrl, 60000);
+    }
+    return html;
+}
+
 // =====================================================
 // HTML → PNG → WhatsApp
 // =====================================================
 
-// Eş zamanlı Puppeteer çakışmasını önlemek için kilit
+// Kalıcı browser örneği — her istekte yeniden başlatılmaz
+let _browser = null;
 let _puppeteerKilit = false;
+
+async function browserGetir() {
+    if (!_browser || !_browser.isConnected()) {
+        console.log('[Puppeteer] Browser baslatiliyor...');
+        _browser = await puppeteer.launch({
+            headless: 'new',
+            args: ['--no-sandbox', '--disable-setuid-sandbox',
+                   '--font-render-hinting=none', '--disable-font-subpixel-positioning']
+        });
+        _browser.on('disconnected', () => {
+            console.log('[Puppeteer] Browser baglantisi kesildi, bir sonraki istekte yeniden baslatilacak.');
+            _browser = null;
+        });
+        console.log('[Puppeteer] Browser hazir.');
+    }
+    return _browser;
+}
 
 async function htmldenPngOlusturVeGonder(message, htmlIcerik, kaynak) {
     // Kilit bekle (max 120 sn)
@@ -255,7 +286,7 @@ async function htmldenPngOlusturVeGonder(message, htmlIcerik, kaynak) {
     }
     _puppeteerKilit = true;
 
-    let browser = null;
+    let page = null;
     try {
         const dosyaAdi = kaynak === 'pancar' ? 'pancar' : 'rapor';
         const htmlDosya = path.join(CIKTI_KLASORU, dosyaAdi + '.html');
@@ -263,23 +294,18 @@ async function htmldenPngOlusturVeGonder(message, htmlIcerik, kaynak) {
 
         fs.writeFileSync(htmlDosya, htmlIcerik, 'utf8');
 
-        browser = await puppeteer.launch({
-            headless: 'new',
-            args: ['--no-sandbox', '--disable-setuid-sandbox',
-                   '--font-render-hinting=none', '--disable-font-subpixel-positioning']
-        });
-
-        const page = await browser.newPage();
+        const browser = await browserGetir();
+        page = await browser.newPage();
         await page.setExtraHTTPHeaders({ 'Accept-Language': 'tr-TR,tr;q=0.9' });
         await page.setViewport({ width: 1400, height: 900, deviceScaleFactor: 1 });
 
         const fileUrl = 'file:///' + htmlDosya.replace(/\\/g, '/');
-        await page.goto(fileUrl, { waitUntil: 'networkidle0', timeout: 60000 });
-        await new Promise(r => setTimeout(r, 1500));
+        await page.goto(fileUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await new Promise(r => setTimeout(r, 800));
 
         await page.screenshot({ path: pngDosya, fullPage: true, type: 'png' });
-        await browser.close();
-        browser = null;
+        await page.close();
+        page = null;
 
         const pngSize = fs.statSync(pngDosya).size;
         console.log(`PNG olusturuldu (${kaynak}), boyut: ${pngSize} byte`);
@@ -290,7 +316,7 @@ async function htmldenPngOlusturVeGonder(message, htmlIcerik, kaynak) {
             const baslik = kaynak === 'sql'
                 ? `Yan Urunler + Seker Uretim-Satis-Stok Raporu\n${tarih}`
                 : kaynak === 'pancar'
-                    ? `Pancar Avans Raporu\n${tarih}`
+                    ? `Pancar Raporu\n${tarih}`
                     : `Tum Rapor (Excel)\n${tarih}`;
             await message.reply(media, undefined, { caption: baslik });
             console.log('Rapor gonderildi!\n');
@@ -299,7 +325,7 @@ async function htmldenPngOlusturVeGonder(message, htmlIcerik, kaynak) {
         }
     } catch (error) {
         console.error('PNG/Gonderim hatasi:', error.message);
-        if (browser) { try { await browser.close(); } catch (_) {} }
+        if (page) { try { await page.close(); } catch (_) {} }
         await message.reply('Rapor gonderilirken hata olustu: ' + error.message);
     } finally {
         _puppeteerKilit = false;

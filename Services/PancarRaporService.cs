@@ -153,6 +153,31 @@ public class PancarRaporService
         catch { return new PancarFinansOzet(); }
     }
 
+    /// <summary>KarakanRaporu_Detay özet: pancar türleri, primler, nakliye</summary>
+    public async Task<PancarIcmalDetay> GetIcmalDetayAsync()
+    {
+        int yil = KampanyaYili();
+        using var conn = new SqlConnection(ConnStr);
+        try
+        {
+            var sql = $@"
+                SELECT
+                    ISNULL(SUM(NetMiktar)          / 1000, 0) AS NetMiktarTon,
+                    ISNULL(SUM(APancari)           / 1000, 0) AS APancariTon,
+                    ISNULL(SUM(APancariBedeli),         0)    AS APancariBedeli,
+                    ISNULL(SUM(CPancari)           / 1000, 0) AS CPancariTon,
+                    ISNULL(SUM(CPancariBedeli),         0)    AS CPancariBedeli,
+                    ISNULL(SUM(KotaFazlasi)        / 1000, 0) AS KotaFazlasiTon,
+                    ISNULL(SUM(KotaFazlasiBedeli),      0)    AS KotaFazlasiBedeli,
+                    ISNULL(SUM(KuspePrimiA) + SUM(KuspePrimiC), 0) AS KuspePrimi,
+                    ISNULL(SUM(KotaTamamlamaPrimi),     0)    AS KotaTamamlamaPrimi,
+                    ISNULL(SUM(OdenenNakliyePrimi),     0)    AS MustahsilNakliye
+                FROM KarakanRaporu_Detay_{yil}";
+            return (await conn.QueryFirstOrDefaultAsync<PancarIcmalDetay>(sql)) ?? new PancarIcmalDetay();
+        }
+        catch { return new PancarIcmalDetay(); }
+    }
+
     /// <summary>Bölge bazında özet istatistik</summary>
     public async Task<(int ToplamCiftci, decimal ToplamTaahhut, decimal ToplamNet, decimal OrtPolar)> GetOzet()
     {

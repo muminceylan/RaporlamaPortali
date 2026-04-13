@@ -34,8 +34,8 @@
 
   <!-- WhatsApp Node.js dosyaları (exe yanına kopyalanır, node_modules hariç) -->
   <ItemGroup>
-    <None Update="WhatsApp\index.js"     CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" />
-    <Content Update="WhatsApp\package.json" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" />
+    <Content Include="WhatsApp\index.js"   CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" />
+    <Content Include="WhatsApp\package.json" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" />
   </ItemGroup>
 
 </Project>

@@ -443,6 +443,9 @@
 
             if (sonuc.Basarili)
             {
+                // Manuel gönderimde de SonGonderimZamani güncelle — timer aynı gün tekrar göndermesin
+                _ayarlar.SonGonderimZamani = DateTime.Now;
+                await AyarlarService.KaydetAsync(_ayarlar);
                 Snackbar.Add("Rapor basariyla gonderildi! (" + sonuc.AliciSayisi + " alici - BCC)", Severity.Success);
             }
             else

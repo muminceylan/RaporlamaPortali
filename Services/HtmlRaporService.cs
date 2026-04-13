@@ -351,185 +351,199 @@ public class HtmlRaporService
     // =========================================================
 
     public string PancarRaporHtmlOlustur(
-        List<PancarIcmalKayit>  icmal,
-        List<PancarCiftciDetay> ciftciler,
-        DateTime                tarih,
-        List<PancarAvansKayit>? avans  = null,
-        PancarFinansOzet?       finans = null)
+        List<PancarIcmalKayit>   icmal,
+        List<PancarCiftciDetay>  ciftciler,
+        DateTime                 tarih,
+        List<PancarAvansKayit>?  avans       = null,
+        PancarFinansOzet?        finans      = null,
+        PancarIcmalDetay?        icmalDetay  = null,
+        PancarOzetIstatistik?    ozet        = null)
     {
         var tr   = new CultureInfo("tr-TR");
         var logo = LogoImgHtml();
         var sb   = new StringBuilder();
 
+        // ── Hesaplamalar ──────────────────────────────────────
+        var nakdiDict = avans?.Where(x => x.KaynakEvrak.Contains("NAKD"))
+                              .ToDictionary(x => x.AvansGrubu.Trim(), x => x.TutarToplami)
+                       ?? new Dictionary<string, decimal>();
+        var ayniDict  = avans?.Where(x => x.KaynakEvrak.Contains("AYN"))
+                              .ToDictionary(x => x.AvansGrubu.Trim(), x => x.TutarToplami)
+                       ?? new Dictionary<string, decimal>();
+
+        decimal GetD(Dictionary<string, decimal> d, string k) =>
+            d.TryGetValue(k, out var v) ? v : 0m;
+
+        decimal nakdiToplam  = nakdiDict.Values.Sum();
+        decimal ayniToplam   = ayniDict.Values.Sum();
+        decimal pancarBedeli = finans != null ? finans.KotaFazlasi + finans.CPancari : 0m;
+        decimal avansToplami = nakdiToplam + ayniToplam + pancarBedeli;
+        decimal genelToplam  = finans != null
+            ? avansToplami + finans.AvansKdv + finans.AlimStopaji + finans.NakliyePrimi + finans.BagkurBorcu + finans.BorsaTescil
+            : avansToplami;
+        decimal hakedis      = icmalDetay?.HakedisToplamı ?? 0m;
+        decimal borcAlacak   = genelToplam - hakedis;
+
+        (string Grup, string Ad)[] nakdiSira = {
+            ("Pancar Avansı","Pancar Avansı"),("Hasat Makinesi Avansı","Hasat Makinesi Avansı"),
+            ("1. Avans","1. Avans"),("2. Avans","2. Avans"),("3. Avans","3. Avans"),
+            ("4. Avans","4. Avans"),("5. Avans","5. Avans"),("6. Avans","6. Avans"),
+            ("Küspe","Küspe Avansı"),("Söküm Avansı","Söküm Avansı"),
+        };
+        (string Grup, string Ad)[] ayniSira = {
+            ("Gübre","Gübre Avansı"),("İlaç","İlaç Avansı"),("Tohum","Tohum Avansı"),
+            ("Çay","Çay Avansı"),("Şeker","Şeker Avansı"),("Küspe","Küspe Avansı"),
+            ("Fatura Edilen Söküm Avansı","Fatura Edilen Söküm Avansı"),("Söküm Avansı","Söküm Avansı"),
+        };
+
+        // ── HTML ──────────────────────────────────────────────
         sb.AppendLine($@"<!DOCTYPE html>
 <html lang='tr'>
 <head>
 <meta charset='UTF-8'>
-<meta name='viewport' content='width=device-width,initial-scale=1'>
 <title>Pancar Raporu {tarih:dd.MM.yyyy}</title>
 <style>
-  body {{ font-family:Arial,sans-serif; font-size:12px; margin:0; padding:8px; background:#f5f5f5; }}
-  table {{ border-collapse:collapse; width:100%; table-layout:fixed; }}
-  th {{ background:#1a237e; color:#fff; padding:6px 8px; text-align:center; font-size:11px; border:1px solid #0d1457; }}
-  td {{ padding:5px 8px; border:1px solid #ccc; text-align:center; }}
-  tr:nth-child(even) {{ background:#e8eaf6; }}
-  tr:hover {{ background:#c5cae9; }}
-  .baslik-bar {{ background:#1a237e; color:#fff; padding:8px 12px; display:inline-block; width:100%; box-sizing:border-box; }}
-  .section-title {{ background:#283593; color:#fff; padding:5px 10px; font-weight:bold; font-size:13px; text-align:center; margin:12px 0 0 0; }}
-  .ozet-kart {{ display:inline-block; background:#fff; border:2px solid #1a237e; border-radius:6px; padding:8px 16px; margin:4px; text-align:center; min-width:130px; }}
-  .ozet-kart .deger {{ font-size:16px; font-weight:bold; color:#1a237e; }}
-  .ozet-kart .etiket {{ font-size:10px; color:#666; }}
-  .tip-ciftci {{ background:#e8f5e9; }}
-  .tip-muteahhit {{ background:#e3f2fd; }}
-  .tip-mouse {{ background:#fff3e0; }}
-  .tip-kepce {{ background:#fce4ec; }}
-  .info {{ font-size:10px; color:#888; margin-top:10px; text-align:right; }}
-  .avans-tbl {{ width:480px; border-collapse:collapse; margin:0; }}
-  .avans-tbl td {{ padding:5px 12px; border-bottom:1px solid #eee; font-size:12px; }}
-  .avans-tbl td:last-child {{ text-align:right; white-space:nowrap; }}
+  body {{ font-family:Arial,sans-serif; font-size:12px; margin:0; padding:6px; background:#f5f5f5; }}
+  .baslik-bar {{ background:#1a237e; color:#fff; padding:8px 12px; width:100%; box-sizing:border-box; margin-bottom:8px; }}
+  .section-title {{ background:#283593; color:#fff; padding:4px 10px; font-weight:bold; font-size:12px; margin:10px 0 0 0; }}
+  .ozet-wrap {{ display:flex; flex-wrap:wrap; gap:6px; padding:6px; background:#fff; margin-bottom:4px; }}
+  .ozet-kart {{ background:#e8eaf6; border-radius:4px; padding:6px 12px; text-align:center; min-width:100px; }}
+  .ozet-kart .deger {{ font-size:14px; font-weight:bold; color:#1a237e; }}
+  .ozet-kart .etiket {{ font-size:10px; color:#555; }}
+  .iki-sutun {{ display:flex; gap:8px; align-items:flex-start; }}
+  .sutun {{ flex:1; min-width:0; }}
+  .at {{ border-collapse:collapse; width:100%; font-size:11px; }}
+  .at td, .at th {{ padding:4px 8px; border:1px solid #bbb; }}
+  .at td:last-child, .at th:last-child {{ text-align:right; white-space:nowrap; }}
+  .info {{ font-size:10px; color:#888; margin-top:8px; text-align:right; }}
 </style>
 </head>
-<body>
-<table style='width:100%;max-width:700px;'><tr><td>");
+<body>");
 
         // Başlık
         sb.AppendLine($@"<div class='baslik-bar'>
   {logo}
-  <span style='font-size:15px;font-weight:bold;'>PANCAR RAPORU — {tarih:dd.MM.yyyy}</span>
+  <span style='font-size:14px;font-weight:bold;'>PANCAR RAPORU — {tarih:dd.MM.yyyy}</span>
   <span style='font-size:11px;margin-left:12px;opacity:.8;'>Afyon Şeker Fabrikası / Kampanya {PancarRaporService.KampanyaYili()}</span>
 </div>");
 
-        // İCMAL tablosu
-        sb.AppendLine("<div class='section-title'>KANTAR HAREKETLERİ İCMAL</div>");
-        sb.AppendLine("<table><thead><tr>");
-        sb.AppendLine("<th style='width:15%'>TİP</th><th style='width:45%'>AÇIKLAMA</th><th style='width:20%'>NET (kg)</th><th style='width:20%'>TUTAR (₺)</th>");
-        sb.AppendLine("</tr></thead><tbody>");
-
-        if (icmal.Count == 0)
+        // Özet kartlar
+        if (ozet != null || icmalDetay != null)
         {
-            sb.AppendLine("<tr><td colspan='4' style='text-align:center;color:#888;'>Henüz veri yok</td></tr>");
+            sb.AppendLine("<div class='ozet-wrap'>");
+            if (ozet != null)
+            {
+                sb.AppendLine($"<div class='ozet-kart'><div class='deger'>{ozet.ToplamCiftci:N0}</div><div class='etiket'>Toplam Çiftçi</div></div>");
+                sb.AppendLine($"<div class='ozet-kart'><div class='deger'>{ozet.ToplamTaahhut/1000:N0} ton</div><div class='etiket'>Taahhüt</div></div>");
+            }
+            if (icmalDetay != null)
+                sb.AppendLine($"<div class='ozet-kart'><div class='deger'>{icmalDetay.NetMiktarTon:N1} ton</div><div class='etiket'>Gelen Net</div></div>");
+            if (ozet != null)
+            {
+                sb.AppendLine($"<div class='ozet-kart'><div class='deger'>%{ozet.OrtFireOrani:N2}</div><div class='etiket'>Fire Oranı</div></div>");
+                sb.AppendLine($"<div class='ozet-kart'><div class='deger'>%{ozet.OrtPolar:N2}</div><div class='etiket'>Polar</div></div>");
+            }
+            sb.AppendLine($"<div class='ozet-kart'><div class='deger' style='color:{(borcAlacak > 0 ? "#B71C1C" : "#1B5E20")}'>{Math.Abs(borcAlacak):N0} ₺</div><div class='etiket'>{(borcAlacak > 0 ? "Müstahsil Borçlu" : "Müstahsil Alacaklı")}</div></div>");
+            sb.AppendLine("</div>");
         }
-        else
+
+        // İki sütun yan yana
+        sb.AppendLine("<div class='iki-sutun'>");
+
+        // SOL: İCMAL (avans tablosu)
+        sb.AppendLine("<div class='sutun'>");
+        sb.AppendLine("<div class='section-title'>İCMAL</div>");
+        sb.AppendLine("<table class='at'>");
+        sb.AppendLine("<tr style='background:#C62828;color:white;font-weight:bold;'><td>AVANS ADI</td><td>TUTAR (₺)</td></tr>");
+
+        foreach (var (grup, ad) in nakdiSira)
+            sb.AppendLine($"<tr><td>{ad}</td><td>{GetD(nakdiDict, grup).ToString("N2", tr)}</td></tr>");
+        foreach (var kv in nakdiDict.Where(kv => !nakdiSira.Any(n => n.Grup == kv.Key)))
+            sb.AppendLine($"<tr><td>{kv.Key}</td><td>{kv.Value.ToString("N2", tr)}</td></tr>");
+        sb.AppendLine($"<tr style='background:#FDD835;font-weight:bold;'><td>NAKDİ AVANS TOPLAMI</td><td>{nakdiToplam.ToString("N2", tr)}</td></tr>");
+
+        foreach (var (grup, ad) in ayniSira)
+            sb.AppendLine($"<tr><td>{ad}</td><td>{GetD(ayniDict, grup).ToString("N2", tr)}</td></tr>");
+        foreach (var kv in ayniDict.Where(kv => !ayniSira.Any(n => n.Grup == kv.Key)))
+            sb.AppendLine($"<tr><td>{kv.Key}</td><td>{kv.Value.ToString("N2", tr)}</td></tr>");
+        sb.AppendLine($"<tr style='background:#388E3C;color:white;font-weight:bold;'><td>AYNİ AVANS TOPLAMI</td><td>{ayniToplam.ToString("N2", tr)}</td></tr>");
+
+        sb.AppendLine($"<tr><td>PANCAR BEDELİ ÖDEMESİ</td><td>0,00</td></tr>");
+        sb.AppendLine($"<tr><td>Ödenen Kota Fazlası Bedeli</td><td>{(finans?.KotaFazlasi ?? 0).ToString("N2", tr)}</td></tr>");
+        sb.AppendLine($"<tr><td>Ödenen C Pancar Bedeli</td><td>{(finans?.CPancari ?? 0).ToString("N2", tr)}</td></tr>");
+        sb.AppendLine($"<tr style='background:#E53935;color:white;font-weight:bold;'><td>PANCAR BEDELİ ÖDEMESİ</td><td>{pancarBedeli.ToString("N2", tr)}</td></tr>");
+        sb.AppendLine($"<tr style='background:#B71C1C;color:white;font-weight:bold;'><td>AVANS TOPLAMI</td><td>{avansToplami.ToString("N2", tr)}</td></tr>");
+        sb.AppendLine($"<tr style='background:#fffde7;'><td>AVANS KDV Sİ</td><td>{(finans?.AvansKdv ?? 0).ToString("N2", tr)}</td></tr>");
+        sb.AppendLine($"<tr><td>STOPAJ</td><td>{(finans?.AlimStopaji ?? 0).ToString("N2", tr)}</td></tr>");
+        sb.AppendLine($"<tr><td>Ödenen Nakliye Primi</td><td>{(finans?.NakliyePrimi ?? 0).ToString("N2", tr)}</td></tr>");
+        sb.AppendLine($"<tr><td>Kota Cezası</td><td>0,00</td></tr>");
+        sb.AppendLine($"<tr><td>Ödenen Bağkur Primi</td><td>{(finans?.BagkurBorcu ?? 0).ToString("N2", tr)}</td></tr>");
+        sb.AppendLine($"<tr><td>Borsa Tescil</td><td>{(finans?.BorsaTescil ?? 0).ToString("N2", tr)}</td></tr>");
+        sb.AppendLine($"<tr style='background:#B71C1C;color:white;font-weight:bold;'><td>TOPLAM MÜSTAHSİL BORCU</td><td>{genelToplam.ToString("N2", tr)}</td></tr>");
+        sb.AppendLine($"<tr style='background:#e8eaf6;'><td colspan='2' style='font-size:10px;color:#666;padding:3px 8px;'>▼ Hakediş Özeti</td></tr>");
+        sb.AppendLine($"<tr><td>PANCAR BEDELİ</td><td>{(icmalDetay?.PancarBedeliToplam ?? 0).ToString("N2", tr)}</td></tr>");
+        sb.AppendLine($"<tr><td>MÜSTAHSİL NAKLİYE</td><td>{(icmalDetay?.MustahsilNakliye ?? 0).ToString("N2", tr)}</td></tr>");
+        sb.AppendLine($"<tr><td>KÜSPE PRİMİ</td><td>{(icmalDetay?.KuspePrimi ?? 0).ToString("N2", tr)}</td></tr>");
+        sb.AppendLine($"<tr><td>KOTA TAMAMLAMA PRİMİ</td><td>{(icmalDetay?.KotaTamamlamaPrimi ?? 0).ToString("N2", tr)}</td></tr>");
+        sb.AppendLine($"<tr style='background:#1565C0;color:white;font-weight:bold;'><td>MÜSTAHSİL HAKEDİŞ TOPLAMI</td><td>{hakedis.ToString("N2", tr)}</td></tr>");
+        var borcRenk = borcAlacak > 0 ? "#B71C1C" : "#1B5E20";
+        sb.AppendLine($"<tr style='background:{borcRenk};color:white;font-weight:bold;'><td>{(borcAlacak > 0 ? "MÜSTAHSİL BORÇLU" : "MÜSTAHSİL ALACAKLI")}</td><td>{Math.Abs(borcAlacak).ToString("N2", tr)}</td></tr>");
+        sb.AppendLine("</table>");
+        sb.AppendLine("</div>"); // sol sutun bitti
+
+        // SAĞ: GENEL İCMAL + PANCAR TÜRLERİ + NAKLİYE/MOUSE/KEPÇE
+        sb.AppendLine("<div class='sutun'>");
+
+        // Genel İcmal
+        sb.AppendLine("<div class='section-title'>GENEL İCMAL</div>");
+        sb.AppendLine("<table class='at'>");
+        sb.AppendLine("<tr style='background:#283593;color:white;font-weight:bold;'><td>AÇIKLAMA</td><td>MİKTAR (ton)</td><td>TUTAR (₺)</td></tr>");
+        sb.AppendLine($"<tr><td>Pancar Bedeli</td><td>{(icmalDetay?.NetMiktarTon ?? 0).ToString("N3", tr)}</td><td>{(icmalDetay?.PancarBedeliToplam ?? 0).ToString("N2", tr)}</td></tr>");
+        sb.AppendLine($"<tr><td>Müstahsil Nakliye</td><td>—</td><td>{(icmalDetay?.MustahsilNakliye ?? 0).ToString("N2", tr)}</td></tr>");
+        sb.AppendLine($"<tr><td>Küspe Primi</td><td>—</td><td>{(icmalDetay?.KuspePrimi ?? 0).ToString("N2", tr)}</td></tr>");
+        sb.AppendLine($"<tr><td>Kota Tamamlama Primi</td><td>—</td><td>{(icmalDetay?.KotaTamamlamaPrimi ?? 0).ToString("N2", tr)}</td></tr>");
+        sb.AppendLine($"<tr style='background:#e8eaf6;font-weight:bold;'><td>Toplam Maliyet</td><td>—</td><td>{hakedis.ToString("N2", tr)}</td></tr>");
+        sb.AppendLine($"<tr><td>Müstahsile Ödenen</td><td>—</td><td>{genelToplam.ToString("N2", tr)}</td></tr>");
+        sb.AppendLine($"<tr><td>Müstahsil Hakedişi</td><td>—</td><td>{hakedis.ToString("N2", tr)}</td></tr>");
+        sb.AppendLine($"<tr style='background:{borcRenk};color:white;font-weight:bold;'><td>{(borcAlacak > 0 ? "Müstahsil Borçlu" : "Müstahsil Alacaklı")}</td><td>—</td><td>{Math.Abs(borcAlacak).ToString("N2", tr)}</td></tr>");
+        sb.AppendLine("</table>");
+
+        // Pancar Türleri
+        sb.AppendLine("<div class='section-title'>PANCAR TÜRLERİ</div>");
+        sb.AppendLine("<table class='at'>");
+        sb.AppendLine("<tr style='background:#2E7D32;color:white;font-weight:bold;'><td>TÜR</td><td>MİKTAR (ton)</td><td>TUTAR (₺)</td><td>BİRİM FİYAT</td></tr>");
+        sb.AppendLine($"<tr><td>A Pancarı</td><td>{(icmalDetay?.APancariTon ?? 0).ToString("N3", tr)}</td><td>{(icmalDetay?.APancariBedeli ?? 0).ToString("N2", tr)}</td><td>{(icmalDetay?.ABirimFiyati ?? 0).ToString("N4", tr)}</td></tr>");
+        sb.AppendLine($"<tr><td>C Pancarı</td><td>{(icmalDetay?.CPancariTon ?? 0).ToString("N3", tr)}</td><td>{(icmalDetay?.CPancariBedeli ?? 0).ToString("N2", tr)}</td><td>{(icmalDetay?.CBirimFiyati ?? 0).ToString("N4", tr)}</td></tr>");
+        sb.AppendLine($"<tr><td>Kota Fazlası</td><td>{(icmalDetay?.KotaFazlasiTon ?? 0).ToString("N3", tr)}</td><td>{(icmalDetay?.KotaFazlasiBedeli ?? 0).ToString("N2", tr)}</td><td>{(icmalDetay?.KFBirimFiyati ?? 0).ToString("N4", tr)}</td></tr>");
+        var topPancarTon = (icmalDetay?.APancariTon ?? 0) + (icmalDetay?.CPancariTon ?? 0) + (icmalDetay?.KotaFazlasiTon ?? 0);
+        sb.AppendLine($"<tr style='background:#1B5E20;color:white;font-weight:bold;'><td>TOPLAM</td><td>{topPancarTon.ToString("N3", tr)}</td><td>{(icmalDetay?.PancarBedeliToplam ?? 0).ToString("N2", tr)}</td><td>—</td></tr>");
+        sb.AppendLine("</table>");
+
+        // Nakliye / Mouse / Kepçe
+        if (icmal.Count > 0)
         {
+            sb.AppendLine("<div class='section-title'>NAKLİYE / MOUSE / KEPÇE</div>");
+            sb.AppendLine("<table class='at'>");
+            sb.AppendLine("<tr style='background:#4527A0;color:white;font-weight:bold;'><td>TİP / AÇIKLAMA</td><td>NET (kg)</td><td>TUTAR (₺)</td><td>ORT. (₺/ton)</td></tr>");
+            string? sonTip = null;
             foreach (var k in icmal)
             {
-                var tipClass = k.Tip switch
+                if (k.Tip != sonTip)
                 {
-                    var t when t.Contains("iftci",   StringComparison.OrdinalIgnoreCase) => "tip-ciftci",
-                    var t when t.Contains("teahhit", StringComparison.OrdinalIgnoreCase) => "tip-muteahhit",
-                    var t when t.Contains("ouse",    StringComparison.OrdinalIgnoreCase) => "tip-mouse",
-                    var t when t.Contains("ep",      StringComparison.OrdinalIgnoreCase) => "tip-kepce",
-                    _ => ""
-                };
-                sb.AppendLine($"<tr class='{tipClass}'>");
-                sb.AppendLine($"<td style='font-weight:bold'>{k.Tip}</td>");
-                sb.AppendLine($"<td style='text-align:left'>{k.Aciklama}</td>");
-                sb.AppendLine($"<td>{k.Net.ToString("N0", tr)}</td>");
-                sb.AppendLine($"<td>{(k.Tutar > 0 ? k.Tutar.ToString("N2", tr) + " ₺" : "—")}</td>");
-                sb.AppendLine("</tr>");
+                    sb.AppendLine($"<tr style='background:#ede7f6;font-weight:bold;'><td colspan='4'>{k.Tip}</td></tr>");
+                    sonTip = k.Tip;
+                }
+                var ort = k.Net > 0 ? (k.Tutar / k.Net * 1000).ToString("N2", tr) : "—";
+                sb.AppendLine($"<tr><td style='padding-left:16px;'>{k.Aciklama}</td><td>{k.Net.ToString("N0", tr)}</td><td>{k.Tutar.ToString("N2", tr)}</td><td>{ort}</td></tr>");
             }
-            var topNet   = icmal.Sum(x => x.Net);
-            var topTutar = icmal.Sum(x => x.Tutar);
-            sb.AppendLine($@"<tr style='font-weight:bold;background:#1a237e;color:#fff;'>
-              <td colspan='2'>GENEL TOPLAM</td>
-              <td>{topNet.ToString("N0", tr)}</td>
-              <td>{(topTutar > 0 ? topTutar.ToString("N2", tr) + " ₺" : "—")}</td>
-            </tr>");
-        }
-        sb.AppendLine("</tbody></table>");
-
-        // Çiftçi özet istatistik
-        if (ciftciler.Count > 0)
-        {
-            var topTaahhut = ciftciler.Sum(x => x.TaahhutTon);
-            var topNet2    = ciftciler.Sum(x => x.NetMiktar);
-            var ortPolar   = ciftciler.Where(x => x.OrtalamaPolar > 0).Select(x => (double)x.OrtalamaPolar).DefaultIfEmpty(0).Average();
-
-            sb.AppendLine("<div class='section-title'>ÇİFTÇİ ÖZETİ</div>");
-            sb.AppendLine($@"<div style='padding:8px;background:#fff;'>
-              <div class='ozet-kart'><div class='deger'>{ciftciler.Count:N0}</div><div class='etiket'>Toplam Çiftçi</div></div>
-              <div class='ozet-kart'><div class='deger'>{topTaahhut / 1000:N0} ton</div><div class='etiket'>Taahhüt Tonu</div></div>
-              <div class='ozet-kart'><div class='deger'>{topNet2 / 1000:N1} ton</div><div class='etiket'>Gerçekleşen Net</div></div>
-              <div class='ozet-kart'><div class='deger'>{ortPolar:N2}</div><div class='etiket'>Ort. Polar</div></div>
-            </div>");
+            sb.AppendLine("</table>");
         }
 
-        // AVANS TABLOSU
-        if (avans != null && finans != null)
-        {
-            sb.AppendLine("<div class='section-title'>AVANS RAPORU</div>");
-            sb.AppendLine("<div style='background:#fff;padding:8px;'>");
-            sb.AppendLine("<table class='avans-tbl'>");
-
-            // Başlık satırı
-            sb.AppendLine("<tr style='background:#C62828;color:white;font-weight:bold;'><td>AVANS ADI</td><td>TUTAR</td></tr>");
-
-            var nakdiDict = avans.Where(x => x.KaynakEvrak.Contains("NAKD"))
-                                 .ToDictionary(x => x.AvansGrubu.Trim(), x => x.TutarToplami);
-            var ayniDict  = avans.Where(x => x.KaynakEvrak.Contains("AYN"))
-                                 .ToDictionary(x => x.AvansGrubu.Trim(), x => x.TutarToplami);
-
-            decimal Get(Dictionary<string, decimal> d, string k) =>
-                d.TryGetValue(k, out var v) ? v : 0m;
-
-            // NAKDİ satırları
-            (string Grup, string Ad)[] nakdiSira = {
-                ("Pancar Avansı","Pancar Avansı"),("Hasat Makinesi Avansı","Hasat Makinesi Avansı"),
-                ("1. Avans","1. Avans"),("2. Avans","2. Avans"),("3. Avans","3. Avans"),
-                ("4. Avans","4. Avans"),("5. Avans","5. Avans"),("6. Avans","6. Avans"),
-                ("Küspe","Küspe Avansı"),("Söküm Avansı","Söküm Avansı"),
-            };
-            foreach (var (grup, ad) in nakdiSira)
-                sb.AppendLine($"<tr><td>{ad}</td><td>{Get(nakdiDict, grup).ToString("N2", tr)}</td></tr>");
-            foreach (var kv in nakdiDict.Where(kv => !nakdiSira.Any(n => n.Grup == kv.Key)))
-                sb.AppendLine($"<tr><td>{kv.Key}</td><td>{kv.Value.ToString("N2", tr)}</td></tr>");
-
-            decimal nakdiToplam = nakdiDict.Values.Sum();
-            sb.AppendLine($"<tr style='background:#FDD835;font-weight:bold;'><td>NAKDİ AVANS TOPLAMI</td><td>{nakdiToplam.ToString("N2", tr)}</td></tr>");
-
-            // AYNİ satırları
-            (string Grup, string Ad)[] ayniSira = {
-                ("Gübre","Gübre Avansı"),("İlaç","İlaç Avansı"),("Tohum","Tohum Avansı"),
-                ("Çay","Çay Avansı"),("Şeker","Şeker Avansı"),("Küspe","Küspe Avansı"),
-                ("Fatura Edilen Söküm Avansı","Fatura Edilen Söküm Avansı"),("Söküm Avansı","Söküm Avansı"),
-            };
-            foreach (var (grup, ad) in ayniSira)
-                sb.AppendLine($"<tr><td>{ad}</td><td>{Get(ayniDict, grup).ToString("N2", tr)}</td></tr>");
-            foreach (var kv in ayniDict.Where(kv => !ayniSira.Any(n => n.Grup == kv.Key)))
-                sb.AppendLine($"<tr><td>{kv.Key}</td><td>{kv.Value.ToString("N2", tr)}</td></tr>");
-
-            decimal ayniToplam = ayniDict.Values.Sum();
-            sb.AppendLine($"<tr style='background:#388E3C;color:white;font-weight:bold;'><td>AYNİ AVANS TOPLAMI</td><td>{ayniToplam.ToString("N2", tr)}</td></tr>");
-
-            // PANCAR BEDELİ ÖDEMESİ
-            sb.AppendLine($"<tr><td>PANCAR BEDELİ ÖDEMESİ</td><td>0,00</td></tr>");
-            sb.AppendLine($"<tr><td>Ödenen Kota Fazlası Bedeli</td><td>{finans.KotaFazlasi.ToString("N2", tr)}</td></tr>");
-            sb.AppendLine($"<tr><td>Ödenen C Pancar Bedeli</td><td>{finans.CPancari.ToString("N2", tr)}</td></tr>");
-            decimal pancarBedeli = finans.KotaFazlasi + finans.CPancari;
-            sb.AppendLine($"<tr style='background:#E53935;color:white;font-weight:bold;'><td>PANCAR BEDELİ ÖDEMESİ</td><td>{pancarBedeli.ToString("N2", tr)}</td></tr>");
-
-            // AVANS TOPLAMI
-            decimal avansToplami = nakdiToplam + ayniToplam + pancarBedeli;
-            sb.AppendLine($"<tr style='background:#B71C1C;color:white;font-weight:bold;font-size:1.05em;'><td>AVANS TOPLAMI</td><td>{avansToplami.ToString("N2", tr)}</td></tr>");
-
-            // Finansal satırlar — KotaCezası = 0
-            sb.AppendLine($"<tr style='background:#fffde7;'><td>AVANS KDV Sİ</td><td>{finans.AvansKdv.ToString("N2", tr)}</td></tr>");
-            sb.AppendLine($"<tr><td>STOPAJ</td><td>{finans.AlimStopaji.ToString("N2", tr)}</td></tr>");
-            sb.AppendLine($"<tr><td>Ödenen Nakliye Primi</td><td>{finans.NakliyePrimi.ToString("N2", tr)}</td></tr>");
-            sb.AppendLine($"<tr><td>Kota Cezası</td><td>0,00</td></tr>");
-            sb.AppendLine($"<tr><td>Ödenen Bağkur Primi</td><td>{finans.BagkurBorcu.ToString("N2", tr)}</td></tr>");
-            sb.AppendLine($"<tr><td>Borsa Tescil</td><td>{finans.BorsaTescil.ToString("N2", tr)}</td></tr>");
-
-            // GENEL TOPLAM — KotaCezası dahil edilmiyor
-            decimal genelToplam = avansToplami + finans.AvansKdv + finans.AlimStopaji
-                                  + finans.NakliyePrimi + finans.BagkurBorcu + finans.BorsaTescil;
-            sb.AppendLine($"<tr style='background:#B71C1C;color:white;font-weight:bold;font-size:1.08em;'><td>AVANSLAR GENEL TOPLAMI</td><td>{genelToplam.ToString("N2", tr)}</td></tr>");
-
-            sb.AppendLine("</table></div>");
-        }
+        sb.AppendLine("</div>"); // sağ sutun bitti
+        sb.AppendLine("</div>"); // iki-sutun bitti
 
         sb.AppendLine($"<p class='info'>Bu mail <strong>Mümin CEYLAN</strong> tarafından geliştirilen otomasyon ile otomatik olarak gönderilmiştir. | {DateTime.Now:dd.MM.yyyy HH:mm}</p>");
-        sb.AppendLine("</td></tr></table></body></html>");
+        sb.AppendLine("</body></html>");
 
         return sb.ToString();
     }

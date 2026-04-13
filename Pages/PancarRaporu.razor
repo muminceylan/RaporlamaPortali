@@ -39,7 +39,7 @@ else
         </MudItem>
         <MudItem xs="6" sm="4" md="2">
             <MudPaper Elevation="2" Class="pa-3 text-center">
-                <MudText Typo="Typo.h5" Color="Color.Warning">@((_ozet.ToplamNet/1000).ToString("N1")) ton</MudText>
+                <MudText Typo="Typo.h5" Color="Color.Warning">@_icmalDetay.NetMiktarTon.ToString("N1") ton</MudText>
                 <MudText Typo="Typo.caption">Gelen Net</MudText>
             </MudPaper>
         </MudItem>
@@ -55,16 +55,23 @@ else
                 <MudText Typo="Typo.caption">Polar Oranı</MudText>
             </MudPaper>
         </MudItem>
+        <MudItem xs="6" sm="4" md="2">
+            <MudPaper Elevation="2" Class="pa-3 text-center">
+                <MudText Typo="Typo.h5" Style="color:#B71C1C">@_mustahsilBorcAlacak.ToString("N0") ₺</MudText>
+                <MudText Typo="Typo.caption">@(_mustahsilBorcAlacak > 0 ? "Müstahsil Borçlu" : "Müstahsil Alacaklı")</MudText>
+            </MudPaper>
+        </MudItem>
     </MudGrid>
 
     <MudGrid>
-        <MudItem xs="12" sm="8" md="6" lg="5">
+        <!-- SOL: AVANS TABLOSU -->
+        <MudItem xs="12" md="6">
             <MudCard Elevation="3">
                 <MudCardHeader>
                     <CardHeaderContent>
                         <MudText Typo="Typo.h6">
                             <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Class="mr-1" />
-                            Avans Raporu
+                            İCMAL
                         </MudText>
                     </CardHeaderContent>
                     <CardHeaderActions>
@@ -73,14 +80,12 @@ else
                 </MudCardHeader>
                 <MudCardContent Class="pa-0">
                     <table style="width:100%;border-collapse:collapse;font-size:0.88em;">
-
-                        <!-- BAŞLIK -->
                         <tr style="background:#C62828;color:white;font-weight:bold;">
                             <td style="padding:9px 14px;">AVANS ADI</td>
-                            <td style="padding:9px 14px;text-align:right;">TUTAR</td>
+                            <td style="padding:9px 14px;text-align:right;">TUTAR (₺)</td>
                         </tr>
 
-                        <!-- NAKDİ AVANS -->
+                        <!-- NAKDİ -->
                         @foreach (var r in _nakdiRows)
                         {
                             <tr style="border-bottom:1px solid #f0f0f0;">
@@ -93,7 +98,7 @@ else
                             <td style="padding:7px 14px;text-align:right;">@_nakdiToplam.ToString("N2")</td>
                         </tr>
 
-                        <!-- AYNİ AVANS -->
+                        <!-- AYNİ -->
                         @foreach (var r in _ayniRows)
                         {
                             <tr style="border-bottom:1px solid #f0f0f0;">
@@ -130,7 +135,7 @@ else
                             <td style="padding:9px 14px;text-align:right;">@_avansToplami.ToString("N2")</td>
                         </tr>
 
-                        <!-- FİNANSAL SATIRLAR -->
+                        <!-- FİNANSAL -->
                         <tr style="border-bottom:1px solid #f0f0f0;background:#fffde7;">
                             <td style="padding:5px 14px;">AVANS KDV Sİ</td>
                             <td style="padding:5px 14px;text-align:right;">@_finans.AvansKdv.ToString("N2")</td>
@@ -156,10 +161,40 @@ else
                             <td style="padding:5px 14px;text-align:right;">@_finans.BorsaTescil.ToString("N2")</td>
                         </tr>
 
-                        <!-- GENEL TOPLAM -->
+                        <!-- TOPLAM MÜSTAHSİL BORCU -->
                         <tr style="background:#B71C1C;color:white;font-weight:bold;font-size:1.08em;">
-                            <td style="padding:9px 14px;">AVANSLAR GENEL TOPLAMI</td>
+                            <td style="padding:9px 14px;">TOPLAM MÜSTAHSİL BORCU</td>
                             <td style="padding:9px 14px;text-align:right;">@_genelToplam.ToString("N2")</td>
+                        </tr>
+
+                        <!-- SEPARATOR -->
+                        <tr style="background:#e8eaf6;">
+                            <td colspan="2" style="padding:4px 14px;font-size:0.8em;color:#666;">▼ Hakediş Özeti</td>
+                        </tr>
+
+                        <tr style="border-bottom:1px solid #f0f0f0;">
+                            <td style="padding:5px 14px;">PANCAR BEDELİ</td>
+                            <td style="padding:5px 14px;text-align:right;">@_icmalDetay.PancarBedeliToplam.ToString("N2")</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid #f0f0f0;">
+                            <td style="padding:5px 14px;">MÜSTAHSİL NAKLİYE</td>
+                            <td style="padding:5px 14px;text-align:right;">@_icmalDetay.MustahsilNakliye.ToString("N2")</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid #f0f0f0;">
+                            <td style="padding:5px 14px;">KÜSPE PRİMİ</td>
+                            <td style="padding:5px 14px;text-align:right;">@_icmalDetay.KuspePrimi.ToString("N2")</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid #f0f0f0;">
+                            <td style="padding:5px 14px;">KOTA TAMAMLAMA PRİMİ</td>
+                            <td style="padding:5px 14px;text-align:right;">@_icmalDetay.KotaTamamlamaPrimi.ToString("N2")</td>
+                        </tr>
+                        <tr style="background:#1565C0;color:white;font-weight:bold;">
+                            <td style="padding:7px 14px;">MÜSTAHSİL HAKEDİŞ TOPLAMI</td>
+                            <td style="padding:7px 14px;text-align:right;">@_icmalDetay.HakedisToplamı.ToString("N2")</td>
+                        </tr>
+                        <tr style="background:@(_mustahsilBorcAlacak > 0 ? "#B71C1C" : "#1B5E20");color:white;font-weight:bold;font-size:1.05em;">
+                            <td style="padding:9px 14px;">@(_mustahsilBorcAlacak > 0 ? "MÜSTAHSİL BORÇLU" : "MÜSTAHSİL ALACAKLI")</td>
+                            <td style="padding:9px 14px;text-align:right;">@Math.Abs(_mustahsilBorcAlacak).ToString("N2")</td>
                         </tr>
                     </table>
                 </MudCardContent>
@@ -179,6 +214,159 @@ else
                 </MudCardActions>
             </MudCard>
         </MudItem>
+
+        <!-- SAĞ: GENEL İCMAL + NAKLİYE/MOUSE/KEPÇE + PANCAR TÜRLERİ -->
+        <MudItem xs="12" md="6">
+
+            <!-- GENEL İCMAL -->
+            <MudCard Elevation="3" Class="mb-4">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">
+                            <MudIcon Icon="@Icons.Material.Filled.BarChart" Class="mr-1" />
+                            Genel İcmal
+                        </MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent Class="pa-0">
+                    <table style="width:100%;border-collapse:collapse;font-size:0.88em;">
+                        <tr style="background:#283593;color:white;font-weight:bold;">
+                            <td style="padding:8px 12px;">AÇIKLAMA</td>
+                            <td style="padding:8px 12px;text-align:right;">MİKTAR (TON)</td>
+                            <td style="padding:8px 12px;text-align:right;">TUTAR (₺)</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid #f0f0f0;">
+                            <td style="padding:5px 12px;">Pancar Bedeli</td>
+                            <td style="padding:5px 12px;text-align:right;">@_icmalDetay.NetMiktarTon.ToString("N3")</td>
+                            <td style="padding:5px 12px;text-align:right;">@_icmalDetay.PancarBedeliToplam.ToString("N2")</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid #f0f0f0;">
+                            <td style="padding:5px 12px;">Müstahsil Nakliye</td>
+                            <td style="padding:5px 12px;text-align:right;">—</td>
+                            <td style="padding:5px 12px;text-align:right;">@_icmalDetay.MustahsilNakliye.ToString("N2")</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid #f0f0f0;">
+                            <td style="padding:5px 12px;">Küspe Primi</td>
+                            <td style="padding:5px 12px;text-align:right;">—</td>
+                            <td style="padding:5px 12px;text-align:right;">@_icmalDetay.KuspePrimi.ToString("N2")</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid #f0f0f0;">
+                            <td style="padding:5px 12px;">Kota Tamamlama Primi</td>
+                            <td style="padding:5px 12px;text-align:right;">—</td>
+                            <td style="padding:5px 12px;text-align:right;">@_icmalDetay.KotaTamamlamaPrimi.ToString("N2")</td>
+                        </tr>
+                        <tr style="background:#e8eaf6;font-weight:bold;">
+                            <td style="padding:6px 12px;">Toplam Maliyet</td>
+                            <td style="padding:6px 12px;text-align:right;">—</td>
+                            <td style="padding:6px 12px;text-align:right;">@_icmalDetay.HakedisToplamı.ToString("N2")</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid #f0f0f0;">
+                            <td style="padding:5px 12px;">Müstahsile Ödenen</td>
+                            <td style="padding:5px 12px;text-align:right;">—</td>
+                            <td style="padding:5px 12px;text-align:right;">@_genelToplam.ToString("N2")</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid #f0f0f0;">
+                            <td style="padding:5px 12px;">Müstahsil Hakedişi</td>
+                            <td style="padding:5px 12px;text-align:right;">—</td>
+                            <td style="padding:5px 12px;text-align:right;">@_icmalDetay.HakedisToplamı.ToString("N2")</td>
+                        </tr>
+                        <tr style="background:@(_mustahsilBorcAlacak > 0 ? "#B71C1C" : "#1B5E20");color:white;font-weight:bold;">
+                            <td style="padding:7px 12px;">@(_mustahsilBorcAlacak > 0 ? "Müstahsil Borçlu" : "Müstahsil Alacaklı")</td>
+                            <td style="padding:7px 12px;text-align:right;">—</td>
+                            <td style="padding:7px 12px;text-align:right;">@Math.Abs(_mustahsilBorcAlacak).ToString("N2")</td>
+                        </tr>
+                    </table>
+                </MudCardContent>
+            </MudCard>
+
+            <!-- PANCAR TÜRLERİ -->
+            <MudCard Elevation="3" Class="mb-4">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">
+                            <MudIcon Icon="@Icons.Material.Filled.Grass" Class="mr-1" />
+                            Pancar Türleri
+                        </MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent Class="pa-0">
+                    <table style="width:100%;border-collapse:collapse;font-size:0.88em;">
+                        <tr style="background:#2E7D32;color:white;font-weight:bold;">
+                            <td style="padding:8px 12px;">PANCAR TÜRÜ</td>
+                            <td style="padding:8px 12px;text-align:right;">MİKTAR (TON)</td>
+                            <td style="padding:8px 12px;text-align:right;">TUTAR (₺)</td>
+                            <td style="padding:8px 12px;text-align:right;">BİRİM FİYAT</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid #f0f0f0;">
+                            <td style="padding:5px 12px;">A Pancarı</td>
+                            <td style="padding:5px 12px;text-align:right;">@_icmalDetay.APancariTon.ToString("N3")</td>
+                            <td style="padding:5px 12px;text-align:right;">@_icmalDetay.APancariBedeli.ToString("N2")</td>
+                            <td style="padding:5px 12px;text-align:right;">@_icmalDetay.ABirimFiyati.ToString("N4")</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid #f0f0f0;">
+                            <td style="padding:5px 12px;">C Pancarı</td>
+                            <td style="padding:5px 12px;text-align:right;">@_icmalDetay.CPancariTon.ToString("N3")</td>
+                            <td style="padding:5px 12px;text-align:right;">@_icmalDetay.CPancariBedeli.ToString("N2")</td>
+                            <td style="padding:5px 12px;text-align:right;">@_icmalDetay.CBirimFiyati.ToString("N4")</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid #f0f0f0;">
+                            <td style="padding:5px 12px;">Kota Fazlası</td>
+                            <td style="padding:5px 12px;text-align:right;">@_icmalDetay.KotaFazlasiTon.ToString("N3")</td>
+                            <td style="padding:5px 12px;text-align:right;">@_icmalDetay.KotaFazlasiBedeli.ToString("N2")</td>
+                            <td style="padding:5px 12px;text-align:right;">@_icmalDetay.KFBirimFiyati.ToString("N4")</td>
+                        </tr>
+                        <tr style="background:#1B5E20;color:white;font-weight:bold;">
+                            <td style="padding:7px 12px;">TOPLAM</td>
+                            <td style="padding:7px 12px;text-align:right;">@((_icmalDetay.APancariTon + _icmalDetay.CPancariTon + _icmalDetay.KotaFazlasiTon).ToString("N3"))</td>
+                            <td style="padding:7px 12px;text-align:right;">@_icmalDetay.PancarBedeliToplam.ToString("N2")</td>
+                            <td style="padding:7px 12px;text-align:right;">—</td>
+                        </tr>
+                    </table>
+                </MudCardContent>
+            </MudCard>
+
+            <!-- NAKLİYE / MOUSE / KEPÇE -->
+            <MudCard Elevation="3">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">
+                            <MudIcon Icon="@Icons.Material.Filled.LocalShipping" Class="mr-1" />
+                            Nakliye / Mouse / Kepçe Bilgileri
+                        </MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent Class="pa-0">
+                    <table style="width:100%;border-collapse:collapse;font-size:0.88em;">
+                        <tr style="background:#4527A0;color:white;font-weight:bold;">
+                            <td style="padding:8px 12px;">TİP / AÇIKLAMA</td>
+                            <td style="padding:8px 12px;text-align:right;">NET (kg)</td>
+                            <td style="padding:8px 12px;text-align:right;">TUTAR (₺)</td>
+                            <td style="padding:8px 12px;text-align:right;">ORT. (₺/ton)</td>
+                        </tr>
+                        @foreach (var grup in _nakliyeGruplari)
+                        {
+                            <tr style="background:#ede7f6;font-weight:bold;">
+                                <td colspan="4" style="padding:5px 12px;">@grup.Key</td>
+                            </tr>
+                            @foreach (var k in grup.Value)
+                            {
+                                <tr style="border-bottom:1px solid #f0f0f0;">
+                                    <td style="padding:4px 12px 4px 20px;">@k.Aciklama</td>
+                                    <td style="padding:4px 12px;text-align:right;">@k.Net.ToString("N0")</td>
+                                    <td style="padding:4px 12px;text-align:right;">@k.Tutar.ToString("N2")</td>
+                                    <td style="padding:4px 12px;text-align:right;">@(k.Net > 0 ? (k.Tutar / k.Net * 1000).ToString("N2") : "—")</td>
+                                </tr>
+                            }
+                        }
+                        @if (!_nakliyeGruplari.Any())
+                        {
+                            <tr><td colspan="4" style="padding:10px;text-align:center;color:#888;">Henüz veri yok</td></tr>
+                        }
+                    </table>
+                </MudCardContent>
+            </MudCard>
+
+        </MudItem>
     </MudGrid>
 }
 
@@ -188,11 +376,12 @@ else
     private bool    _mailBasarili     = false;
     private string? _mailSonucu       = null;
 
-    private List<PancarAvansKayit> _avans  = new();
-    private PancarFinansOzet       _finans = new();
-    private PancarOzetIstatistik   _ozet   = new();
+    private List<PancarAvansKayit> _avans       = new();
+    private PancarFinansOzet       _finans      = new();
+    private PancarOzetIstatistik   _ozet        = new();
+    private PancarIcmalDetay       _icmalDetay  = new();
+    private List<PancarIcmalKayit> _icmal       = new();
 
-    // Hesaplanan satır listeleri
     private record AvansRow(string Ad, decimal Tutar);
     private List<AvansRow> _nakdiRows = new();
     private List<AvansRow> _ayniRows  = new();
@@ -202,31 +391,21 @@ else
     private decimal _pancarBedeliToplam;
     private decimal _avansToplami;
     private decimal _genelToplam;
+    private decimal _mustahsilBorcAlacak;
 
-    // Nakdi avans grubunun gösterim adı ve sıralama
-    private static readonly (string Grup, string Ad, int Sira)[] NakdiSira = {
-        ("Pancar Avansı",         "Pancar Avansı",         1),
-        ("Hasat Makinesi Avansı", "Hasat Makinesi Avansı", 2),
-        ("1. Avans",              "1. Avans",              3),
-        ("2. Avans",              "2. Avans",              4),
-        ("3. Avans",              "3. Avans",              5),
-        ("4. Avans",              "4. Avans",              6),
-        ("5. Avans",              "5. Avans",              7),
-        ("6. Avans",              "6. Avans",              8),
-        ("Küspe",                 "Küspe Avansı",          9),
-        ("Söküm Avansı",          "Söküm Avansı",         10),
+    private Dictionary<string, List<PancarIcmalKayit>> _nakliyeGruplari = new();
+
+    private static readonly (string Grup, string Ad)[] NakdiSira = {
+        ("Pancar Avansı","Pancar Avansı"), ("Hasat Makinesi Avansı","Hasat Makinesi Avansı"),
+        ("1. Avans","1. Avans"), ("2. Avans","2. Avans"), ("3. Avans","3. Avans"),
+        ("4. Avans","4. Avans"), ("5. Avans","5. Avans"), ("6. Avans","6. Avans"),
+        ("Küspe","Küspe Avansı"), ("Söküm Avansı","Söküm Avansı"),
     };
 
-    // Ayni avans grubunun gösterim adı ve sıralama
-    private static readonly (string Grup, string Ad, int Sira)[] AyniSira = {
-        ("Gübre",                      "Gübre Avansı",                  1),
-        ("İlaç",                       "İlaç Avansı",                   2),
-        ("Tohum",                      "Tohum Avansı",                  3),
-        ("Çay",                        "Çay Avansı",                    4),
-        ("Şeker",                      "Şeker Avansı",                  5),
-        ("Küspe",                      "Küspe Avansı",                  6),
-        ("Fatura Edilen Söküm Avansı", "Fatura Edilen Söküm Avansı",    7),
-        ("Söküm Avansı",               "Söküm Avansı",                  8),
+    private static readonly (string Grup, string Ad)[] AyniSira = {
+        ("Gübre","Gübre Avansı"), ("İlaç","İlaç Avansı"), ("Tohum","Tohum Avansı"),
+        ("Çay","Çay Avansı"), ("Şeker","Şeker Avansı"), ("Küspe","Küspe Avansı"),
+        ("Fatura Edilen Söküm Avansı","Fatura Edilen Söküm Avansı"), ("Söküm Avansı","Söküm Avansı"),
     };
 
     protected override async Task OnInitializedAsync() => await YenileAsync();
@@ -236,9 +415,17 @@ else
         _yukleniyor = true;
         StateHasChanged();
 
-        _ozet   = await PancarService.GetOzetIstatistikAsync();
-        _avans  = await PancarService.GetAvansAsync();
-        _finans = await PancarService.GetFinansOzetAsync();
+        var t1 = PancarService.GetOzetIstatistikAsync();
+        var t2 = PancarService.GetAvansAsync();
+        var t3 = PancarService.GetFinansOzetAsync();
+        var t4 = PancarService.GetIcmalDetayAsync();
+        var t5 = PancarService.GetIcmalAsync();
+        await Task.WhenAll(t1, t2, t3, t4, t5);
+        _ozet       = t1.Result;
+        _avans      = t2.Result;
+        _finans     = t3.Result;
+        _icmalDetay = t4.Result;
+        _icmal      = t5.Result;
 
         Hesapla();
         _yukleniyor = false;
@@ -254,38 +441,40 @@ else
         decimal Get(Dictionary<string, decimal> d, string k) =>
             d.TryGetValue(k, out var v) ? v : 0m;
 
-        // NAKDİ satırları — önce predefined sıraya göre, sonra kalanlar
         _nakdiRows = new();
-        var nakdiEklenmiş = new HashSet<string>();
-        foreach (var (grup, ad, _) in NakdiSira)
+        var nakdiEk = new HashSet<string>();
+        foreach (var (grup, ad) in NakdiSira)
         {
             _nakdiRows.Add(new AvansRow(ad, Get(nakdiDict, grup)));
-            nakdiEklenmiş.Add(grup);
+            nakdiEk.Add(grup);
         }
-        foreach (var kv in nakdiDict.Where(kv => !nakdiEklenmiş.Contains(kv.Key)))
+        foreach (var kv in nakdiDict.Where(kv => !nakdiEk.Contains(kv.Key)))
             _nakdiRows.Add(new AvansRow(kv.Key, kv.Value));
 
-        // AYNİ satırları
         _ayniRows = new();
-        var ayniEklenmiş = new HashSet<string>();
-        foreach (var (grup, ad, _) in AyniSira)
+        var ayniEk = new HashSet<string>();
+        foreach (var (grup, ad) in AyniSira)
         {
             _ayniRows.Add(new AvansRow(ad, Get(ayniDict, grup)));
-            ayniEklenmiş.Add(grup);
+            ayniEk.Add(grup);
         }
-        foreach (var kv in ayniDict.Where(kv => !ayniEklenmiş.Contains(kv.Key)))
+        foreach (var kv in ayniDict.Where(kv => !ayniEk.Contains(kv.Key)))
             _ayniRows.Add(new AvansRow(kv.Key, kv.Value));
 
-        _nakdiToplam       = nakdiDict.Values.Sum();
-        _ayniToplam        = ayniDict.Values.Sum();
+        _nakdiToplam        = nakdiDict.Values.Sum();
+        _ayniToplam         = ayniDict.Values.Sum();
         _pancarBedeliToplam = _finans.KotaFazlasi + _finans.CPancari;
-        _avansToplami      = _nakdiToplam + _ayniToplam + _pancarBedeliToplam;
-        _genelToplam       = _avansToplami
-                            + _finans.AvansKdv
-                            + _finans.AlimStopaji
-                            + _finans.NakliyePrimi
-                            + _finans.BagkurBorcu
-                            + _finans.BorsaTescil;
+        _avansToplami       = _nakdiToplam + _ayniToplam + _pancarBedeliToplam;
+        _genelToplam        = _avansToplami + _finans.AvansKdv + _finans.AlimStopaji
+                              + _finans.NakliyePrimi + _finans.BagkurBorcu + _finans.BorsaTescil;
+
+        // Müstahsile Ödenen - Hakediş = Borç(+) / Alacak(-)
+        _mustahsilBorcAlacak = _genelToplam - _icmalDetay.HakedisToplamı;
+
+        // Nakliye/Mouse/Kepçe grupları
+        _nakliyeGruplari = _icmal
+            .GroupBy(k => k.Tip)
+            .ToDictionary(g => g.Key, g => g.ToList());
     }
 
     private async Task MailGonderAsync()

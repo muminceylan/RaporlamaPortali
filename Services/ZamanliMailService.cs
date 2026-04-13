@@ -15,8 +15,8 @@ public class ZamanliMailService : BackgroundService
     private readonly ILogger<ZamanliMailService> _logger;
     private readonly IServiceProvider _serviceProvider;
 
-    // Pancar maili bugün gönderildi mi?
-    private DateTime? _pancarSonGonderim = null;
+    // Eş zamanlı gönderimi önlemek için kilit
+    private volatile bool _gonderimDevamEdiyor = false;
 
     public ZamanliMailService(
         ILogger<ZamanliMailService> logger,
@@ -40,23 +40,29 @@ public class ZamanliMailService : BackgroundService
 
                 var simdi = DateTime.Now;
 
-                if (ayarlar.OtomatikGonderimAktif)
+                if (ayarlar.OtomatikGonderimAktif && !_gonderimDevamEdiyor)
                 {
                     var bugunGonderimZamani = simdi.Date.Add(ayarlar.GonderimSaati);
 
-                    bool bugunGonderilmedi = ayarlar.SonGonderimZamani == null || 
+                    bool bugunGonderilmedi = ayarlar.SonGonderimZamani == null ||
                                               ayarlar.SonGonderimZamani.Value.Date < simdi.Date;
 
                     if (simdi >= bugunGonderimZamani && bugunGonderilmedi)
                     {
                         _logger.LogInformation("Gonderim zamani geldi! Mail hazirlaniyor...");
-                        
-                        var sonuc = await GunlukRaporGonderAsync(scope.ServiceProvider);
-                        
-                        if (sonuc)
+                        _gonderimDevamEdiyor = true;
+                        try
                         {
-                            ayarlar.SonGonderimZamani = simdi;
-                            await ayarlarService.KaydetAsync(ayarlar);
+                            var sonuc = await GunlukRaporGonderAsync(scope.ServiceProvider);
+                            if (sonuc)
+                            {
+                                ayarlar.SonGonderimZamani = simdi;
+                                await ayarlarService.KaydetAsync(ayarlar);
+                            }
+                        }
+                        finally
+                        {
+                            _gonderimDevamEdiyor = false;
                         }
                     }
                 }
@@ -155,12 +161,16 @@ public class ZamanliMailService : BackgroundService
             if (ayarlar.Alicilar.Count == 0) return false;
 
             _logger.LogInformation("Pancar icmal verisi cekiliyor...");
-            var icmal     = await pancarService.GetIcmalAsync();
-            var ciftciler = await pancarService.GetCiftciListesiAsync();
-            var avans     = await pancarService.GetAvansAsync();
-            var finans    = await pancarService.GetFinansOzetAsync();
+            var t1 = pancarService.GetIcmalAsync();
+            var t2 = pancarService.GetCiftciListesiAsync();
+            var t3 = pancarService.GetAvansAsync();
+            var t4 = pancarService.GetFinansOzetAsync();
+            var t5 = pancarService.GetIcmalDetayAsync();
+            var t6 = pancarService.GetOzetIstatistikAsync();
+            await Task.WhenAll(t1, t2, t3, t4, t5, t6);
 
-            var html  = htmlService.PancarRaporHtmlOlustur(icmal, ciftciler, DateTime.Today, avans, finans);
+            var html  = htmlService.PancarRaporHtmlOlustur(
+                t1.Result, t2.Result, DateTime.Today, t3.Result, t4.Result, t5.Result, t6.Result);
             var konu  = $"Afyon Şeker Fabrikası Pancar Raporu ({DateTime.Today:dd.MM.yyyy})";
             var sonuc = await OutlookMailGonderAsync(ayarlar, konu, html);
 
