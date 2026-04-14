@@ -711,7 +711,8 @@ public class HtmlRaporService
         List<SatisIadeDipnot> dipnotlar,
         DateTime baslangic,
         DateTime bitis,
-        Dictionary<string, decimal>? baskanlikDonemBasi = null)
+        Dictionary<string, decimal>? baskanlikDonemBasi = null,
+        Dictionary<string, decimal>? baskanlikDonemSonu = null)
     {
         var tr = new CultureInfo("tr-TR");
         string N0(decimal v) => v.ToString("N0", tr);
@@ -875,14 +876,22 @@ public class HtmlRaporService
             sb2.AppendLine($"<tr class='fyt'><td class='L'>{ad}</td><td class='R'>{N2(k)} ₺/Kg</td><td class='R'>{N2(p)} ₺/Kg</td><td class='R'>{N2(tot ?? 0m)} ₺/Kg</td></tr>");
 
         // AY BAŞI STOK
+        // AY BAŞI: Başkanlık zincirinden gelen değerler kullanılır (LOGO başı değil)
+        decimal basA   = baskanlikDonemBasi?.GetValueOrDefault("A_KOTASI")       ?? (a?.DonemBasiMiktar    ?? 0m);
+        decimal basPak = baskanlikDonemBasi?.GetValueOrDefault("PAKETLI")        ?? (pak?.DonemBasiMiktar   ?? 0m);
+        decimal basB   = baskanlikDonemBasi?.GetValueOrDefault("B_KOTASI")       ?? (b?.DonemBasiMiktar    ?? 0m);
+        decimal basC   = baskanlikDonemBasi?.GetValueOrDefault("C_KOTASI")       ?? (c?.DonemBasiMiktar    ?? 0m);
+        decimal basTK  = baskanlikDonemBasi?.GetValueOrDefault("TICARI_KRISTAL") ?? (tk?.DonemBasiMiktar   ?? 0m);
+        decimal basTP  = baskanlikDonemBasi?.GetValueOrDefault("TICARI_PAKET")   ?? (tpak?.DonemBasiMiktar  ?? 0m);
+
         GrupBaslik("AY BAŞI STOK"); _rowIdx = 0;
-        Veri("Şirkete Ait Stok (Şeker Türleri İçin A Kotası)", a?.DonemBasiMiktar ?? 0m, pak?.DonemBasiMiktar ?? 0m);
-        Veri("Şirkete Ait Stok (Şeker Türleri İçin B Kotası)", b?.DonemBasiMiktar ?? 0m);
-        Veri("Şirkete Ait Stok (Şeker Türleri İçin C Şekeri)", c?.DonemBasiMiktar ?? 0m);
-        Veri("Ticari Mal Stok", tk?.DonemBasiMiktar ?? 0m, tpak?.DonemBasiMiktar ?? 0m);
+        Veri("Şirkete Ait Stok (Şeker Türleri İçin A Kotası)", basA, basPak);
+        Veri("Şirkete Ait Stok (Şeker Türleri İçin B Kotası)", basB);
+        Veri("Şirkete Ait Stok (Şeker Türleri İçin C Şekeri)", basC);
+        Veri("Ticari Mal Stok", basTK, basTP);
         Toplam("Aylık \"Ay Başı Stok\" Toplam",
-            (a?.DonemBasiMiktar ?? 0m) + (b?.DonemBasiMiktar ?? 0m) + (c?.DonemBasiMiktar ?? 0m) + (tk?.DonemBasiMiktar ?? 0m),
-            (pak?.DonemBasiMiktar ?? 0m) + (tpak?.DonemBasiMiktar ?? 0m));
+            basA + basB + basC + basTK,
+            basPak + basTP);
 
         // SATINALMA
         GrupBaslik("SATINALMA / SATIN ALINAN"); _rowIdx = 0;
@@ -947,22 +956,37 @@ public class HtmlRaporService
         Fiyat("Aylık Fiyat Ortalaması – Ticari Mal (KDV hariç)", tkKFiyat, tkPFiyat, tkFiyatT);
 
         // AY SONU STOK (Başkanlık Portalı ile Uyumlu)
+        // baskanlikDonemSonu mevcutsa doğrudan zincir sonucunu kullan (tüm kurallar uygulanmış)
+        // Yoksa eski delta formülüne dön
         GrupBaslik("AY SONU STOK (Portal ile Uyumlu)"); _rowIdx = 0;
-        decimal bkA2   = baskanlikDonemBasi?.GetValueOrDefault("A_KOTASI")       ?? (a?.DonemBasiMiktar   ?? 0m);
-        decimal bkPak2 = baskanlikDonemBasi?.GetValueOrDefault("PAKETLI")        ?? (pak?.DonemBasiMiktar  ?? 0m);
-        decimal bkB2   = baskanlikDonemBasi?.GetValueOrDefault("B_KOTASI")       ?? (b?.DonemBasiMiktar   ?? 0m);
-        decimal bkC2   = baskanlikDonemBasi?.GetValueOrDefault("C_KOTASI")       ?? (c?.DonemBasiMiktar   ?? 0m);
-        decimal bkTK2  = baskanlikDonemBasi?.GetValueOrDefault("TICARI_KRISTAL") ?? (tk?.DonemBasiMiktar  ?? 0m);
-        decimal bkTP2  = baskanlikDonemBasi?.GetValueOrDefault("TICARI_PAKET")   ?? (tpak?.DonemBasiMiktar ?? 0m);
         decimal bIade  = IadeHesapla("B_KOTASI", b?.SatisMiktar ?? 0m);
         decimal cIade  = IadeHesapla("C_KOTASI", c?.SatisMiktar ?? 0m);
-        decimal aKristalSonu  = bkA2   + (a?.DonemSonuMiktar   ?? 0m) - (a?.DonemBasiMiktar   ?? 0m) + aIade;
-        decimal aPaketSonu    = bkPak2 + (pak?.DonemSonuMiktar  ?? 0m) - (pak?.DonemBasiMiktar  ?? 0m) + pakIade;
-        decimal bSonu         = bkB2   + (b?.DonemSonuMiktar   ?? 0m) - (b?.DonemBasiMiktar   ?? 0m) + bIade;
-        decimal cSonu         = bkC2   + (c?.DonemSonuMiktar   ?? 0m) - (c?.DonemBasiMiktar   ?? 0m) + cIade;
-        decimal tkKristalSonu = bkTK2  + (tk?.DonemSonuMiktar  ?? 0m) - (tk?.DonemBasiMiktar  ?? 0m)
-                                       + (knya?.DonemSonuMiktar ?? 0m) - (knya?.DonemBasiMiktar ?? 0m) + tkIade;
-        decimal tpakSonu      = bkTP2  + (tpak?.DonemSonuMiktar ?? 0m) - (tpak?.DonemBasiMiktar ?? 0m) + tpIade;
+        decimal aKristalSonu, aPaketSonu, bSonu, cSonu, tkKristalSonu, tpakSonu;
+        if (baskanlikDonemSonu != null)
+        {
+            aKristalSonu  = baskanlikDonemSonu.GetValueOrDefault("A_KOTASI");
+            aPaketSonu    = baskanlikDonemSonu.GetValueOrDefault("PAKETLI");
+            bSonu         = baskanlikDonemSonu.GetValueOrDefault("B_KOTASI");
+            cSonu         = baskanlikDonemSonu.GetValueOrDefault("C_KOTASI");
+            tkKristalSonu = baskanlikDonemSonu.GetValueOrDefault("TICARI_KRISTAL");
+            tpakSonu      = baskanlikDonemSonu.GetValueOrDefault("TICARI_PAKET");
+        }
+        else
+        {
+            decimal bkA2   = baskanlikDonemBasi?.GetValueOrDefault("A_KOTASI")       ?? (a?.DonemBasiMiktar   ?? 0m);
+            decimal bkPak2 = baskanlikDonemBasi?.GetValueOrDefault("PAKETLI")        ?? (pak?.DonemBasiMiktar  ?? 0m);
+            decimal bkB2   = baskanlikDonemBasi?.GetValueOrDefault("B_KOTASI")       ?? (b?.DonemBasiMiktar   ?? 0m);
+            decimal bkC2   = baskanlikDonemBasi?.GetValueOrDefault("C_KOTASI")       ?? (c?.DonemBasiMiktar   ?? 0m);
+            decimal bkTK2  = baskanlikDonemBasi?.GetValueOrDefault("TICARI_KRISTAL") ?? (tk?.DonemBasiMiktar  ?? 0m);
+            decimal bkTP2  = baskanlikDonemBasi?.GetValueOrDefault("TICARI_PAKET")   ?? (tpak?.DonemBasiMiktar ?? 0m);
+            aKristalSonu  = bkA2   + (a?.DonemSonuMiktar   ?? 0m) - (a?.DonemBasiMiktar   ?? 0m) + aIade;
+            aPaketSonu    = bkPak2 + (pak?.DonemSonuMiktar  ?? 0m) - (pak?.DonemBasiMiktar  ?? 0m) + pakIade;
+            bSonu         = bkB2   + (b?.DonemSonuMiktar   ?? 0m) - (b?.DonemBasiMiktar   ?? 0m) + bIade;
+            cSonu         = bkC2   + (c?.DonemSonuMiktar   ?? 0m) - (c?.DonemBasiMiktar   ?? 0m) + cIade;
+            tkKristalSonu = bkTK2  + (tk?.DonemSonuMiktar  ?? 0m) - (tk?.DonemBasiMiktar  ?? 0m)
+                                   + (knya?.DonemSonuMiktar ?? 0m) - (knya?.DonemBasiMiktar ?? 0m) + tkIade;
+            tpakSonu      = bkTP2  + (tpak?.DonemSonuMiktar ?? 0m) - (tpak?.DonemBasiMiktar ?? 0m) + tpIade;
+        }
         Veri("Ay Sonu Stok – A Kotası (Kristal / Paket)", aKristalSonu, aPaketSonu);
         Veri("Ay Sonu Stok – B Kotası",                   bSonu);
         Veri("Ay Sonu Stok – C Şekeri",                   cSonu);

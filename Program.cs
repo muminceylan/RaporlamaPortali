@@ -306,8 +306,10 @@ app.MapGet("/api/seker-raporu", async (HttpContext context) =>
                 DateTime.DaysInMonth(DateTime.Today.Year, DateTime.Today.Month));
 
         var (analiz, dipnotlar) = await sekerDairesiService.GetSadeSekerAnaliziAsync(baslangic, bitis);
-        var bkBasi = await sekerDairesiService.GetBaskanlikDonemBasiAsync(baslangic);
-        var html = htmlService.SekerRaporHtmlOlustur(analiz, dipnotlar, baslangic, bitis, bkBasi);
+        var tBas = sekerDairesiService.GetBaskanlikDonemBasiAsync(baslangic);
+        var tSon = sekerDairesiService.GetBaskanlikDonemBasiAsync(bitis.AddDays(1));
+        await Task.WhenAll(tBas, tSon);
+        var html = htmlService.SekerRaporHtmlOlustur(analiz, dipnotlar, baslangic, bitis, tBas.Result, tSon.Result);
         context.Response.ContentType = "text/html; charset=utf-8";
         await context.Response.WriteAsync(html);
     }

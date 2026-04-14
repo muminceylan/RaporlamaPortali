@@ -191,13 +191,26 @@ client.on('message', async (message) => {
     try {
         config = configOku(); // Her mesajda taze config oku
 
-        // Bireysel mesaj: message.from = "905xxxxxxx@c.us"
+        // Bireysel mesaj: message.from = "905xxxxxxx@c.us" veya "905xxxxxxx@lid"
         // Grup mesajı:    message.from = "12036xxx@g.us", message.author = "905xxxxxxx@c.us"
-        const bireyselNumara = message.from.replace('@c.us', '');
-        const grupGonderenNumara = message.author ? message.author.replace('@c.us', '') : null;
-        const gonderenNumara = config.yetkiliNumaralar.includes(bireyselNumara)
+        // @ işaretinden sonraki her şeyi sil, sadece rakamları al
+        const numaraTemizle = (raw) => raw ? raw.replace(/@\S+$/, '').replace(/\D/g, '') : null;
+        const bireyselNumara = numaraTemizle(message.from);
+        const grupGonderenNumara = message.author ? numaraTemizle(message.author) : null;
+
+        // Listedeki numaralarla normalleştirilmiş karşılaştırma (son 10 hane eşleşmesi)
+        const numaraEslesiyor = (numara, liste) => {
+            if (!numara) return false;
+            return liste.some(k => {
+                const temizK = k.replace(/\D/g, '');
+                return temizK === numara ||
+                       temizK.slice(-10) === numara.slice(-10);
+            });
+        };
+
+        const gonderenNumara = numaraEslesiyor(bireyselNumara, config.yetkiliNumaralar)
             ? bireyselNumara
-            : (grupGonderenNumara && config.yetkiliNumaralar.includes(grupGonderenNumara) ? grupGonderenNumara : null);
+            : (numaraEslesiyor(grupGonderenNumara, config.yetkiliNumaralar) ? grupGonderenNumara : null);
 
         if (!gonderenNumara) {
             return;
