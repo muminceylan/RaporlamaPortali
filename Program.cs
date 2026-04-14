@@ -1,9 +1,14 @@
+using Dapper;
 using MudBlazor.Services;
 using RaporlamaPortali.Services;
 using System.Diagnostics;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication;
+
+// Alt çizgili SQL kolon adlarını PascalCase property'lere otomatik eşleştir
+// Örn: MALZEME_KODU → MalzemeKodu, AMBAR_NO → AmbarNo
+DefaultTypeMap.MatchNamesWithUnderscores = true;
 
 var exeDir = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
@@ -13,11 +18,15 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
     WebRootPath     = Path.Combine(exeDir, "wwwroot")
 });
 
-// Kestrel'i sadece localhost'ta çalıştır (güvenlik için)
-builder.WebHost.ConfigureKestrel(options =>
+// IIS out-of-process altında çalışmıyorsa Kestrel portunu sabitle
+if (Environment.GetEnvironmentVariable("ASPNETCORE_PORT") == null &&
+    Environment.GetEnvironmentVariable("ASPNETCORE_IIS_HTTPPORT") == null)
 {
-    options.ListenLocalhost(5050); // http://localhost:5050
-});
+    builder.WebHost.ConfigureKestrel(options =>
+    {
+        options.ListenLocalhost(5050); // http://localhost:5050
+    });
+}
 
 // Add services to the container.
 builder.Services.AddRazorPages(options =>
@@ -46,6 +55,7 @@ builder.Services.AddSingleton<DatabaseService>();
 // Report services
 builder.Services.AddScoped<YanUrunlerService>();
 builder.Services.AddScoped<SekerSatisService>();
+builder.Services.AddScoped<SekerDairesiService>();
 builder.Services.AddScoped<PancarOdemeService>();
 builder.Services.AddScoped<ExcelExportService>();
 builder.Services.AddScoped<HtmlRaporService>();
@@ -104,6 +114,29 @@ app.MapGet("/cikis", async (HttpContext ctx) =>
 {
     await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     return Results.Redirect("/giris");
+}).AllowAnonymous();
+
+// DEBUG: Şeker view'undaki gerçek MALZEME_KODU ve MALZEME_ADI değerlerini göster
+app.MapGet("/api/debug-seker", async (HttpContext context) =>
+{
+    using var scope = context.RequestServices.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<DatabaseService>();
+    using var conn = db.CreateConnection();
+    var rows = await conn.QueryAsync(@"
+        SELECT DISTINCT TOP 50
+            v.MALZEME_KODU,
+            MALZEME_ADI = ISNULL(itm.NAME, '-- JOIN YOK --')
+        FROM INF_UT_Kısıtlı_Malzeme_Raporu_Afyon_Seker_2025 v WITH(NOLOCK)
+        LEFT JOIN LG_211_ITEMS itm WITH(NOLOCK) ON itm.CODE = v.MALZEME_KODU
+        ORDER BY v.MALZEME_KODU");
+    var sb = new System.Text.StringBuilder("<pre>");
+    sb.AppendLine("MALZEME_KODU\t\t\tMALZEME_ADI");
+    sb.AppendLine(new string('-', 80));
+    foreach (var r in rows)
+        sb.AppendLine($"{r.MALZEME_KODU,-35}\t{r.MALZEME_ADI}");
+    sb.Append("</pre>");
+    context.Response.ContentType = "text/html; charset=utf-8";
+    await context.Response.WriteAsync(sb.ToString());
 }).AllowAnonymous();
 
 // WhatsApp entegrasyonu için rapor API endpoint'i
@@ -172,6 +205,109 @@ app.MapGet("/api/pancar-raporu", async (HttpContext context) =>
 
         var html = htmlService.PancarRaporHtmlOlustur(
             t1.Result, t2.Result, DateTime.Today, t3.Result, t4.Result, t5.Result, t6.Result);
+        context.Response.ContentType = "text/html; charset=utf-8";
+        await context.Response.WriteAsync(html);
+    }
+    catch (Exception ex)
+    {
+        context.Response.StatusCode = 500;
+        await context.Response.WriteAsync("Hata: " + ex.Message);
+    }
+}).AllowAnonymous();
+
+// DEBUG: Ekim 2025 A_KOTASI ham hareketleri (FIS_TURU bazında)
+// GET /api/debug-ekim-akotasi
+app.MapGet("/api/debug-ekim-akotasi", async (HttpContext context) =>
+{
+    using var scope = context.RequestServices.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<DatabaseService>();
+    using var conn = db.CreateConnection();
+
+    // A_KOTASI malzeme kodları
+    var aKotasiKodlar = new[] { "S.T.0.0.0", "S.T.0.0.4", "S.705.00.0005" };
+
+    var rows = await conn.QueryAsync<dynamic>(@"
+        SELECT
+            FIS_TURU,
+            MALZEME_KODU,
+            ToplamGiris  = SUM(ISNULL(GIRIS_MIKTAR_KG,  0)),
+            ToplamCikis  = SUM(ISNULL(CIKIS_MIKTARI_KG, 0)),
+            SatirSayisi  = COUNT(*)
+        FROM INF_UT_Kısıtlı_Malzeme_Raporu_Afyon_Seker_2025 WITH(NOLOCK)
+        WHERE TARIH >= '2025-10-01' AND TARIH <= '2025-10-31'
+          AND MALZEME_KODU IN ('S.T.0.0.0','S.T.0.0.4','S.705.00.0005')
+        GROUP BY FIS_TURU, MALZEME_KODU
+        ORDER BY FIS_TURU, MALZEME_KODU");
+
+    var sb = new System.Text.StringBuilder("<pre style='font-family:monospace;font-size:13px'>");
+    sb.AppendLine("=== EKİM 2025 A_KOTASI HAREKETLERİ ===");
+    sb.AppendLine($"{"FIS_TURU",-45} {"MALZEME_KODU",-20} {"GIRIS_KG",15:N2} {"CIKIS_KG",15:N2} {"SAYI",6}");
+    sb.AppendLine(new string('-', 110));
+    decimal topGiris = 0, topCikis = 0;
+    foreach (var r in rows)
+    {
+        decimal g = (decimal)(r.ToplamGiris ?? 0m);
+        decimal c = (decimal)(r.ToplamCikis ?? 0m);
+        topGiris += g; topCikis += c;
+        sb.AppendLine($"{r.FIS_TURU,-45} {r.MALZEME_KODU,-20} {g,15:N2} {c,15:N2} {r.SatirSayisi,6}");
+    }
+    sb.AppendLine(new string('-', 110));
+    sb.AppendLine($"{"TOPLAM",-67} {topGiris,15:N2} {topCikis,15:N2}");
+    sb.AppendLine();
+    sb.AppendLine($"NET (Giris - Cikis) = {topGiris - topCikis:N2}");
+    sb.Append("</pre>");
+
+    context.Response.ContentType = "text/html; charset=utf-8";
+    await context.Response.WriteAsync(sb.ToString());
+}).AllowAnonymous();
+
+// Şeker Kategorisi Bazlı Analiz (üst tablo – ham LOGO) API endpoint'i
+// GET /api/seker-analiz?baslangic=2025-09-01&bitis=2025-09-30
+app.MapGet("/api/seker-analiz", async (HttpContext context) =>
+{
+    try
+    {
+        using var scope = context.RequestServices.CreateScope();
+        var sekerDairesiService = scope.ServiceProvider.GetRequiredService<SekerDairesiService>();
+        var htmlService         = scope.ServiceProvider.GetRequiredService<HtmlRaporService>();
+
+        if (!DateTime.TryParse(context.Request.Query["baslangic"], out var baslangic))
+            baslangic = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+        if (!DateTime.TryParse(context.Request.Query["bitis"], out var bitis))
+            bitis = new DateTime(DateTime.Today.Year, DateTime.Today.Month,
+                DateTime.DaysInMonth(DateTime.Today.Year, DateTime.Today.Month));
+
+        var (analiz, _) = await sekerDairesiService.GetSadeSekerAnaliziAsync(baslangic, bitis);
+        var html = htmlService.SekerAnalizHtmlOlustur(analiz, baslangic, bitis);
+        context.Response.ContentType = "text/html; charset=utf-8";
+        await context.Response.WriteAsync(html);
+    }
+    catch (Exception ex)
+    {
+        context.Response.StatusCode = 500;
+        await context.Response.WriteAsync("Hata: " + ex.Message);
+    }
+}).AllowAnonymous();
+
+// Şeker Dairesi Başkanlık raporu API endpoint'i
+// GET /api/seker-raporu?baslangic=2025-09-01&bitis=2025-09-30
+app.MapGet("/api/seker-raporu", async (HttpContext context) =>
+{
+    try
+    {
+        using var scope = context.RequestServices.CreateScope();
+        var sekerDairesiService = scope.ServiceProvider.GetRequiredService<SekerDairesiService>();
+        var htmlService         = scope.ServiceProvider.GetRequiredService<HtmlRaporService>();
+
+        if (!DateTime.TryParse(context.Request.Query["baslangic"], out var baslangic))
+            baslangic = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+        if (!DateTime.TryParse(context.Request.Query["bitis"], out var bitis))
+            bitis = new DateTime(DateTime.Today.Year, DateTime.Today.Month,
+                DateTime.DaysInMonth(DateTime.Today.Year, DateTime.Today.Month));
+
+        var (analiz, dipnotlar) = await sekerDairesiService.GetSadeSekerAnaliziAsync(baslangic, bitis);
+        var bkBasi = await sekerDairesiService.GetBaskanlikDonemBasiAsync(baslangic);
+        var html = htmlService.SekerRaporHtmlOlustur(analiz, dipnotlar, baslangic, bitis, bkBasi);
         context.Response.ContentType = "text/html; charset=utf-8";
         await context.Response.WriteAsync(html);
     }

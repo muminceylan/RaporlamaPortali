@@ -547,4 +547,444 @@ public class HtmlRaporService
 
         return sb.ToString();
     }
+
+    /// <summary>
+    /// Şeker Kategorisi Bazlı Analiz tablosunu HTML olarak oluşturur (üst tablo – ham LOGO verisi).
+    /// </summary>
+    public string SekerAnalizHtmlOlustur(
+        List<SekerKategoriAnaliz> analiz,
+        DateTime baslangic,
+        DateTime bitis)
+    {
+        var tr = new CultureInfo("tr-TR");
+        string N0(decimal v) => v.ToString("N0", tr);
+        string N2(decimal v) => v.ToString("N2", tr);
+        string Fiyat(decimal m, decimal t) => m > 0 ? (t / m).ToString("N2", tr) : "–";
+
+        var logo = LogoImgHtml();
+
+        var sb = new StringBuilder();
+        sb.AppendLine($@"<!DOCTYPE html>
+<html lang='tr'>
+<head>
+  <meta charset='UTF-8'>
+  <style>
+    body{{font-family:'Segoe UI',Arial,sans-serif;background:#f5f5f5;padding:10px;margin:0;color:#222}}
+    .wrap{{background:#fff;border-radius:6px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.15);width:1580px}}
+    .hdr{{background:#2e7d32;padding:10px 14px;color:#fff}}
+    .hdr-title{{font-size:13px;font-weight:700}}
+    .hdr-sub{{font-size:10px;color:rgba(255,255,255,.8);margin-top:2px}}
+    table{{border-collapse:collapse;width:100%;font-size:10px}}
+    th{{padding:5px 4px;border:1px solid #263238;text-align:right;white-space:nowrap;font-size:9px}}
+    th.L{{text-align:left}}
+    th.G{{background:#2e7d32;color:#fff}}
+    th.B{{background:#0D47A1;color:#fff}}
+    th.R{{background:#b71c1c;color:#fff}}
+    th.M{{background:#880E4F;color:#fff}}
+    th.P{{background:#7B1FA2;color:#fff}}
+    th.O{{background:#E65100;color:#fff}}
+    td{{padding:4px;border:1px solid #ddd;text-align:right;font-family:Consolas,monospace;font-size:10px;white-space:nowrap}}
+    td.L{{text-align:left;font-weight:600;font-family:'Segoe UI',Arial,sans-serif;white-space:nowrap}}
+    td.neg{{color:#c62828;font-weight:700}}
+    td.blue{{color:#0D47A1;font-weight:700}}
+    td.purple{{color:#7B1FA2;font-weight:700}}
+    td.orange{{color:#E65100;font-weight:700}}
+    td.red{{color:#b71c1c}}
+    td.pink{{color:#880E4F}}
+    .alt{{background:#f9f9f9}}
+    .tot td{{background:#fff9c4;font-weight:700;color:#1b5e20;border-color:#f9a825}}
+    .footer{{padding:5px 10px;font-size:9px;color:#aaa;border-top:1px solid #eee;text-align:center}}
+  </style>
+</head>
+<body>
+<div class='wrap'>
+  <div class='hdr'>
+    <table cellpadding='0' cellspacing='0' border='0'><tr>
+      <td style='padding-right:10px;vertical-align:middle'>{logo}</td>
+      <td style='vertical-align:middle'>
+        <div class='hdr-title'>ŞEKER KATEGORİSİ BAZLI ANALİZ (Ham LOGO Verisi)</div>
+        <div class='hdr-sub'>Doğuş Çay – Afyon Şeker Fabrikası &nbsp;|&nbsp; {baslangic:dd.MM.yyyy} – {bitis:dd.MM.yyyy} &nbsp;|&nbsp; {DateTime.Now:dd.MM.yyyy HH:mm}</div>
+      </td>
+    </tr></table>
+  </div>
+  <table>
+    <colgroup>
+      <col style='width:145px'>
+      <col style='width:75px'><col style='width:75px'><col style='width:70px'><col style='width:70px'><col style='width:68px'><col style='width:80px'>
+      <col style='width:75px'><col style='width:88px'><col style='width:88px'>
+      <col style='width:70px'><col style='width:62px'><col style='width:72px'><col style='width:68px'><col style='width:72px'><col style='width:80px'>
+      <col style='width:82px'><col style='width:72px'>
+    </colgroup>
+    <thead>
+      <tr>
+        <th class='L G'>KATEGORİ</th>
+        <th class='G'>Dönem Başı (Kg)</th>
+        <th class='B'>Üretim (Kg)</th>
+        <th class='B'>Satın Alma (Kg)</th>
+        <th class='B'>Satış İade (Kg)</th>
+        <th class='B'>Diğer Giriş (Kg)</th>
+        <th class='B' style='background:#0D47A1;font-weight:900'>Top. Giriş (Kg)</th>
+        <th class='R'>Satış (Kg)</th>
+        <th class='M'>Satış Tutarı (₺)</th>
+        <th class='M'>Ort. Fiyat (₺/Kg)</th>
+        <th class='R'>Sarf (Kg)</th>
+        <th class='R'>Fire (Kg)</th>
+        <th class='R'>Yemekhane (Kg)</th>
+        <th class='R'>PROMS (Kg)</th>
+        <th class='R'>Diğer Çıkış (Kg)</th>
+        <th class='P' style='font-weight:900'>Top. Çıkış (Kg)</th>
+        <th class='O'>Dönem Sonu (Kg)</th>
+        <th class='O'>Dönem Sonu (Ton)</th>
+      </tr>
+    </thead>
+    <tbody>");
+
+        int rowIdx = 0;
+        foreach (var k in analiz)
+        {
+            var alt = rowIdx++ % 2 == 1 ? " class='alt'" : "";
+            var stokCls = k.DonemSonuMiktar < 0 ? "neg" : "orange";
+            sb.AppendLine($@"<tr{alt}>
+        <td class='L'>{k.KategoriAdi}</td>
+        <td>{N0(k.DonemBasiMiktar)}</td>
+        <td>{N0(k.UretimMiktar)}</td>
+        <td>{N0(k.SatinAlmaMiktar)}</td>
+        <td>{N0(k.SatisIadeMiktar)}</td>
+        <td>{N0(k.ReceteFarkMiktar + k.SayimFazlasiMiktar)}</td>
+        <td class='blue'>{N0(k.ToplamGirisMiktar)}</td>
+        <td class='red'>{N0(k.SatisMiktar)}</td>
+        <td class='pink'>{N2(k.SatisTutar)}</td>
+        <td class='pink'>{Fiyat(k.SatisMiktar, k.SatisTutar)}</td>
+        <td class='red'>{N0(k.SarfMiktar)}</td>
+        <td class='red'>{N0(k.FireMiktar)}</td>
+        <td class='red'>{N0(k.YemekhaneMiktar)}</td>
+        <td class='red'>{N0(k.PromsMiktar)}</td>
+        <td class='red'>{N0(k.SatinAlmaIadeMiktar)}</td>
+        <td class='purple'>{N0(k.ToplamCikisMiktar)}</td>
+        <td class='{stokCls}'>{N0(k.DonemSonuMiktar)}</td>
+        <td class='{stokCls}'>{(k.DonemSonuMiktar / 1000m).ToString("N3", tr)}</td>
+      </tr>");
+        }
+
+        // Toplam satırı
+        var tGiris  = analiz.Sum(x => x.ToplamGirisMiktar);
+        var tCikis  = analiz.Sum(x => x.ToplamCikisMiktar);
+        var tSatis  = analiz.Sum(x => x.SatisMiktar);
+        var tTutar  = analiz.Sum(x => x.SatisTutar);
+        var tSonu   = analiz.Sum(x => x.DonemSonuMiktar);
+        sb.AppendLine($@"<tr class='tot'>
+        <td class='L'>TOPLAM</td>
+        <td>{N0(analiz.Sum(x => x.DonemBasiMiktar))}</td>
+        <td>{N0(analiz.Sum(x => x.UretimMiktar))}</td>
+        <td>{N0(analiz.Sum(x => x.SatinAlmaMiktar))}</td>
+        <td>{N0(analiz.Sum(x => x.SatisIadeMiktar))}</td>
+        <td>{N0(analiz.Sum(x => x.ReceteFarkMiktar + x.SayimFazlasiMiktar))}</td>
+        <td style='color:#0D47A1'>{N0(tGiris)}</td>
+        <td style='color:#b71c1c'>{N0(tSatis)}</td>
+        <td style='color:#880E4F'>{N2(tTutar)}</td>
+        <td style='color:#880E4F'>{Fiyat(tSatis, tTutar)}</td>
+        <td style='color:#b71c1c'>{N0(analiz.Sum(x => x.SarfMiktar))}</td>
+        <td style='color:#b71c1c'>{N0(analiz.Sum(x => x.FireMiktar))}</td>
+        <td style='color:#b71c1c'>{N0(analiz.Sum(x => x.YemekhaneMiktar))}</td>
+        <td style='color:#b71c1c'>{N0(analiz.Sum(x => x.PromsMiktar))}</td>
+        <td style='color:#b71c1c'>{N0(analiz.Sum(x => x.SatinAlmaIadeMiktar))}</td>
+        <td style='color:#7B1FA2'>{N0(tCikis)}</td>
+        <td style='color:#E65100'>{N0(tSonu)}</td>
+        <td style='color:#E65100'>{(tSonu / 1000m).ToString("N3", tr)}</td>
+      </tr>");
+
+        sb.AppendLine($@"    </tbody>
+  </table>
+  <div class='footer'>{baslangic:dd.MM.yyyy} – {bitis:dd.MM.yyyy} &nbsp;|&nbsp; Ham LOGO verisi, düzeltme uygulanmamış &nbsp;|&nbsp; © {DateTime.Now.Year} Doğuş Çay</div>
+</div>
+</body>
+</html>");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Şeker Dairesi Başkanlığı raporunu HTML olarak oluşturur (WhatsApp PNG ekranı için).
+    /// Başkanlık tablosu hesaplama mantığı SekerDairesiRaporu.razor'daki HesaplaBaskanlikTablosu() ile aynıdır.
+    /// </summary>
+    public string SekerRaporHtmlOlustur(
+        List<SekerKategoriAnaliz> analiz,
+        List<SatisIadeDipnot> dipnotlar,
+        DateTime baslangic,
+        DateTime bitis,
+        Dictionary<string, decimal>? baskanlikDonemBasi = null)
+    {
+        var tr = new CultureInfo("tr-TR");
+        string N0(decimal v) => v.ToString("N0", tr);
+        string N2(decimal v) => v.ToString("N2", tr);
+
+        SekerKategoriAnaliz? GetKat(string key) => analiz.FirstOrDefault(x => x.Kategori == key);
+
+        var a    = GetKat("A_KOTASI");
+        var b    = GetKat("B_KOTASI");
+        var c    = GetKat("C_KOTASI");
+        var tk   = GetKat("TICARI_KRISTAL");
+        var knya = GetKat("KONYA_TICARI");
+        var pak  = GetKat("PAKETLI");
+        var tpak = GetKat("TICARI_PAKET");
+
+        decimal pakUretim  = pak?.UretimMiktar  ?? 0m;
+        decimal tpakUretim = tpak?.UretimMiktar ?? 0m;
+
+        decimal aSarfExtra  = Math.Max(0m, (a?.SarfMiktar  ?? 0m) - pakUretim);
+        decimal tkSarfExtra = Math.Max(0m, (tk?.SarfMiktar ?? 0m) - tpakUretim);
+
+        decimal aOrtFiyat   = (a?.SatisMiktar   ?? 0m) > 0 ? (a?.SatisTutar   ?? 0m) / a!.SatisMiktar   : 0m;
+        // Konya Şeker satışı Ticari Kristal'e ekleniyor — ortalama fiyat her ikisi dahil hesaplanır
+        decimal tkToplamSatisMiktar = (tk?.SatisMiktar ?? 0m) + (knya?.SatisMiktar ?? 0m);
+        decimal tkToplamSatisTutar  = (tk?.SatisTutar  ?? 0m) + (knya?.SatisTutar  ?? 0m);
+        decimal tkOrtFiyat  = tkToplamSatisMiktar > 0 ? tkToplamSatisTutar / tkToplamSatisMiktar : 0m;
+        decimal pakOrtFiyat = (pak?.SatisMiktar  ?? 0m) > 0 ? (pak?.SatisTutar  ?? 0m) / pak!.SatisMiktar  : 0m;
+        decimal tpOrtFiyat  = (tpak?.SatisMiktar ?? 0m) > 0 ? (tpak?.SatisTutar ?? 0m) / tpak!.SatisMiktar : 0m;
+
+        decimal aSarfExtraTutar  = aOrtFiyat  * aSarfExtra;
+        decimal tkSarfExtraTutar = tkOrtFiyat * tkSarfExtra;
+        decimal pakSarfTutar     = pakOrtFiyat * (pak?.SarfMiktar  ?? 0m);
+        decimal tpSarfTutar      = tpOrtFiyat  * (tpak?.SarfMiktar ?? 0m);
+
+        decimal aYemPromsLocal   = (a?.YemekhaneMiktar   ?? 0m) + (a?.PromsMiktar   ?? 0m);
+        decimal pakYemPromsLocal = (pak?.YemekhaneMiktar  ?? 0m) + (pak?.PromsMiktar  ?? 0m);
+        decimal aYemPromsTutar   = aOrtFiyat   * aYemPromsLocal;
+        decimal pakYemPromsTutar = pakOrtFiyat * pakYemPromsLocal;
+
+        decimal aSatisBrut    = (a?.SatisMiktar   ?? 0m) + aSarfExtra   + aYemPromsLocal;
+        decimal aSatisBrutTl  = (a?.SatisTutar    ?? 0m) + aSarfExtraTutar + aYemPromsTutar;
+        decimal tkSatisBrut   = (tk?.SatisMiktar  ?? 0m) + tkSarfExtra + (knya?.SatisMiktar ?? 0m);
+        decimal tkSatisBrutTl = (tk?.SatisTutar   ?? 0m) + tkSarfExtraTutar + (knya?.SatisTutar ?? 0m);
+        decimal pakSatisBrut  = (pak?.SatisMiktar  ?? 0m) + (pak?.SarfMiktar  ?? 0m) + pakYemPromsLocal;
+        decimal pakSatisBrutTl= (pak?.SatisTutar   ?? 0m) + pakSarfTutar + pakYemPromsTutar;
+        decimal tpSatisBrut   = (tpak?.SatisMiktar ?? 0m) + (tpak?.SarfMiktar ?? 0m);
+        decimal tpSatisBrutTl = (tpak?.SatisTutar  ?? 0m) + tpSarfTutar;
+
+        decimal IadeHesapla(string kat, decimal brut) =>
+            Math.Min(brut, Math.Max(0m, dipnotlar.Where(d => d.HedefKategori == kat).Sum(d => d.Miktar)));
+        decimal IadeTutar(decimal iade, decimal brut, decimal brutTl) =>
+            brut > 0 ? brutTl * iade / brut : 0m;
+
+        decimal aIade   = IadeHesapla("A_KOTASI",       aSatisBrut);
+        // Konya Şeker iadeleri de Ticari Kristal toplamına dahil edilir
+        decimal tkIade  = Math.Min(tkSatisBrut, Math.Max(0m,
+            dipnotlar.Where(d => d.HedefKategori == "TICARI_KRISTAL" || d.HedefKategori == "KONYA_TICARI").Sum(d => d.Miktar)));
+        decimal pakIade = IadeHesapla("PAKETLI",        pakSatisBrut);
+        decimal tpIade  = IadeHesapla("TICARI_PAKET",   tpSatisBrut);
+
+        decimal aIadeTl   = IadeTutar(aIade,  aSatisBrut,  aSatisBrutTl);
+        decimal tkIadeTl  = IadeTutar(tkIade, tkSatisBrut, tkSatisBrutTl);
+        decimal pakIadeTl = IadeTutar(pakIade,pakSatisBrut,pakSatisBrutTl);
+        decimal tpIadeTl  = IadeTutar(tpIade, tpSatisBrut, tpSatisBrutTl);
+
+        decimal aSatMiktar    = aSatisBrut   - aIade;
+        decimal aSatTutar     = aSatisBrutTl - aIadeTl;
+        decimal tkSatMiktar   = tkSatisBrut  - tkIade;
+        decimal tkSatTutar    = tkSatisBrutTl- tkIadeTl;
+        decimal pakSatMiktar  = pakSatisBrut  - pakIade;
+        decimal pakSatTutar   = pakSatisBrutTl- pakIadeTl;
+        decimal tpakSatMiktar = tpSatisBrut   - tpIade;
+        decimal tpakSatTutar  = tpSatisBrutTl - tpIadeTl;
+
+        decimal bDigerK    = (b?.YemekhaneMiktar    ?? 0m) + (b?.PromsMiktar    ?? 0m);
+        decimal cDigerK    = (c?.YemekhaneMiktar    ?? 0m) + (c?.PromsMiktar    ?? 0m);
+        decimal tkDigerK   = (tk?.YemekhaneMiktar   ?? 0m) + (tk?.PromsMiktar   ?? 0m);
+        decimal tpakDigerP = (tpak?.YemekhaneMiktar ?? 0m) + (tpak?.PromsMiktar ?? 0m);
+        decimal digCikisK  = bDigerK + cDigerK + tkDigerK;
+        decimal digCikisP  = tpakDigerP;
+
+        decimal satisK = aSatMiktar + (b?.SatisMiktar ?? 0m) + (c?.SatisMiktar ?? 0m) + tkSatMiktar;
+        decimal satisP = pakSatMiktar + tpakSatMiktar;
+        decimal ciroK  = aSatTutar  + (b?.SatisTutar ?? 0m) + (c?.SatisTutar ?? 0m) + tkSatTutar;
+        decimal ciroP  = pakSatTutar + tpakSatTutar;
+
+        decimal aKFiyat  = aSatMiktar    > 0 ? aSatTutar    / aSatMiktar    : 0m;
+        decimal aPFiyat  = pakSatMiktar  > 0 ? pakSatTutar  / pakSatMiktar  : 0m;
+        decimal aFiyatT  = (aSatMiktar + pakSatMiktar) > 0 ? (aSatTutar + pakSatTutar) / (aSatMiktar + pakSatMiktar) : 0m;
+        decimal bFiyat   = (b?.SatisMiktar ?? 0m) > 0 ? (b?.SatisTutar ?? 0m) / b!.SatisMiktar : 0m;
+        decimal cFiyat   = (c?.SatisMiktar ?? 0m) > 0 ? (c?.SatisTutar ?? 0m) / c!.SatisMiktar : 0m;
+        decimal tkKFiyat = tkSatMiktar   > 0 ? tkSatTutar   / tkSatMiktar   : 0m;
+        decimal tkPFiyat = tpakSatMiktar > 0 ? tpakSatTutar / tpakSatMiktar : 0m;
+        decimal tkFiyatT = (tkSatMiktar + tpakSatMiktar) > 0 ? (tkSatTutar + tpakSatTutar) / (tkSatMiktar + tpakSatMiktar) : 0m;
+
+        var sb2 = new StringBuilder();
+        var logo = LogoImgHtml();
+        var ayAdi = baslangic.ToString("MMMM yyyy", tr);
+
+        sb2.AppendLine($@"<!DOCTYPE html>
+<html lang='tr'>
+<head>
+  <meta charset='UTF-8'>
+  <style>
+    body{{font-family:'Segoe UI',Arial,sans-serif;background:#f5f5f5;padding:10px;margin:0;color:#222}}
+    .wrap{{background:#fff;border-radius:6px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.15);max-width:920px}}
+    .hdr{{background:#1a237e;padding:10px 14px;color:#fff}}
+    .hdr-title{{font-size:13px;font-weight:700}}
+    .hdr-sub{{font-size:10px;color:rgba(255,255,255,.8);margin-top:2px}}
+    table{{border-collapse:collapse;width:100%;font-size:11px}}
+    td,th{{padding:4px 8px;border:1px solid #ddd}}
+    td.L{{text-align:left}}
+    td.R{{text-align:right;font-family:Consolas,monospace}}
+    th{{background:#37474f;color:#fff;text-align:right;font-size:10px;white-space:nowrap}}
+    th.L{{text-align:left}}
+    .grp td{{background:#1a237e;color:#fff;font-weight:700;font-size:11px;border:none;padding:5px 8px}}
+    .tot td{{background:#fff9c4;font-weight:700;color:#1b5e20;border-color:#f9a825}}
+    .tl td{{background:#e3f2fd;font-weight:600;color:#0d47a1;border-color:#90caf9}}
+    .fyt td{{background:#f3e5f5;font-weight:600;color:#6a1b9a;border-color:#ce93d8}}
+    .alt td{{background:#f9f9f9}}
+    .footer{{padding:5px 10px;font-size:9px;color:#aaa;border-top:1px solid #eee;text-align:center}}
+    .dipnot{{background:#fff3e0;border-left:3px solid #ff9800;padding:6px 10px;font-size:10px;color:#555;margin:0 0 0 0}}
+  </style>
+</head>
+<body>
+<div class='wrap'>
+  <div class='hdr'>
+    <table cellpadding='0' cellspacing='0' border='0'><tr>
+      <td style='padding-right:10px;vertical-align:middle'>{logo}</td>
+      <td style='vertical-align:middle'>
+        <div class='hdr-title'>ŞEKER ÜRETİM, SATIŞ VE STOK BİLGİLERİ</div>
+        <div class='hdr-sub'>Doğuş Çay – Afyon Şeker Fabrikası &nbsp;|&nbsp; {baslangic:dd.MM.yyyy} – {bitis:dd.MM.yyyy} &nbsp;|&nbsp; {DateTime.Now:dd.MM.yyyy HH:mm}</div>
+      </td>
+    </tr></table>
+  </div>
+  <table>
+    <colgroup><col style='width:460px'><col style='width:140px'><col style='width:140px'><col style='width:140px'></colgroup>
+    <thead>
+      <tr>
+        <th class='L'>AÇIKLAMA</th>
+        <th>Kristal Şeker (Kg)</th>
+        <th>Küp/Paket Şeker (Kg)</th>
+        <th>Toplam (Kg)</th>
+      </tr>
+    </thead>
+    <tbody>");
+
+        void GrupBaslik(string ad) =>
+            sb2.AppendLine($"<tr class='grp'><td colspan='4'>{ad}</td></tr>");
+        int _rowIdx = 0;
+        void Veri(string ad, decimal k = 0, decimal p = 0)
+        {
+            var cls = _rowIdx++ % 2 == 1 ? " class='alt'" : "";
+            sb2.AppendLine($"<tr{cls}><td class='L'>{ad}</td><td class='R'>{N0(k)}</td><td class='R'>{N0(p)}</td><td class='R'>{N0(k+p)}</td></tr>");
+        }
+        void Toplam(string ad, decimal k = 0, decimal p = 0) =>
+            sb2.AppendLine($"<tr class='tot'><td class='L'>{ad}</td><td class='R'>{N0(k)}</td><td class='R'>{N0(p)}</td><td class='R'>{N0(k+p)}</td></tr>");
+        void Tutar(string ad, decimal k = 0, decimal p = 0, decimal? tot = null) =>
+            sb2.AppendLine($"<tr class='tl'><td class='L'>{ad}</td><td class='R'>{N2(k)} ₺</td><td class='R'>{N2(p)} ₺</td><td class='R'>{N2(tot ?? k+p)} ₺</td></tr>");
+        void Fiyat(string ad, decimal k = 0, decimal p = 0, decimal? tot = null) =>
+            sb2.AppendLine($"<tr class='fyt'><td class='L'>{ad}</td><td class='R'>{N2(k)} ₺/Kg</td><td class='R'>{N2(p)} ₺/Kg</td><td class='R'>{N2(tot ?? 0m)} ₺/Kg</td></tr>");
+
+        // AY BAŞI STOK
+        GrupBaslik("AY BAŞI STOK"); _rowIdx = 0;
+        Veri("Şirkete Ait Stok (Şeker Türleri İçin A Kotası)", a?.DonemBasiMiktar ?? 0m, pak?.DonemBasiMiktar ?? 0m);
+        Veri("Şirkete Ait Stok (Şeker Türleri İçin B Kotası)", b?.DonemBasiMiktar ?? 0m);
+        Veri("Şirkete Ait Stok (Şeker Türleri İçin C Şekeri)", c?.DonemBasiMiktar ?? 0m);
+        Veri("Ticari Mal Stok", tk?.DonemBasiMiktar ?? 0m, tpak?.DonemBasiMiktar ?? 0m);
+        Toplam("Aylık \"Ay Başı Stok\" Toplam",
+            (a?.DonemBasiMiktar ?? 0m) + (b?.DonemBasiMiktar ?? 0m) + (c?.DonemBasiMiktar ?? 0m) + (tk?.DonemBasiMiktar ?? 0m),
+            (pak?.DonemBasiMiktar ?? 0m) + (tpak?.DonemBasiMiktar ?? 0m));
+
+        // SATINALMA
+        GrupBaslik("SATINALMA / SATIN ALINAN"); _rowIdx = 0;
+        // Konya Şeker satın alması da Ticari Kristal satırına eklenir (satışları da oraya ekleniyor)
+        decimal tkSatinAlma = (tk?.SatinAlmaMiktar ?? 0m) + (knya?.SatinAlmaMiktar ?? 0m);
+        Veri("Yurtiçinden Satın Alınan (Ticari Mal)", tkSatinAlma, tpak?.SatinAlmaMiktar ?? 0m);
+        Veri("Yurtdışından Satın Alınan");
+        Veri("Fason Üretim İçin Teslim Alınan");
+        Toplam("Aylık \"Satın Alınan\" Toplam", tkSatinAlma, tpak?.SatinAlmaMiktar ?? 0m);
+
+        // İŞLENEN
+        GrupBaslik("İŞLENEN"); _rowIdx = 0;
+        Veri("Şirkete Ait İşlenen A Kotası", pakUretim);
+        Veri("Şirkete Ait İşlenen B Kotası");
+        Veri("Şirkete Ait İşlenen C Şekeri");
+        Veri("Ticari Mal İşlenen", tpakUretim);
+        Veri("Fason İşlenen");
+        Toplam("Aylık \"İşlenen\" Toplam", pakUretim + tpakUretim);
+
+        // ÜRETİM
+        GrupBaslik("ÜRETİM"); _rowIdx = 0;
+        Veri("Şirkete Ait Üretim (Şeker Türleri İçin A Kotası)", a?.UretimMiktar ?? 0m, pakUretim);
+        Veri("Şirkete Ait Üretim (Şeker Türleri İçin B Kotası)", b?.UretimMiktar ?? 0m);
+        Veri("Şirkete Ait Üretim (Şeker Türleri İçin C Şekeri)", c?.UretimMiktar ?? 0m);
+        Veri("Fason Üretim");
+        Veri("Ticari Mal Üretimi", tk?.UretimMiktar ?? 0m, tpakUretim);
+        Toplam("Aylık \"Üretim\" Toplam",
+            (a?.UretimMiktar ?? 0m) + (b?.UretimMiktar ?? 0m) + (c?.UretimMiktar ?? 0m) + (tk?.UretimMiktar ?? 0m),
+            pakUretim + tpakUretim);
+
+        // DİĞER YOLLARLA GİRİŞ
+        GrupBaslik("DİĞER YOLLARLA GİRİŞ"); _rowIdx = 0;
+        Veri("Giriş (A Kotası)"); Veri("Giriş (B Kotası)"); Veri("Giriş (C Şekeri)");
+        Veri("Giriş Fason"); Veri("Giriş Ticari Mal");
+        Toplam("Aylık \"Diğer Yollarla Giriş\" Toplam");
+
+        // DİĞER YOLLARLA ÇIKIŞ
+        GrupBaslik("DİĞER YOLLARLA ÇIKIŞ"); _rowIdx = 0;
+        Veri("Çıkış (A Kotası)");
+        Veri("Çıkış (B Kotası)", bDigerK);
+        Veri("Çıkış (C Şekeri)", cDigerK);
+        Veri("Çıkış Fason");
+        Veri("Çıkış Ticari Mal", tkDigerK, tpakDigerP);
+        Toplam("Aylık \"Diğer Yollarla Çıkış\" Toplam", digCikisK, digCikisP);
+
+        // SATIŞ
+        GrupBaslik("SATIŞ (Satış ve/veya Teslim Eden)"); _rowIdx = 0;
+        Veri("Yurtiçi Satış (Şeker Türleri İçin A Kotası)", aSatMiktar, pakSatMiktar);
+        Veri("Yurtiçi Satış (Şeker Türleri İçin B Kotası)", b?.SatisMiktar ?? 0m);
+        Veri("C Şekeri Satışı (Toplam)", c?.SatisMiktar ?? 0m);
+        Veri("Yurtiçi Ticari Mal Satışı", tkSatMiktar, tpakSatMiktar);
+        Veri("Yurtdışı Ticari Mal Satışı");
+        Toplam("Aylık \"Satış ve/veya Teslim Edilen\" Toplam", satisK, satisP);
+        Tutar("A Kotası Satış Hâsılatı (₺)", aSatTutar, pakSatTutar);
+        Tutar("B Kotası Satış Hâsılatı (₺)", b?.SatisTutar ?? 0m);
+        Tutar("C Şekeri Satış Hâsılatı (₺)", c?.SatisTutar ?? 0m);
+        Tutar("Ticari Mal Satış Hâsılatı (₺)", tkSatTutar, tpakSatTutar);
+        Tutar("Toplam Ciro", ciroK, ciroP);
+        Fiyat("Aylık Fiyat Ortalaması – A Kotası (KDV hariç)", aKFiyat, aPFiyat, aFiyatT);
+        Fiyat("Aylık Fiyat Ortalaması – B Kotası (KDV hariç)", bFiyat, 0m, bFiyat);
+        Fiyat("Aylık Fiyat Ortalaması – C Şekeri (KDV hariç)", cFiyat, 0m, cFiyat);
+        Fiyat("Aylık Fiyat Ortalaması – Ticari Mal (KDV hariç)", tkKFiyat, tkPFiyat, tkFiyatT);
+
+        // AY SONU STOK (Başkanlık Portalı ile Uyumlu)
+        GrupBaslik("AY SONU STOK (Portal ile Uyumlu)"); _rowIdx = 0;
+        decimal bkA2   = baskanlikDonemBasi?.GetValueOrDefault("A_KOTASI")       ?? (a?.DonemBasiMiktar   ?? 0m);
+        decimal bkPak2 = baskanlikDonemBasi?.GetValueOrDefault("PAKETLI")        ?? (pak?.DonemBasiMiktar  ?? 0m);
+        decimal bkB2   = baskanlikDonemBasi?.GetValueOrDefault("B_KOTASI")       ?? (b?.DonemBasiMiktar   ?? 0m);
+        decimal bkC2   = baskanlikDonemBasi?.GetValueOrDefault("C_KOTASI")       ?? (c?.DonemBasiMiktar   ?? 0m);
+        decimal bkTK2  = baskanlikDonemBasi?.GetValueOrDefault("TICARI_KRISTAL") ?? (tk?.DonemBasiMiktar  ?? 0m);
+        decimal bkTP2  = baskanlikDonemBasi?.GetValueOrDefault("TICARI_PAKET")   ?? (tpak?.DonemBasiMiktar ?? 0m);
+        decimal bIade  = IadeHesapla("B_KOTASI", b?.SatisMiktar ?? 0m);
+        decimal cIade  = IadeHesapla("C_KOTASI", c?.SatisMiktar ?? 0m);
+        decimal aKristalSonu  = bkA2   + (a?.DonemSonuMiktar   ?? 0m) - (a?.DonemBasiMiktar   ?? 0m) + aIade;
+        decimal aPaketSonu    = bkPak2 + (pak?.DonemSonuMiktar  ?? 0m) - (pak?.DonemBasiMiktar  ?? 0m) + pakIade;
+        decimal bSonu         = bkB2   + (b?.DonemSonuMiktar   ?? 0m) - (b?.DonemBasiMiktar   ?? 0m) + bIade;
+        decimal cSonu         = bkC2   + (c?.DonemSonuMiktar   ?? 0m) - (c?.DonemBasiMiktar   ?? 0m) + cIade;
+        decimal tkKristalSonu = bkTK2  + (tk?.DonemSonuMiktar  ?? 0m) - (tk?.DonemBasiMiktar  ?? 0m)
+                                       + (knya?.DonemSonuMiktar ?? 0m) - (knya?.DonemBasiMiktar ?? 0m) + tkIade;
+        decimal tpakSonu      = bkTP2  + (tpak?.DonemSonuMiktar ?? 0m) - (tpak?.DonemBasiMiktar ?? 0m) + tpIade;
+        Veri("Ay Sonu Stok – A Kotası (Kristal / Paket)", aKristalSonu, aPaketSonu);
+        Veri("Ay Sonu Stok – B Kotası",                   bSonu);
+        Veri("Ay Sonu Stok – C Şekeri",                   cSonu);
+        Veri("Ay Sonu Stok – Ticari Mal (Kristal / Paket)", tkKristalSonu, tpakSonu);
+        decimal aysonuK = aKristalSonu + bSonu + cSonu + tkKristalSonu;
+        decimal aysonuP = aPaketSonu + tpakSonu;
+        Toplam("Aylık \"Ay Sonu Stok\" Toplam", aysonuK, aysonuP);
+
+        sb2.AppendLine("    </tbody>\n  </table>");
+
+        if (dipnotlar.Count > 0)
+        {
+            sb2.AppendLine("  <div class='dipnot'><strong>Dipnot:</strong>");
+            foreach (var d in dipnotlar)
+            {
+                var yonStr = d.Yonlendirildi ? $" ({d.KaynakKategoriAdi} → {d.HedefKategoriAdi})" : "";
+                sb2.AppendLine($"<br>• {d.SonrakiAyAdi} ayı {d.KaynakKategoriAdi} satış iadesi{yonStr}: {N0(d.Miktar)} Kg ({N2(d.Tutar)} ₺) {d.HedefKategoriAdi} satışından düşüldü.");
+            }
+            sb2.AppendLine("  </div>");
+        }
+
+        sb2.AppendLine($"  <div class='footer'>{ayAdi} &nbsp;|&nbsp; Oluşturma: {DateTime.Now:dd.MM.yyyy HH:mm} &nbsp;|&nbsp; © {DateTime.Now.Year} Doğuş Çay – Afyon Şeker Fabrikası</div>\n</div>\n</body>\n</html>");
+        return sb2.ToString();
+    }
 }

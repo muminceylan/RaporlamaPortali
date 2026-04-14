@@ -1,0 +1,1008 @@
+@page "/seker-dairesi"
+@inject SekerDairesiService SekerDairesiService
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+
+<PageTitle>Şeker Dairesi Raporu</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.Inventory" Class="mr-2" />
+    Türk Şekersiz ÜSS Raporu
+</MudText>
+
+<MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" Class="mb-4">
+
+    @* ══════════════════════════════════════════════════════════════════
+       TAB 1 – SADE ŞEKER ANALİZİ  (VBA CommandButton1 / Module3)
+       ══════════════════════════════════════════════════════════════════ *@
+    <MudTabPanel Text="Sade Şeker Analizi" Icon="@Icons.Material.Filled.Analytics">
+
+        <MudPaper Class="pa-4 mb-4">
+            <MudGrid>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudDatePicker Label="Başlangıç Tarihi" @bind-Date="_analizBaslangic"
+                                   DateFormat="dd.MM.yyyy" Editable="true" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudDatePicker Label="Bitiş Tarihi" @bind-Date="_analizBitis"
+                                   DateFormat="dd.MM.yyyy" Editable="true" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="6">
+                    <MudAlert Severity="Severity.Info" Dense="true" Class="mt-1">
+                        Dönem başı stoklar 01.09.2025 kampanya başı değerlerinden otomatik hesaplanır.
+                        Farklı bir başlangıç tarihi seçildiğinde önceki dönem sonucu kullanılır.
+                    </MudAlert>
+                </MudItem>
+                <MudItem xs="12" Class="d-flex gap-2 align-center flex-wrap">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                               OnClick="AnalizYap" Disabled="@_analizYukleniyor">
+                        @if (_analizYukleniyor)
+                        {
+                            <MudProgressCircular Class="mr-2" Size="Size.Small" Indeterminate="true" />
+                        }
+                        <MudIcon Icon="@Icons.Material.Filled.BarChart" Class="mr-1" />
+                        Analiz Yap
+                    </MudButton>
+                    <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
+                        <MudButton OnClick="@(() => SetAnalizAraligi(0))">Bu Ay</MudButton>
+                        <MudButton OnClick="@(() => SetAnalizAraligi(1))">Bu Yıl</MudButton>
+                        <MudButton OnClick="@(() => SetAnalizAraligi(2))">Geçen Ay</MudButton>
+                    </MudButtonGroup>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        @if (_analizHata != null)
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-4">@_analizHata</MudAlert>
+        }
+
+        @if (_analizSonuc != null)
+        {
+            @* ── Şeker Kategorisi Bazlı Analiz ── *@
+            <MudPaper Class="pa-4 mb-4">
+                <MudText Typo="Typo.h6" Class="mb-3" Style="color:#1B5E20;">
+                    <MudIcon Icon="@Icons.Material.Filled.TableChart" Class="mr-2" />
+                    Şeker Kategorisi Bazlı Analiz
+                    <MudChip T="string" Size="Size.Small" Color="Color.Info" Class="ml-2">
+                        @_analizBaslangic?.ToString("dd.MM.yyyy") – @_analizBitis?.ToString("dd.MM.yyyy")
+                    </MudChip>
+                </MudText>
+
+                <div style="overflow-x:auto;">
+                <MudSimpleTable Hover="true" Dense="true" Bordered="true" Style="font-size:0.78rem; min-width:1200px;">
+                    <thead>
+                        <tr style="background-color:#2e7d32; color:white;">
+                            <th style="padding:8px 6px; border:1px solid #1B5E20; white-space:nowrap;">KATEGORİ</th>
+                            <th style="padding:8px 6px; border:1px solid #1B5E20; text-align:right;" title="Dönem başı kullanıcı girişi">Dönem Başı (Kg)</th>
+                            <th style="padding:8px 6px; border:1px solid #1B5E20; text-align:right; background-color:#1565C0;">Üretim (Kg)</th>
+                            <th style="padding:8px 6px; border:1px solid #1B5E20; text-align:right; background-color:#1565C0;">Satın Alma (Kg)</th>
+                            <th style="padding:8px 6px; border:1px solid #1B5E20; text-align:right; background-color:#1565C0;">Satış İade (Kg)</th>
+                            <th style="padding:8px 6px; border:1px solid #1B5E20; text-align:right; background-color:#1565C0;">Diğer Giriş (Kg)</th>
+                            <th style="padding:8px 6px; border:1px solid #1B5E20; text-align:right; font-weight:700; background-color:#0D47A1;">Top. Giriş (Kg)</th>
+                            <th style="padding:8px 6px; border:1px solid #1B5E20; text-align:right; background-color:#b71c1c;">Satış (Kg)</th>
+                            <th style="padding:8px 6px; border:1px solid #1B5E20; text-align:right; background-color:#880E4F;">Satış Tutarı (₺)</th>
+                            <th style="padding:8px 6px; border:1px solid #1B5E20; text-align:right; background-color:#880E4F;">Ort. Satış Fiyatı (₺/Kg)</th>
+                            <th style="padding:8px 6px; border:1px solid #1B5E20; text-align:right; background-color:#b71c1c;">Sarf (Kg)</th>
+                            <th style="padding:8px 6px; border:1px solid #1B5E20; text-align:right; background-color:#b71c1c;">Fire (Kg)</th>
+                            <th style="padding:8px 6px; border:1px solid #1B5E20; text-align:right; background-color:#b71c1c;">Yemekhane (Kg)</th>
+                            <th style="padding:8px 6px; border:1px solid #1B5E20; text-align:right; background-color:#b71c1c;">PROMS (Kg)</th>
+                            <th style="padding:8px 6px; border:1px solid #1B5E20; text-align:right; background-color:#b71c1c;">Diğer Çıkış (Kg)</th>
+                            <th style="padding:8px 6px; border:1px solid #1B5E20; text-align:right; font-weight:700; background-color:#7B1FA2;">Top. Çıkış (Kg)</th>
+                            <th style="padding:8px 6px; border:1px solid #1B5E20; text-align:right; font-weight:700; background-color:#E65100;">Dönem Sonu (Kg)</th>
+                            <th style="padding:8px 6px; border:1px solid #1B5E20; text-align:right; font-weight:700; background-color:#E65100;">Dönem Sonu (Ton)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @{ int satirNo = 0; }
+                        @foreach (var kat in _analizSonuc)
+                        {
+                            var bg = satirNo++ % 2 == 0 ? "#fff" : "#f5f5f5";
+                            var stokRenk = kat.DonemSonuMiktar < 0 ? "color:#c62828;font-weight:600;" : "";
+                            <tr style="background-color:@bg;">
+                                <td style="padding:6px;border:1px solid #e0e0e0;font-weight:600;white-space:nowrap;">@kat.KategoriAdi</td>
+                                <td style="padding:6px;border:1px solid #e0e0e0;text-align:right;font-family:Consolas,monospace;">@kat.DonemBasiMiktar.ToString("N0")</td>
+                                <td style="padding:6px;border:1px solid #e0e0e0;text-align:right;font-family:Consolas,monospace;">@kat.UretimMiktar.ToString("N0")</td>
+                                <td style="padding:6px;border:1px solid #e0e0e0;text-align:right;font-family:Consolas,monospace;">@kat.SatinAlmaMiktar.ToString("N0")</td>
+                                <td style="padding:6px;border:1px solid #e0e0e0;text-align:right;font-family:Consolas,monospace;">@kat.SatisIadeMiktar.ToString("N0")</td>
+                                <td style="padding:6px;border:1px solid #e0e0e0;text-align:right;font-family:Consolas,monospace;">@((kat.ReceteFarkMiktar + kat.SayimFazlasiMiktar).ToString("N0"))</td>
+                                <td style="padding:6px;border:1px solid #e0e0e0;text-align:right;font-family:Consolas,monospace;font-weight:700;color:#0D47A1;">@kat.ToplamGirisMiktar.ToString("N0")</td>
+                                <td style="padding:6px;border:1px solid #e0e0e0;text-align:right;font-family:Consolas,monospace;">@kat.SatisMiktar.ToString("N0")</td>
+                                <td style="padding:6px;border:1px solid #e0e0e0;text-align:right;font-family:Consolas,monospace;">@kat.SatisTutar.ToString("N2")</td>
+                                <td style="padding:6px;border:1px solid #e0e0e0;text-align:right;font-family:Consolas,monospace;">@(kat.SatisMiktar > 0 ? (kat.SatisTutar / kat.SatisMiktar).ToString("N2") : "-")</td>
+                                <td style="padding:6px;border:1px solid #e0e0e0;text-align:right;font-family:Consolas,monospace;">@kat.SarfMiktar.ToString("N0")</td>
+                                <td style="padding:6px;border:1px solid #e0e0e0;text-align:right;font-family:Consolas,monospace;">@kat.FireMiktar.ToString("N0")</td>
+                                <td style="padding:6px;border:1px solid #e0e0e0;text-align:right;font-family:Consolas,monospace;">@kat.YemekhaneMiktar.ToString("N0")</td>
+                                <td style="padding:6px;border:1px solid #e0e0e0;text-align:right;font-family:Consolas,monospace;">@kat.PromsMiktar.ToString("N0")</td>
+                                <td style="padding:6px;border:1px solid #e0e0e0;text-align:right;font-family:Consolas,monospace;">@(kat.SatinAlmaIadeMiktar.ToString("N0"))</td>
+                                <td style="padding:6px;border:1px solid #e0e0e0;text-align:right;font-family:Consolas,monospace;font-weight:700;color:#7B1FA2;">@kat.ToplamCikisMiktar.ToString("N0")</td>
+                                <td style="padding:6px;border:1px solid #e0e0e0;text-align:right;font-family:Consolas,monospace;@stokRenk">@kat.DonemSonuMiktar.ToString("N0")</td>
+                                <td style="padding:6px;border:1px solid #e0e0e0;text-align:right;font-family:Consolas,monospace;@stokRenk">@((kat.DonemSonuMiktar / 1000m).ToString("N3"))</td>
+                            </tr>
+                        }
+                        @* TOPLAM satırı *@
+                        <tr style="background-color:#FFF9C4;font-weight:700;">
+                            <td style="padding:8px 6px;border:1px solid #F9A825;">TOPLAM</td>
+                            <td style="padding:8px 6px;border:1px solid #F9A825;text-align:right;font-family:Consolas,monospace;color:#1B5E20;">@(_analizSonuc.Sum(x=>x.DonemBasiMiktar).ToString("N0"))</td>
+                            <td style="padding:8px 6px;border:1px solid #F9A825;text-align:right;font-family:Consolas,monospace;color:#1B5E20;">@(_analizSonuc.Sum(x=>x.UretimMiktar).ToString("N0"))</td>
+                            <td style="padding:8px 6px;border:1px solid #F9A825;text-align:right;font-family:Consolas,monospace;color:#1B5E20;">@(_analizSonuc.Sum(x=>x.SatinAlmaMiktar).ToString("N0"))</td>
+                            <td style="padding:8px 6px;border:1px solid #F9A825;text-align:right;font-family:Consolas,monospace;color:#1B5E20;">@(_analizSonuc.Sum(x=>x.SatisIadeMiktar).ToString("N0"))</td>
+                            <td style="padding:8px 6px;border:1px solid #F9A825;text-align:right;font-family:Consolas,monospace;color:#1B5E20;">@(_analizSonuc.Sum(x=>x.ReceteFarkMiktar+x.SayimFazlasiMiktar).ToString("N0"))</td>
+                            <td style="padding:8px 6px;border:1px solid #F9A825;text-align:right;font-family:Consolas,monospace;color:#0D47A1;">@(_analizSonuc.Sum(x=>x.ToplamGirisMiktar).ToString("N0"))</td>
+                            <td style="padding:8px 6px;border:1px solid #F9A825;text-align:right;font-family:Consolas,monospace;color:#b71c1c;">@(_analizSonuc.Sum(x=>x.SatisMiktar).ToString("N0"))</td>
+                            <td style="padding:8px 6px;border:1px solid #F9A825;text-align:right;font-family:Consolas,monospace;color:#880E4F;">@(_analizSonuc.Sum(x=>x.SatisTutar).ToString("N2"))</td>
+                            <td style="padding:8px 6px;border:1px solid #F9A825;text-align:right;font-family:Consolas,monospace;color:#880E4F;">@(_analizSonuc.Sum(x=>x.SatisMiktar) > 0 ? (_analizSonuc.Sum(x=>x.SatisTutar) / _analizSonuc.Sum(x=>x.SatisMiktar)).ToString("N2") : "-")</td>
+                            <td style="padding:8px 6px;border:1px solid #F9A825;text-align:right;font-family:Consolas,monospace;color:#b71c1c;">@(_analizSonuc.Sum(x=>x.SarfMiktar).ToString("N0"))</td>
+                            <td style="padding:8px 6px;border:1px solid #F9A825;text-align:right;font-family:Consolas,monospace;color:#b71c1c;">@(_analizSonuc.Sum(x=>x.FireMiktar).ToString("N0"))</td>
+                            <td style="padding:8px 6px;border:1px solid #F9A825;text-align:right;font-family:Consolas,monospace;color:#b71c1c;">@(_analizSonuc.Sum(x=>x.YemekhaneMiktar).ToString("N0"))</td>
+                            <td style="padding:8px 6px;border:1px solid #F9A825;text-align:right;font-family:Consolas,monospace;color:#b71c1c;">@(_analizSonuc.Sum(x=>x.PromsMiktar).ToString("N0"))</td>
+                            <td style="padding:8px 6px;border:1px solid #F9A825;text-align:right;font-family:Consolas,monospace;color:#b71c1c;">@(_analizSonuc.Sum(x=>x.SatinAlmaIadeMiktar).ToString("N0"))</td>
+                            <td style="padding:8px 6px;border:1px solid #F9A825;text-align:right;font-family:Consolas,monospace;color:#7B1FA2;">@(_analizSonuc.Sum(x=>x.ToplamCikisMiktar).ToString("N0"))</td>
+                            <td style="padding:8px 6px;border:1px solid #F9A825;text-align:right;font-family:Consolas,monospace;color:#E65100;">@(_analizSonuc.Sum(x=>x.DonemSonuMiktar).ToString("N0"))</td>
+                            <td style="padding:8px 6px;border:1px solid #F9A825;text-align:right;font-family:Consolas,monospace;color:#E65100;">@((_analizSonuc.Sum(x=>x.DonemSonuMiktar)/1000m).ToString("N3"))</td>
+                        </tr>
+                    </tbody>
+                </MudSimpleTable>
+                </div>
+            </MudPaper>
+
+            @* ── Şeker Dairesi Başkanlığı – Hammadde ve Ürünler Üretim Satış ve Stok Bilgileri ── *@
+            <MudPaper Class="pa-4 mb-4">
+                <MudText Typo="Typo.h6" Class="mb-3" Style="color:#1A237E;">
+                    <MudIcon Icon="@Icons.Material.Filled.Business" Class="mr-2" />
+                    Hammadde ve Ürünler – Üretim, Satış ve Stok Bilgileri
+                    <MudChip T="string" Size="Size.Small" Color="Color.Secondary" Class="ml-2">
+                        @_analizBaslangic?.ToString("dd.MM.yyyy") – @_analizBitis?.ToString("dd.MM.yyyy")
+                    </MudChip>
+                </MudText>
+
+                <div style="overflow-x:auto;">
+                <table style="width:100%; border-collapse:collapse; font-size:0.78rem; min-width:650px;">
+                    <thead>
+                        <tr style="background-color:#1A237E; color:white;">
+                            <th style="padding:8px 6px; border:1px solid #0D1257; text-align:left; min-width:330px;">HAMMADDE VE ÜRÜNLER</th>
+                            <th style="padding:8px 6px; border:1px solid #0D1257; text-align:right; min-width:150px;">Kristal Şeker (Kg)</th>
+                            <th style="padding:8px 6px; border:1px solid #0D1257; text-align:right; min-width:150px;">Küp / Paket Şeker (Kg)</th>
+                            <th style="padding:8px 6px; border:1px solid #0D1257; text-align:right; min-width:150px;">Toplam</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in HesaplaBaskanlikTablosu())
+                        {
+                            if (row.Tip == BRowTip.GrupBaslik)
+                            {
+                                <tr style="background-color:#283593; color:white; font-weight:700;">
+                                    <td colspan="4" style="padding:7px 8px; border:1px solid #1A237E; letter-spacing:0.5px; font-size:0.80rem;">@row.Ad</td>
+                                </tr>
+                            }
+                            else if (row.Tip == BRowTip.ToplamSatir)
+                            {
+                                var totT = row.K + row.P;
+                                <tr style="background-color:#FFF9C4; font-weight:700; font-size:0.80rem;">
+                                    <td style="padding:6px 8px; border:1px solid #F9A825; padding-left:12px;">@row.Ad</td>
+                                    <td style="padding:6px; border:1px solid #F9A825; text-align:right; font-family:Consolas,monospace; color:#1565C0;">@row.K.ToString("N2")</td>
+                                    <td style="padding:6px; border:1px solid #F9A825; text-align:right; font-family:Consolas,monospace; color:#1565C0;">@row.P.ToString("N2")</td>
+                                    <td style="padding:6px; border:1px solid #F9A825; text-align:right; font-family:Consolas,monospace; color:#E65100; font-weight:800;">@totT.ToString("N2")</td>
+                                </tr>
+                            }
+                            else if (row.Tip == BRowTip.TutarSatir)
+                            {
+                                var totTl = row.K + row.P;
+                                <tr style="background-color:#FCE4EC;">
+                                    <td style="padding:6px 8px; border:1px solid #F48FB1; padding-left:20px; font-style:italic;">@row.Ad</td>
+                                    <td style="padding:6px; border:1px solid #F48FB1; text-align:right; font-family:Consolas,monospace;">@row.K.ToString("N2")</td>
+                                    <td style="padding:6px; border:1px solid #F48FB1; text-align:right; font-family:Consolas,monospace;">@row.P.ToString("N2")</td>
+                                    <td style="padding:6px; border:1px solid #F48FB1; text-align:right; font-family:Consolas,monospace; font-weight:700; color:#880E4F;">@totTl.ToString("N2")</td>
+                                </tr>
+                            }
+                            else if (row.Tip == BRowTip.FiyatSatir)
+                            {
+                                var totF = row.TotOverride ?? row.K;
+                                <tr style="background-color:#FFF8E1; font-style:italic;">
+                                    <td style="padding:6px 8px; border:1px solid #FFE082; padding-left:20px;">@row.Ad</td>
+                                    <td style="padding:6px; border:1px solid #FFE082; text-align:right; font-family:Consolas,monospace; color:#E65100;">@row.K.ToString("N4")</td>
+                                    <td style="padding:6px; border:1px solid #FFE082; text-align:right; font-family:Consolas,monospace; color:#E65100;">@(row.P > 0 ? row.P.ToString("N4") : "0,0000")</td>
+                                    <td style="padding:6px; border:1px solid #FFE082; text-align:right; font-family:Consolas,monospace; color:#E65100; font-weight:700;">@(totF > 0 ? totF.ToString("N4") : "0,0000")</td>
+                                </tr>
+                            }
+                            else
+                            {
+                                var totV = row.K + row.P;
+                                <tr style="background-color:#fff;">
+                                    <td style="padding:5px 8px; border:1px solid #e0e0e0; padding-left:20px;">@row.Ad</td>
+                                    <td style="padding:5px; border:1px solid #e0e0e0; text-align:right; font-family:Consolas,monospace;">@row.K.ToString("N2")</td>
+                                    <td style="padding:5px; border:1px solid #e0e0e0; text-align:right; font-family:Consolas,monospace;">@row.P.ToString("N2")</td>
+                                    <td style="padding:5px; border:1px solid #e0e0e0; text-align:right; font-family:Consolas,monospace;">@totV.ToString("N2")</td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+                </div>
+                @{
+                    var _bTabNot = HesaplaBaskanlikTablosu_Notlar();
+                }
+                @{
+                    // Satışa eklenen kalemlerin özet listesi
+                    var _satisDipnotlar = new List<string>();
+                    if (_bTabNot.aSarfExtra  > 0) _satisDipnotlar.Add($"A Kotası Kristal — Sarf (Paket üretimi düşüldükten sonra kalan): {_bTabNot.aSarfExtra.ToString("N0")} Kg satışa eklendi");
+                    if (_bTabNot.aYemekhane  > 0) _satisDipnotlar.Add($"A Kotası Kristal — Yemekhane tüketimi: {_bTabNot.aYemekhane.ToString("N0")} Kg satışa eklendi");
+                    if (_bTabNot.aProms      > 0) _satisDipnotlar.Add($"A Kotası Kristal — Promosyon (PROMS): {_bTabNot.aProms.ToString("N0")} Kg satışa eklendi");
+                    if (_bTabNot.pakSarf     > 0) _satisDipnotlar.Add($"A Kotası Paket — Sarf: {_bTabNot.pakSarf.ToString("N0")} Kg satışa eklendi");
+                    if (_bTabNot.pakYemekhane > 0) _satisDipnotlar.Add($"A Kotası Paket — Yemekhane tüketimi: {_bTabNot.pakYemekhane.ToString("N0")} Kg satışa eklendi");
+                    if (_bTabNot.pakProms    > 0) _satisDipnotlar.Add($"A Kotası Paket — Promosyon (PROMS): {_bTabNot.pakProms.ToString("N0")} Kg satışa eklendi");
+                    if (_bTabNot.tkSarfExtra > 0) _satisDipnotlar.Add($"Ticari Kristal — Sarf (Ticari Paket üretimi düşüldükten sonra kalan): {_bTabNot.tkSarfExtra.ToString("N0")} Kg satışa eklendi");
+                    if (_bTabNot.tpakSarf    > 0) _satisDipnotlar.Add($"Ticari Paket — Sarf: {_bTabNot.tpakSarf.ToString("N0")} Kg satışa eklendi");
+                    if (_bTabNot.bYemekhane  > 0) _satisDipnotlar.Add($"B Kotası — Yemekhane: {_bTabNot.bYemekhane.ToString("N0")} Kg (Diğer Çıkış)");
+                    if (_bTabNot.bProms      > 0) _satisDipnotlar.Add($"B Kotası — Promosyon (PROMS): {_bTabNot.bProms.ToString("N0")} Kg (Diğer Çıkış)");
+                    if (_bTabNot.cYemekhane  > 0) _satisDipnotlar.Add($"C Şekeri — Yemekhane: {_bTabNot.cYemekhane.ToString("N0")} Kg (Diğer Çıkış)");
+                    if (_bTabNot.cProms      > 0) _satisDipnotlar.Add($"C Şekeri — Promosyon (PROMS): {_bTabNot.cProms.ToString("N0")} Kg (Diğer Çıkış)");
+                    if (_bTabNot.tkYemekhane > 0) _satisDipnotlar.Add($"Ticari Kristal — Yemekhane: {_bTabNot.tkYemekhane.ToString("N0")} Kg (Diğer Çıkış)");
+                    if (_bTabNot.tkProms     > 0) _satisDipnotlar.Add($"Ticari Kristal — Promosyon (PROMS): {_bTabNot.tkProms.ToString("N0")} Kg (Diğer Çıkış)");
+                    if (_bTabNot.tpakYemekhane > 0) _satisDipnotlar.Add($"Ticari Paket — Yemekhane: {_bTabNot.tpakYemekhane.ToString("N0")} Kg (Diğer Çıkış)");
+                    if (_bTabNot.tpakProms   > 0) _satisDipnotlar.Add($"Ticari Paket — Promosyon (PROMS): {_bTabNot.tpakProms.ToString("N0")} Kg (Diğer Çıkış)");
+                }
+                @if (_satisDipnotlar.Count > 0)
+                {
+                    <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">
+                        <b>Satışa Dahil Edilen Kalemler (Sarf / Yemekhane / Promosyon):</b>
+                        <ul style="margin:4px 0 0 0; padding-left:18px;">
+                            @foreach (var satir in _satisDipnotlar)
+                            {
+                                <li>@satir</li>
+                            }
+                        </ul>
+                    </MudAlert>
+                }
+                <MudAlert Severity="Severity.Info" Dense="true" Class="mt-1">
+                    <b>Not:</b> Kristal Şeker Satış = LOGO satış + (Sarf - İşlenen) + Yemekhane/PROMS. Paket Şeker Satış = LOGO satış + Sarf + Yemekhane/PROMS. Tüm tutarlar ortalama satış fiyatından hesaplanır.
+                </MudAlert>
+            </MudPaper>
+
+            @* Özet Kartlar *@
+            <MudGrid>
+                <MudItem xs="6" sm="4" md="2">
+                    <MudCard Style="background-color:#E8F5E9;">
+                        <MudCardContent Class="pa-2">
+                            <MudText Typo="Typo.caption">Dönem Başı Stok</MudText>
+                            <MudText Typo="Typo.subtitle1" Style="font-weight:600;">@((_analizSonuc.Sum(x=>x.DonemBasiMiktar)/1000m).ToString("N1")) Ton</MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+                <MudItem xs="6" sm="4" md="2">
+                    <MudCard Style="background-color:#E3F2FD;">
+                        <MudCardContent Class="pa-2">
+                            <MudText Typo="Typo.caption">Toplam Giriş</MudText>
+                            <MudText Typo="Typo.subtitle1" Style="font-weight:600;">@((_analizSonuc.Sum(x=>x.ToplamGirisMiktar)/1000m).ToString("N1")) Ton</MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+                <MudItem xs="6" sm="4" md="2">
+                    <MudCard Style="background-color:#FCE4EC;">
+                        <MudCardContent Class="pa-2">
+                            <MudText Typo="Typo.caption">Toplam Çıkış</MudText>
+                            <MudText Typo="Typo.subtitle1" Style="font-weight:600;">@((_analizSonuc.Sum(x=>x.ToplamCikisMiktar)/1000m).ToString("N1")) Ton</MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+                <MudItem xs="6" sm="4" md="2">
+                    <MudCard Style="background-color:#FFF3E0;">
+                        <MudCardContent Class="pa-2">
+                            <MudText Typo="Typo.caption">Toplam Satış</MudText>
+                            <MudText Typo="Typo.subtitle1" Style="font-weight:600;">@((_analizSonuc.Sum(x=>x.SatisMiktar)/1000m).ToString("N1")) Ton</MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+                <MudItem xs="6" sm="4" md="2">
+                    <MudCard Style="background-color:#E8EAF6;">
+                        <MudCardContent Class="pa-2">
+                            <MudText Typo="Typo.caption">Satış Tutarı</MudText>
+                            <MudText Typo="Typo.subtitle1" Style="font-weight:600;">@(_analizSonuc.Sum(x=>x.SatisTutar).ToString("N0")) ₺</MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+                <MudItem xs="6" sm="4" md="2">
+                    <MudCard Style="background-color:#E65100; color:white;">
+                        <MudCardContent Class="pa-2">
+                            <MudText Typo="Typo.caption" Style="color:#FFCCBC;">Dönem Sonu Stok</MudText>
+                            <MudText Typo="Typo.subtitle1" Style="font-weight:600;">@((_analizSonuc.Sum(x=>x.DonemSonuMiktar)/1000m).ToString("N1")) Ton</MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            </MudGrid>
+        }
+            @* ── Dipnotlar (sonraki ay Toptan Satış İade düzeltmeleri) ── *@
+            @if (_analizDipnotlar != null && _analizDipnotlar.Count > 0)
+            {
+                <MudPaper Class="pa-4 mb-4" Style="border-left: 4px solid #F9A825;">
+                    <MudText Typo="Typo.subtitle1" Style="color:#E65100; font-weight:700;" Class="mb-2">
+                        <MudIcon Icon="@Icons.Material.Filled.Info" Class="mr-1" Style="vertical-align:middle;" />
+                        Dönem Satış Düzeltme Notları
+                    </MudText>
+                    <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">
+                        Aşağıdaki tutarlar, raporlanan dönemden <b>sonraki ayda</b> girilen Toptan Satış İade İrsaliyeleri nedeniyle
+                        ilgili kategorilerin satış miktarından ve tutarından otomatik olarak düşülmüştür.
+                    </MudAlert>
+                    @foreach (var d in _analizDipnotlar)
+                    {
+                        // Brüt satışı (sarf dahil, iade öncesi) hesapla
+                        var _hkd = _analizSonuc?.FirstOrDefault(x => x.Kategori == d.HedefKategori);
+                        decimal _pakU2 = _analizSonuc?.FirstOrDefault(x=>x.Kategori=="PAKETLI")?.UretimMiktar ?? 0m;
+                        decimal _tpU2  = _analizSonuc?.FirstOrDefault(x=>x.Kategori=="TICARI_PAKET")?.UretimMiktar ?? 0m;
+                        decimal _brutHB = d.HedefKategori switch {
+                            "TICARI_KRISTAL" => (_hkd?.SatisMiktar ?? 0m) + Math.Max(0m, (_hkd?.SarfMiktar ?? 0m) - _tpU2),
+                            "A_KOTASI"       => (_hkd?.SatisMiktar ?? 0m) + Math.Max(0m, (_hkd?.SarfMiktar ?? 0m) - _pakU2),
+                            "PAKETLI"        => (_hkd?.SatisMiktar ?? 0m) + (_hkd?.SarfMiktar ?? 0m),
+                            "TICARI_PAKET"   => (_hkd?.SatisMiktar ?? 0m) + (_hkd?.SarfMiktar ?? 0m),
+                            _                => _hkd?.SatisMiktar ?? 0m
+                        };
+                        decimal dusuldu        = Math.Min(d.Miktar, Math.Max(0m, _brutHB));
+                        decimal karsılanamayan = d.Miktar - dusuldu;
+                        var dipSev = karsılanamayan > 0 ? Severity.Error : (d.Yonlendirildi ? Severity.Warning : Severity.Normal);
+                        <MudAlert Severity="@dipSev" Dense="true" Class="mb-1">
+                            <b>@d.SonrakiAyAdi dönemi Toptan Satış İadesi:</b>
+                            @if (d.Yonlendirildi)
+                            {
+                                <span>
+                                    <b>@d.KaynakKategoriAdi</b> kategorisinde iade bulundu ancak bu kategoride satış kaydı olmadığından
+                                    iade <b>@d.HedefKategoriAdi</b> satışından düşüldü.
+                                </span>
+                            }
+                            else
+                            {
+                                <span><b>@d.HedefKategoriAdi</b> satışından düşüldü.</span>
+                            }
+                            <span>&nbsp;| İade: <b>@d.Miktar.ToString("N0") Kg</b> / <b>@d.Tutar.ToString("N2") ₺</b></span>
+                            @if (karsılanamayan > 0)
+                            {
+                                <span style="color:#b71c1c;">
+                                    &nbsp;|&nbsp;<b>⚠ Karşılanamayan: @karsılanamayan.ToString("N0") Kg</b>
+                                    — bu dönemde @d.HedefKategoriAdi satışı yetersiz olduğundan tüm iade düşülemedi.
+                                </span>
+                            }
+                        </MudAlert>
+                    }
+                </MudPaper>
+            }
+        }
+        else if (!_analizYukleniyor)
+        {
+            <MudAlert Severity="Severity.Info">
+                Tarih aralığı ve dönem başı stok değerlerini girerek "Analiz Yap" butonuna tıklayın.
+            </MudAlert>
+        }
+    </MudTabPanel>
+
+    @* ══════════════════════════════════════════════════════════════════
+       TAB 2 – STOK SORGULA  (VBA CommandButton2 / Module2)
+       ══════════════════════════════════════════════════════════════════ *@
+    <MudTabPanel Text="Stok Sorgula" Icon="@Icons.Material.Filled.Search">
+
+        <MudPaper Class="pa-4 mb-4">
+            <MudGrid>
+                <MudItem xs="12" sm="6" md="4">
+                    <MudDatePicker Label="Stok Tarihi" @bind-Date="_stokTarihi"
+                                   DateFormat="dd.MM.yyyy" Editable="true" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="4" Class="d-flex align-end">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                               OnClick="StokSorgula" Disabled="@_stokYukleniyor">
+                        @if (_stokYukleniyor)
+                        {
+                            <MudProgressCircular Class="mr-2" Size="Size.Small" Indeterminate="true" />
+                        }
+                        <MudIcon Icon="@Icons.Material.Filled.Search" Class="mr-1" />
+                        Stok Sorgula
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        @if (_stokHata != null)
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-4">@_stokHata</MudAlert>
+        }
+
+        @if (_stokOzet != null)
+        {
+            var katOzet = KategoriOzetiHesapla(_stokOzet);
+            var genelToplam = katOzet.Sum(x => x.ToplamKg);
+
+            <MudGrid>
+                @* KATEGORİ ÖZETİ – Excel ile birebir *@
+                <MudItem xs="12" md="4">
+                    <MudPaper Class="pa-4 mb-4">
+                        <MudText Typo="Typo.h6" Class="mb-3" Style="color:#1B5E20; font-weight:700;">
+                            <MudIcon Icon="@Icons.Material.Filled.PieChart" Class="mr-2" />
+                            Şeker Kategorisi – @_stokTarihi?.ToString("dd.MM.yyyy")
+                        </MudText>
+
+                        <MudSimpleTable Hover="true" Dense="false" Bordered="true" Style="font-size:0.9rem;">
+                            <thead>
+                                <tr style="background-color:#2E7D32; color:white;">
+                                    <th style="padding:12px 10px; border:1px solid #1B5E20; font-size:0.95rem;">Şeker Kategorisi</th>
+                                    <th style="padding:12px 10px; border:1px solid #1B5E20; text-align:right; font-size:0.95rem;">Toplam KG</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var kat in katOzet)
+                                {
+                                    <tr style="background-color:#fff;">
+                                        <td style="padding:10px; border:1px solid #e0e0e0; font-weight:500; font-size:0.9rem;">@kat.KategoriAdi</td>
+                                        <td style="padding:10px; border:1px solid #e0e0e0; text-align:right; font-family:Consolas,monospace; font-size:0.9rem;">@kat.ToplamKg.ToString("N2")</td>
+                                    </tr>
+                                }
+                                <tr style="background-color:#E8F5E9; font-weight:700; font-size:1rem;">
+                                    <td style="padding:12px 10px; border:2px solid #2E7D32;">TOPLAM</td>
+                                    <td style="padding:12px 10px; border:2px solid #2E7D32; text-align:right; font-family:Consolas,monospace; color:#1B5E20;">@genelToplam.ToString("N2")</td>
+                                </tr>
+                            </tbody>
+                        </MudSimpleTable>
+
+                        @* Ton özeti *@
+                        <MudAlert Severity="Severity.Success" Dense="true" Class="mt-3">
+                            <strong>Genel Toplam:</strong> @((genelToplam / 1000m).ToString("N3")) Ton
+                        </MudAlert>
+                    </MudPaper>
+
+                    @* Malzeme Kodu Özeti *@
+                    <MudPaper Class="pa-4 mb-4">
+                        <MudText Typo="Typo.subtitle1" Class="mb-2" Style="color:#1565C0; font-weight:600;">
+                            <MudIcon Icon="@Icons.Material.Filled.List" Class="mr-1" />
+                            Malzeme Kodu Detayı
+                        </MudText>
+                        <MudSimpleTable Hover="true" Dense="true" Bordered="true" Style="font-size:0.78rem;">
+                            <thead>
+                                <tr style="background-color:#1565C0; color:white;">
+                                    <th style="padding:6px; border:1px solid #0D47A1;">Malzeme Kodu</th>
+                                    <th style="padding:6px; border:1px solid #0D47A1;">Adı</th>
+                                    <th style="padding:6px; border:1px solid #0D47A1; text-align:right;">KG</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @{ int ozetSatir = 0; }
+                                @foreach (var ozet in _stokOzet)
+                                {
+                                    var bg = ozetSatir++ % 2 == 0 ? "#fff" : "#f0f4ff";
+                                    <tr style="background-color:@bg;">
+                                        <td style="padding:5px;border:1px solid #e0e0e0;font-family:Consolas,monospace;font-size:0.72rem;">@ozet.MalzemeKodu</td>
+                                        <td style="padding:5px;border:1px solid #e0e0e0;font-size:0.78rem;">@ozet.MalzemeAdi</td>
+                                        <td style="padding:5px;border:1px solid #e0e0e0;text-align:right;font-family:Consolas,monospace;">@ozet.ToplamKg.ToString("N2")</td>
+                                    </tr>
+                                }
+                                <tr style="background-color:#BBDEFB;font-weight:700;">
+                                    <td colspan="2" style="padding:6px;border:1px solid #1565C0;">TOPLAM</td>
+                                    <td style="padding:6px;border:1px solid #1565C0;text-align:right;font-family:Consolas,monospace;">@_stokOzet.Sum(x=>x.ToplamKg).ToString("N2")</td>
+                                </tr>
+                            </tbody>
+                        </MudSimpleTable>
+                    </MudPaper>
+                </MudItem>
+
+                @* Detay Tablo *@
+                <MudItem xs="12" md="7">
+                    <MudPaper Class="pa-4 mb-4">
+                        <MudText Typo="Typo.h6" Class="mb-3" Style="color:#4527A0;">
+                            <MudIcon Icon="@Icons.Material.Filled.List" Class="mr-2" />
+                            Ambar Detayı (@_stokDetay?.Count adet kayıt)
+                        </MudText>
+                        <div style="overflow-x:auto; max-height:500px; overflow-y:auto;">
+                        <MudSimpleTable Hover="true" Dense="true" Bordered="true" Style="font-size:0.75rem;">
+                            <thead style="position:sticky; top:0; z-index:1;">
+                                <tr style="background-color:#4527A0; color:white;">
+                                    <th style="padding:6px 4px; border:1px solid #311B92;">Ambar No</th>
+                                    <th style="padding:6px 4px; border:1px solid #311B92;">Ambar</th>
+                                    <th style="padding:6px 4px; border:1px solid #311B92;">Malzeme Kodu</th>
+                                    <th style="padding:6px 4px; border:1px solid #311B92;">Malzeme Adı</th>
+                                    <th style="padding:6px 4px; border:1px solid #311B92; text-align:right;">Birim</th>
+                                    <th style="padding:6px 4px; border:1px solid #311B92; text-align:right;">Stok</th>
+                                    <th style="padding:6px 4px; border:1px solid #311B92; text-align:right;">KG</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @if (_stokDetay != null)
+                                {
+                                    int detaySatir = 0;
+                                    @foreach (var d in _stokDetay)
+                                    {
+                                        var bg = detaySatir++ % 2 == 0 ? "#fff" : "#f3f0ff";
+                                        <tr style="background-color:@bg;">
+                                            <td style="padding:4px;border:1px solid #e0e0e0;text-align:center;">@d.AmbarNo</td>
+                                            <td style="padding:4px;border:1px solid #e0e0e0;">@d.Ambar</td>
+                                            <td style="padding:4px;border:1px solid #e0e0e0;font-family:Consolas,monospace;font-size:0.7rem;">@d.MalzemeKodu</td>
+                                            <td style="padding:4px;border:1px solid #e0e0e0;">@d.MalzemeAdi</td>
+                                            <td style="padding:4px;border:1px solid #e0e0e0;text-align:center;">@d.AnaBirim</td>
+                                            <td style="padding:4px;border:1px solid #e0e0e0;text-align:right;font-family:Consolas,monospace;">@d.Stok.ToString("N2")</td>
+                                            <td style="padding:4px;border:1px solid #e0e0e0;text-align:right;font-family:Consolas,monospace;">@(d.Kg?.ToString("N2") ?? "-")</td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                        </div>
+                    </MudPaper>
+                </MudItem>
+            </MudGrid>
+        }
+        else if (!_stokYukleniyor)
+        {
+            <MudAlert Severity="Severity.Info">
+                Sorgulamak istediğiniz tarihi seçip "Stok Sorgula" butonuna tıklayın.
+            </MudAlert>
+        }
+    </MudTabPanel>
+
+</MudTabs>
+
+@code {
+    // ── Sade Şeker Analizi state ─────────────────────────────────────
+    private DateTime? _analizBaslangic = SekerDairesiService.KampanyaBaslangic;
+    private DateTime? _analizBitis = DateTime.Today;
+    private bool _analizYukleniyor   = false;
+    private string? _analizHata      = null;
+    private List<SekerKategoriAnaliz>? _analizSonuc;
+    private List<SatisIadeDipnot>?    _analizDipnotlar;
+    // Başkanlık tablosu dönem başı: önceki aylardaki iade düzeltmeleri aktarılmış
+    private Dictionary<string, decimal>? _baskanlikDonemBasi;
+    // Başkanlık tablosu dönem sonu: mevcut dönem sonundaki zincir değerleri (AY SONU için)
+    private Dictionary<string, decimal>? _baskanlikDonemSonu;
+
+    // ── Stok Sorgula state ───────────────────────────────────────────
+    private DateTime? _stokTarihi  = DateTime.Today;
+    private bool _stokYukleniyor   = false;
+    private string? _stokHata      = null;
+    private List<StokDetayRow>? _stokDetay;
+    private List<StokOzetRow>?  _stokOzet;
+
+    // ── Analiz Yap ───────────────────────────────────────────────────
+    private async Task AnalizYap()
+    {
+        if (_analizBaslangic == null || _analizBitis == null)
+        {
+            Snackbar.Add("Lütfen tarih aralığı seçin!", Severity.Warning);
+            return;
+        }
+
+        _analizYukleniyor = true;
+        _analizHata = null;
+        try
+        {
+            var (analiz, dipnotlar) = await SekerDairesiService.GetSadeSekerAnaliziAsync(
+                _analizBaslangic.Value,
+                _analizBitis.Value);
+            _analizSonuc    = analiz;
+            _analizDipnotlar = dipnotlar;
+
+            // Başkanlık dönem başı ve dönem sonu: paralel hesapla
+            var tBas = SekerDairesiService.GetBaskanlikDonemBasiAsync(_analizBaslangic.Value);
+            var tSon = SekerDairesiService.GetBaskanlikDonemBasiAsync(_analizBitis.Value.AddDays(1));
+            await Task.WhenAll(tBas, tSon);
+            _baskanlikDonemBasi = tBas.Result;
+            _baskanlikDonemSonu = tSon.Result;
+
+            var dipNot = dipnotlar.Count > 0 ? $" ({dipnotlar.Count} iade düzeltmesi uygulandı)" : "";
+            Snackbar.Add($"Analiz tamamlandı. {_analizSonuc.Count} kategori.{dipNot}", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _analizHata = $"Analiz sırasında hata: {ex.Message}";
+            Snackbar.Add(_analizHata, Severity.Error);
+        }
+        finally
+        {
+            _analizYukleniyor = false;
+        }
+    }
+
+    // ── Stok Sorgula ─────────────────────────────────────────────────
+    private async Task StokSorgula()
+    {
+        if (_stokTarihi == null)
+        {
+            Snackbar.Add("Lütfen tarih seçin!", Severity.Warning);
+            return;
+        }
+
+        _stokYukleniyor = true;
+        _stokHata = null;
+        try
+        {
+            var (detay, ozet) = await SekerDairesiService.GetStokSorgulaAsync(_stokTarihi.Value);
+            _stokDetay = detay;
+            _stokOzet  = ozet;
+            Snackbar.Add($"Stok sorgusu tamamlandı. {detay.Count} kayıt bulundu.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _stokHata = $"Stok sorgusunda hata: {ex.Message}";
+            Snackbar.Add(_stokHata, Severity.Error);
+        }
+        finally
+        {
+            _stokYukleniyor = false;
+        }
+    }
+
+    // ── Şeker Dairesi Başkanlığı tablo yardımcıları ──────────────────
+    private enum BRowTip { GrupBaslik, Veri, ToplamSatir, TutarSatir, FiyatSatir }
+    private record BRow(BRowTip Tip, string Ad, decimal K = 0m, decimal P = 0m, decimal? TotOverride = null);
+
+    private SekerKategoriAnaliz? GetKat(string key) =>
+        _analizSonuc?.FirstOrDefault(x => x.Kategori == key);
+
+    private (decimal aYemProms, decimal pakYemProms,
+             decimal aSarfExtra, decimal tkSarfExtra,
+             decimal pakSarf, decimal tpakSarf,
+             decimal aYemekhane, decimal aProms,
+             decimal pakYemekhane, decimal pakProms,
+             decimal bYemekhane, decimal bProms,
+             decimal cYemekhane, decimal cProms,
+             decimal tkYemekhane, decimal tkProms,
+             decimal tpakYemekhane, decimal tpakProms)
+        HesaplaBaskanlikTablosu_Notlar()
+    {
+        var a    = GetKat("A_KOTASI");
+        var b    = GetKat("B_KOTASI");
+        var c    = GetKat("C_KOTASI");
+        var tk   = GetKat("TICARI_KRISTAL");
+        var pak  = GetKat("PAKETLI");
+        var tpak = GetKat("TICARI_PAKET");
+
+        decimal pakUretim  = pak?.UretimMiktar  ?? 0m;
+        decimal tpakUretim = tpak?.UretimMiktar ?? 0m;
+        decimal aSarfExtra  = Math.Max(0m, (a?.SarfMiktar  ?? 0m) - pakUretim);
+        decimal tkSarfExtra = Math.Max(0m, (tk?.SarfMiktar ?? 0m) - tpakUretim);
+
+        return (
+            aYemProms:      (a?.YemekhaneMiktar   ?? 0m) + (a?.PromsMiktar   ?? 0m),
+            pakYemProms:    (pak?.YemekhaneMiktar  ?? 0m) + (pak?.PromsMiktar  ?? 0m),
+            aSarfExtra:     aSarfExtra,
+            tkSarfExtra:    tkSarfExtra,
+            pakSarf:        pak?.SarfMiktar  ?? 0m,
+            tpakSarf:       tpak?.SarfMiktar ?? 0m,
+            aYemekhane:     a?.YemekhaneMiktar   ?? 0m,
+            aProms:         a?.PromsMiktar       ?? 0m,
+            pakYemekhane:   pak?.YemekhaneMiktar  ?? 0m,
+            pakProms:       pak?.PromsMiktar      ?? 0m,
+            bYemekhane:     b?.YemekhaneMiktar   ?? 0m,
+            bProms:         b?.PromsMiktar       ?? 0m,
+            cYemekhane:     c?.YemekhaneMiktar   ?? 0m,
+            cProms:         c?.PromsMiktar       ?? 0m,
+            tkYemekhane:    tk?.YemekhaneMiktar  ?? 0m,
+            tkProms:        tk?.PromsMiktar      ?? 0m,
+            tpakYemekhane:  tpak?.YemekhaneMiktar ?? 0m,
+            tpakProms:      tpak?.PromsMiktar     ?? 0m
+        );
+    }
+
+    private List<BRow> HesaplaBaskanlikTablosu()
+    {
+        if (_analizSonuc == null) return [];
+
+        var a    = GetKat("A_KOTASI");
+        var b    = GetKat("B_KOTASI");
+        var c    = GetKat("C_KOTASI");
+        var tk   = GetKat("TICARI_KRISTAL");
+        var knya = GetKat("KONYA_TICARI");
+        var pak  = GetKat("PAKETLI");
+        var tpak = GetKat("TICARI_PAKET");
+
+        decimal pakUretim  = pak?.UretimMiktar  ?? 0m;
+        decimal tpakUretim = tpak?.UretimMiktar ?? 0m;
+
+        // ── 1. Sarf extrayı hesapla (paket üretimi düşüldükten sonra kalan sarf)
+        decimal aSarfExtra  = Math.Max(0m, (a?.SarfMiktar  ?? 0m) - pakUretim);
+        decimal tkSarfExtra = Math.Max(0m, (tk?.SarfMiktar ?? 0m) - tpakUretim);
+
+        // ── 2. Ortalama LOGO satış fiyatından sarf tutarını hesapla
+        //    (kullanıcının istediği mantık: ort. satış fiyatı × sarf miktarı)
+        decimal aOrtFiyat   = (a?.SatisMiktar  ?? 0m) > 0 ? (a?.SatisTutar  ?? 0m) / (a?.SatisMiktar  ?? 0m) : 0m;
+        // Konya Şeker satışı Ticari Kristal'e ekleniyor — ortalama fiyat her ikisi dahil hesaplanır
+        decimal tkToplamSatisMiktar = (tk?.SatisMiktar ?? 0m) + (knya?.SatisMiktar ?? 0m);
+        decimal tkToplamSatisTutar  = (tk?.SatisTutar  ?? 0m) + (knya?.SatisTutar  ?? 0m);
+        decimal tkOrtFiyat  = tkToplamSatisMiktar > 0 ? tkToplamSatisTutar / tkToplamSatisMiktar : 0m;
+        decimal pakOrtFiyat = (pak?.SatisMiktar  ?? 0m) > 0 ? (pak?.SatisTutar  ?? 0m) / (pak?.SatisMiktar  ?? 0m) : 0m;
+        decimal tpOrtFiyat  = (tpak?.SatisMiktar ?? 0m) > 0 ? (tpak?.SatisTutar ?? 0m) / (tpak?.SatisMiktar ?? 0m) : 0m;
+
+        decimal aSarfExtraTutar  = aOrtFiyat  * aSarfExtra;
+        decimal tkSarfExtraTutar = tkOrtFiyat * tkSarfExtra;
+        decimal pakSarfTutar     = pakOrtFiyat * (pak?.SarfMiktar  ?? 0m);
+        decimal tpSarfTutar      = tpOrtFiyat  * (tpak?.SarfMiktar ?? 0m);
+
+        // ── 3. Toplam satış (LOGO satış + sarf + A/Paket yemekhane&PROMS) — iade öncesi
+        // Yemekhane+PROMS için ayrı değişkenler (Diğer Çıkış bloğundan önce tanımlanmış)
+        decimal aYemPromsLocal   = (a?.YemekhaneMiktar  ?? 0m) + (a?.PromsMiktar  ?? 0m);
+        decimal pakYemPromsLocal = (pak?.YemekhaneMiktar ?? 0m) + (pak?.PromsMiktar ?? 0m);
+        decimal aYemPromsTutar   = aOrtFiyat   * aYemPromsLocal;
+        decimal pakYemPromsTutar = pakOrtFiyat * pakYemPromsLocal;
+
+        decimal aSatisBrüt    = (a?.SatisMiktar  ?? 0m) + aSarfExtra   + aYemPromsLocal;
+        decimal aSatisBrütTl  = (a?.SatisTutar   ?? 0m) + aSarfExtraTutar + aYemPromsTutar;
+        decimal tkSatisBrüt   = (tk?.SatisMiktar ?? 0m) + tkSarfExtra + (knya?.SatisMiktar ?? 0m);
+        decimal tkSatisBrütTl = (tk?.SatisTutar  ?? 0m) + tkSarfExtraTutar + (knya?.SatisTutar ?? 0m);
+        decimal pakSatisBrüt  = (pak?.SatisMiktar  ?? 0m) + (pak?.SarfMiktar  ?? 0m) + pakYemPromsLocal;
+        decimal pakSatisBrütTl= (pak?.SatisTutar   ?? 0m) + pakSarfTutar + pakYemPromsTutar;
+        decimal tpSatisBrüt   = (tpak?.SatisMiktar ?? 0m) + (tpak?.SarfMiktar ?? 0m);
+        decimal tpSatisBrütTl = (tpak?.SatisTutar  ?? 0m) + tpSarfTutar;
+
+        // ── Başkanlık dönem başı değerleri (iade düzeltmeleri dahil)
+        decimal bkA   = _baskanlikDonemBasi?.GetValueOrDefault("A_KOTASI")       ?? (a?.DonemBasiMiktar   ?? 0m);
+        decimal bkPak = _baskanlikDonemBasi?.GetValueOrDefault("PAKETLI")        ?? (pak?.DonemBasiMiktar  ?? 0m);
+        decimal bkB   = _baskanlikDonemBasi?.GetValueOrDefault("B_KOTASI")       ?? (b?.DonemBasiMiktar   ?? 0m);
+        decimal bkC   = _baskanlikDonemBasi?.GetValueOrDefault("C_KOTASI")       ?? (c?.DonemBasiMiktar   ?? 0m);
+        decimal bkTK  = _baskanlikDonemBasi?.GetValueOrDefault("TICARI_KRISTAL") ?? (tk?.DonemBasiMiktar  ?? 0m);
+        decimal bkTP  = _baskanlikDonemBasi?.GetValueOrDefault("TICARI_PAKET")   ?? (tpak?.DonemBasiMiktar ?? 0m);
+
+        // ── Başkanlık satış yönlendirmesi: bkTK/bkTP stoğu varsa A/Paket çıkışları önce
+        //    Ticari Mal'dan tüketilir (portal mantığı).
+        // LOGO analizi zaten logoTK_başı = tk?.DonemBasiMiktar kadar A→TK yapmıştır.
+        // Başkanlık'ın EKSTRA yaptığı = bkTK - logoTK_başı kadar daha fazla tüketim.
+        decimal logoTKStart = tk?.DonemBasiMiktar   ?? 0m;
+        decimal logoTPStart = tpak?.DonemBasiMiktar ?? 0m;
+        decimal R_TK = Math.Max(0m, Math.Min(aSatisBrüt,   bkTK - logoTKStart));
+        decimal R_TP = Math.Max(0m, Math.Min(pakSatisBrüt,  bkTP - logoTPStart));
+        // Yönlendirilmiş tutarlar (A'nın ortalama fiyatıyla)
+        decimal R_TK_Tl = aSatisBrüt  > 0 ? aSatisBrütTl  * R_TK / aSatisBrüt  : 0m;
+        decimal R_TP_Tl = pakSatisBrüt > 0 ? pakSatisBrütTl * R_TP / pakSatisBrüt : 0m;
+        // Başkanlık brüt satışlar (yönlendirme sonrası)
+        decimal bkASatisBrüt    = aSatisBrüt    - R_TK;
+        decimal bkASatisBrütTl  = aSatisBrütTl  - R_TK_Tl;
+        decimal bkTKSatisBrüt   = tkSatisBrüt   + R_TK;
+        decimal bkTKSatisBrütTl = tkSatisBrütTl + R_TK_Tl;
+        decimal bkPakSatisBrüt    = pakSatisBrüt    - R_TP;
+        decimal bkPakSatisBrütTl  = pakSatisBrütTl  - R_TP_Tl;
+        decimal bkTPSatisBrüt   = tpSatisBrüt   + R_TP;
+        decimal bkTPSatisBrütTl = tpSatisBrütTl + R_TP_Tl;
+
+        // ── Sonraki ay iade düzeltmelerini Başkanlık brüt üzerinden uygula
+        decimal IadeHesapla(string kat, decimal brutMiktar) =>
+            Math.Min(brutMiktar, Math.Max(0m,
+                (_analizDipnotlar ?? []).Where(d => d.HedefKategori == kat).Sum(d => d.Miktar)));
+        decimal IadeTutar(decimal iadeMiktar, decimal brutMiktar, decimal brutTutar) =>
+            brutMiktar > 0 ? brutTutar * iadeMiktar / brutMiktar : 0m;
+
+        decimal aIadeMiktar   = IadeHesapla("A_KOTASI", bkASatisBrüt);
+        // Konya Şeker iadeleri de Ticari Kristal toplamına dahil edilir
+        decimal tkIadeMiktar  = Math.Min(bkTKSatisBrüt, Math.Max(0m,
+            (_analizDipnotlar ?? []).Where(d => d.HedefKategori == "TICARI_KRISTAL" || d.HedefKategori == "KONYA_TICARI").Sum(d => d.Miktar)));
+        decimal pakIadeMiktar = IadeHesapla("PAKETLI",      bkPakSatisBrüt);
+        decimal tpIadeMiktar  = IadeHesapla("TICARI_PAKET", bkTPSatisBrüt);
+
+        decimal aIadeTutar   = IadeTutar(aIadeMiktar,  bkASatisBrüt,    bkASatisBrütTl);
+        decimal tkIadeTutar  = IadeTutar(tkIadeMiktar, bkTKSatisBrüt,   bkTKSatisBrütTl);
+        decimal pakIadeTutar = IadeTutar(pakIadeMiktar, bkPakSatisBrüt,  bkPakSatisBrütTl);
+        decimal tpIadeTutar  = IadeTutar(tpIadeMiktar,  bkTPSatisBrüt,   bkTPSatisBrütTl);
+
+        // ── Net satış = Başkanlık brüt - iade
+        decimal aSatisMiktar  = bkASatisBrüt    - aIadeMiktar;
+        decimal aSatisTutar   = bkASatisBrütTl  - aIadeTutar;
+        decimal tkSatisMiktar = bkTKSatisBrüt   - tkIadeMiktar;
+        decimal tkSatisTutar  = bkTKSatisBrütTl - tkIadeTutar;
+
+        // ── Paket Satış = brüt - iade
+        decimal pakSatisMiktar  = bkPakSatisBrüt   - pakIadeMiktar;
+        decimal pakSatisTutar   = bkPakSatisBrütTl - pakIadeTutar;
+        decimal tpakSatisMiktar = bkTPSatisBrüt    - tpIadeMiktar;
+        decimal tpakSatisTutar  = bkTPSatisBrütTl  - tpIadeTutar;
+
+        // ── Diğer Yollarla Çıkış: sadece TİCARİ MAL kategorileri (Yemekhane + PROMS)
+        // A Kotası ve Paket kategorilerinin Yemekhane+PROMS'u SATIŞA eklenir (Bakanlık zorunluluğu)
+        decimal aYemProms   = (a?.YemekhaneMiktar   ?? 0m) + (a?.PromsMiktar   ?? 0m);
+        decimal pakYemProms = (pak?.YemekhaneMiktar  ?? 0m) + (pak?.PromsMiktar  ?? 0m);
+        decimal bDigerK     = (b?.YemekhaneMiktar   ?? 0m) + (b?.PromsMiktar   ?? 0m);
+        decimal cDigerK     = (c?.YemekhaneMiktar   ?? 0m) + (c?.PromsMiktar   ?? 0m);
+        decimal tkDigerK    = (tk?.YemekhaneMiktar  ?? 0m) + (tk?.PromsMiktar  ?? 0m);
+        decimal tpakDigerP  = (tpak?.YemekhaneMiktar ?? 0m) + (tpak?.PromsMiktar ?? 0m);
+
+        var r = new List<BRow>();
+
+        // ── AY BAŞI STOK ──────────────────────────────────────────────
+        // Başkanlık tablosunda dönem başı = _baskanlikDonemBasi (iade düzeltmeleri dahil)
+        r.Add(new(BRowTip.GrupBaslik, "AY BAŞI STOK"));
+        r.Add(new(BRowTip.Veri, "Şirkete Ait Stok (Şeker Türleri İçin A Kotası)", bkA, bkPak));
+        r.Add(new(BRowTip.Veri, "Şirkete Ait Stok (Şeker Türleri İçin B Kotası)", bkB));
+        r.Add(new(BRowTip.Veri, "Şirkete Ait Stok (Şeker Türleri İçin C Şekeri)", bkC));
+        r.Add(new(BRowTip.Veri, "Ticari Mal Stok", bkTK, bkTP));
+        r.Add(new(BRowTip.ToplamSatir, "Aylık \"Ay Başı Stok\" Toplam",
+            bkA + bkB + bkC + bkTK,
+            bkPak + bkTP));
+
+        // ── SATINALMA ──────────────────────────────────────────────────
+        r.Add(new(BRowTip.GrupBaslik, "SATINALMA / SATIN ALINAN"));
+        // Konya Şeker satın alması da Ticari Kristal satırına eklenir (satışları da oraya ekleniyor)
+        decimal tkSatinAlma = (tk?.SatinAlmaMiktar ?? 0m) + (knya?.SatinAlmaMiktar ?? 0m);
+        r.Add(new(BRowTip.Veri, "Yurtiçinden Satın Alınan (Ticari Mal)", tkSatinAlma, tpak?.SatinAlmaMiktar ?? 0m));
+        r.Add(new(BRowTip.Veri, "Yurtdışından Satın Alınan"));
+        r.Add(new(BRowTip.Veri, "Fason Üretim İçin Teslim Alınan"));
+        r.Add(new(BRowTip.ToplamSatir, "Aylık \"Satın Alınan\" Toplam",
+            tkSatinAlma, tpak?.SatinAlmaMiktar ?? 0m));
+
+        // ── İŞLENEN ───────────────────────────────────────────────────
+        r.Add(new(BRowTip.GrupBaslik, "İŞLENEN"));
+        r.Add(new(BRowTip.Veri, "Şirkete Ait İşlenen A Kotası", pakUretim));
+        r.Add(new(BRowTip.Veri, "Şirkete Ait İşlenen B Kotası"));
+        r.Add(new(BRowTip.Veri, "Şirkete Ait İşlenen C Şekeri"));
+        r.Add(new(BRowTip.Veri, "Ticari Mal İşlenen", tpakUretim));
+        r.Add(new(BRowTip.Veri, "Fason İşlenen"));
+        r.Add(new(BRowTip.ToplamSatir, "Aylık \"İşlenen\" Toplam", pakUretim + tpakUretim));
+
+        // ── ÜRETİM ────────────────────────────────────────────────────
+        r.Add(new(BRowTip.GrupBaslik, "ÜRETİM"));
+        r.Add(new(BRowTip.Veri, "Şirkete Ait Üretim (Şeker Türleri İçin A Kotası)", a?.UretimMiktar ?? 0m, pakUretim));
+        r.Add(new(BRowTip.Veri, "Şirkete Ait Üretim (Şeker Türleri İçin B Kotası)", b?.UretimMiktar ?? 0m));
+        r.Add(new(BRowTip.Veri, "Şirkete Ait Üretim (Şeker Türleri İçin C Şekeri)", c?.UretimMiktar ?? 0m));
+        r.Add(new(BRowTip.Veri, "Fason Üretim"));
+        r.Add(new(BRowTip.Veri, "Ticari Mal Üretimi", tk?.UretimMiktar ?? 0m, tpakUretim));
+        r.Add(new(BRowTip.ToplamSatir, "Aylık \"Üretim\" Toplam",
+            (a?.UretimMiktar ?? 0m) + (b?.UretimMiktar ?? 0m) + (c?.UretimMiktar ?? 0m) + (tk?.UretimMiktar ?? 0m),
+            pakUretim + tpakUretim));
+
+        // ── DİĞER YOLLARLA GİRİŞ ─────────────────────────────────────
+        r.Add(new(BRowTip.GrupBaslik, "DİĞER YOLLARLA GİRİŞ"));
+        r.Add(new(BRowTip.Veri, "Giriş (A Kotası)"));
+        r.Add(new(BRowTip.Veri, "Giriş (B Kotası)"));
+        r.Add(new(BRowTip.Veri, "Giriş (C Şekeri)"));
+        r.Add(new(BRowTip.Veri, "Giriş Fason"));
+        r.Add(new(BRowTip.Veri, "Giriş Ticari Mal"));
+        r.Add(new(BRowTip.ToplamSatir, "Aylık \"Diğer Yollarla Giriş\" Toplam"));
+
+        // ── DİĞER YOLLARLA ÇIKIŞ: sadece Ticari Mal yemekhane+PROMS
+        // A Kotası ve Paket'in yemekhane+PROMS'u satışa eklendi (Bakanlık zorunluluğu)
+        r.Add(new(BRowTip.GrupBaslik, "DİĞER YOLLARLA ÇIKIŞ"));
+        r.Add(new(BRowTip.Veri, "Çıkış (A Kotası)"));
+        r.Add(new(BRowTip.Veri, "Çıkış (B Kotası)", bDigerK));
+        r.Add(new(BRowTip.Veri, "Çıkış (C Şekeri)", cDigerK));
+        r.Add(new(BRowTip.Veri, "Çıkış Fason"));
+        r.Add(new(BRowTip.Veri, "Çıkış Ticari Mal", tkDigerK, tpakDigerP));
+        decimal digCikisK = bDigerK + cDigerK + tkDigerK;
+        decimal digCikisP = tpakDigerP;
+        r.Add(new(BRowTip.ToplamSatir, "Aylık \"Diğer Yollarla Çıkış\" Toplam", digCikisK, digCikisP));
+
+        // ── SATIŞ ─────────────────────────────────────────────────────
+        r.Add(new(BRowTip.GrupBaslik, "SATIŞ (Satış ve/veya Teslim Eden)"));
+        r.Add(new(BRowTip.Veri, "Yurtiçi Satış (Şeker Türleri İçin A Kotası)", aSatisMiktar, pakSatisMiktar));
+        r.Add(new(BRowTip.Veri, "Yurtiçi Satış (Şeker Türleri İçin B Kotası)", b?.SatisMiktar ?? 0m));
+        r.Add(new(BRowTip.Veri, "C Şekeri Satışı (Toplam)", c?.SatisMiktar ?? 0m));
+        r.Add(new(BRowTip.Veri, "Yurtiçi Ticari Mal Satışı", tkSatisMiktar, tpakSatisMiktar));
+        r.Add(new(BRowTip.Veri, "Yurtdışı Ticari Mal Satışı"));
+        decimal satisK = aSatisMiktar + (b?.SatisMiktar ?? 0m) + (c?.SatisMiktar ?? 0m) + tkSatisMiktar;
+        decimal satisP = pakSatisMiktar + tpakSatisMiktar;
+        r.Add(new(BRowTip.ToplamSatir, "Aylık \"Satış ve/veya Teslim Edilen\" Toplam", satisK, satisP));
+
+        // Hasılat (TL) — sarf payı dahil
+        r.Add(new(BRowTip.TutarSatir, "A Kotası Satış Hâsılatı (TL)", aSatisTutar, pakSatisTutar));
+        r.Add(new(BRowTip.TutarSatir, "B Kotası Satış Hâsılatı (TL)", b?.SatisTutar ?? 0m));
+        r.Add(new(BRowTip.TutarSatir, "C Şekeri Satış Hâsılatı (TL)", c?.SatisTutar ?? 0m));
+        r.Add(new(BRowTip.TutarSatir, "Ticari Mal Satış Hâsılatı (TL)", tkSatisTutar, tpakSatisTutar));
+        decimal ciroK = aSatisTutar + (b?.SatisTutar ?? 0m) + (c?.SatisTutar ?? 0m) + tkSatisTutar;
+        decimal ciroP = pakSatisTutar + tpakSatisTutar;
+        r.Add(new(BRowTip.TutarSatir, "Toplam Ciro", ciroK, ciroP));
+
+        // Fiyat Ortalaması (TL/Kg) — sarf payı dahil
+        decimal aKFiyat   = aSatisMiktar    > 0 ? aSatisTutar    / aSatisMiktar    : 0m;
+        decimal aPFiyat   = pakSatisMiktar  > 0 ? pakSatisTutar  / pakSatisMiktar  : 0m;
+        decimal aFiyatT   = (aSatisMiktar + pakSatisMiktar) > 0
+            ? (aSatisTutar + pakSatisTutar) / (aSatisMiktar + pakSatisMiktar) : 0m;
+
+        decimal bFiyat    = (b?.SatisMiktar ?? 0m) > 0 ? (b?.SatisTutar ?? 0m) / b!.SatisMiktar : 0m;
+        decimal cFiyat    = (c?.SatisMiktar ?? 0m) > 0 ? (c?.SatisTutar ?? 0m) / c!.SatisMiktar : 0m;
+
+        decimal tkKFiyat  = tkSatisMiktar   > 0 ? tkSatisTutar   / tkSatisMiktar   : 0m;
+        decimal tkPFiyat  = tpakSatisMiktar > 0 ? tpakSatisTutar / tpakSatisMiktar : 0m;
+        decimal tkFiyatT  = (tkSatisMiktar + tpakSatisMiktar) > 0
+            ? (tkSatisTutar + tpakSatisTutar) / (tkSatisMiktar + tpakSatisMiktar) : 0m;
+
+        r.Add(new(BRowTip.FiyatSatir, "Aylık Fiyat Ortalaması – A Kotası (KDV hariç, TL/Kg)", aKFiyat, aPFiyat, aFiyatT));
+        r.Add(new(BRowTip.FiyatSatir, "Aylık Fiyat Ortalaması – B Kotası (KDV hariç, TL/Kg)", bFiyat, 0m, bFiyat));
+        r.Add(new(BRowTip.FiyatSatir, "Aylık Fiyat Ortalaması – C Şekeri (KDV hariç, TL/Kg)", cFiyat, 0m, cFiyat));
+        r.Add(new(BRowTip.FiyatSatir, "Aylık Fiyat Ortalaması – Ticari Mal (KDV hariç, TL/Kg)", tkKFiyat, tkPFiyat, tkFiyatT));
+
+        // ── AY SONU STOK (Başkanlık Portalı ile Uyumlu) ──────────────────────
+        // Formül: Başkanlık Dönem Başı + (LOGO bu ay net değişim) + sonraki ay iadeleri
+        //
+        //  Başkanlık Dönem Başı: önceki ayda uygulanan iade düzeltmeleri dahil
+        //    (portala girilen önceki ay sonu stoğuyla eşleşir)
+        //  LOGO net değişim: DonemSonuMiktar - DonemBasiMiktar (üretim-satış-sarf farkı)
+        //  Sonraki ay iadeleri: dipnotlardaki iadeler satıştan düşüldüğü için stoka eklenir
+        //
+        //  İade yoksa → Başkanlık Sonu = Başkanlık Başı + LOGO net değişim
+        //  İade varsa → Başkanlık Sonu > LOGO Sonu (kasım iadeleri ekim stoğunu artırır)
+
+        // AY SONU: Başkanlık zincir çıktısı kullanılır (bir sonraki ayın AY BAŞI ile tutarlı).
+        // _baskanlikDonemSonu = GetBaskanlikDonemBasiAsync(bitis+1) → bu dönem sonu zincir değeri.
+        decimal bIadeMiktar   = IadeHesapla("B_KOTASI", b?.SatisMiktar ?? 0m);
+        decimal cIadeMiktar   = IadeHesapla("C_KOTASI", c?.SatisMiktar ?? 0m);
+        decimal aKristalSonu  = _baskanlikDonemSonu?.GetValueOrDefault("A_KOTASI")
+            ?? bkA   + (a?.DonemSonuMiktar   ?? 0m) - (a?.DonemBasiMiktar   ?? 0m) + R_TK  + aIadeMiktar;
+        decimal aPaketSonu    = _baskanlikDonemSonu?.GetValueOrDefault("PAKETLI")
+            ?? bkPak + (pak?.DonemSonuMiktar  ?? 0m) - (pak?.DonemBasiMiktar  ?? 0m) + R_TP  + pakIadeMiktar;
+        decimal bSonu         = _baskanlikDonemSonu?.GetValueOrDefault("B_KOTASI")
+            ?? bkB   + (b?.DonemSonuMiktar   ?? 0m) - (b?.DonemBasiMiktar   ?? 0m) + bIadeMiktar;
+        decimal cSonu         = _baskanlikDonemSonu?.GetValueOrDefault("C_KOTASI")
+            ?? bkC   + (c?.DonemSonuMiktar   ?? 0m) - (c?.DonemBasiMiktar   ?? 0m) + cIadeMiktar;
+        decimal tkKristalSonu = _baskanlikDonemSonu?.GetValueOrDefault("TICARI_KRISTAL")
+            ?? bkTK  + (tk?.DonemSonuMiktar  ?? 0m) - (tk?.DonemBasiMiktar  ?? 0m)
+                     + (knya?.DonemSonuMiktar ?? 0m) - (knya?.DonemBasiMiktar ?? 0m) - R_TK + tkIadeMiktar;
+        decimal tpakSonu      = _baskanlikDonemSonu?.GetValueOrDefault("TICARI_PAKET")
+            ?? bkTP  + (tpak?.DonemSonuMiktar ?? 0m) - (tpak?.DonemBasiMiktar ?? 0m) - R_TP + tpIadeMiktar;
+
+        r.Add(new(BRowTip.GrupBaslik, "AY SONU STOK (Portal ile Uyumlu)"));
+        r.Add(new(BRowTip.Veri, "Ay Sonu Stok – A Kotası (Kristal / Paket)", aKristalSonu, aPaketSonu));
+        r.Add(new(BRowTip.Veri, "Ay Sonu Stok – B Kotası",                   bSonu));
+        r.Add(new(BRowTip.Veri, "Ay Sonu Stok – C Şekeri",                   cSonu));
+        r.Add(new(BRowTip.Veri, "Ay Sonu Stok – Ticari Mal (Kristal / Paket)", tkKristalSonu, tpakSonu));
+        decimal aysonuK = aKristalSonu + bSonu + cSonu + tkKristalSonu;
+        decimal aysonuP = aPaketSonu + tpakSonu;
+        r.Add(new(BRowTip.ToplamSatir, "Aylık \"Ay Sonu Stok\" Toplam", aysonuK, aysonuP,
+            aysonuK + aysonuP));
+
+        return r;
+    }
+
+    // ── Kategori özeti (Excel ile birebir) ───────────────────────────
+    private record KatOzetRow(string KategoriAdi, decimal ToplamKg);
+
+    private List<KatOzetRow> KategoriOzetiHesapla(List<StokOzetRow> ozetler)
+    {
+        var gruplar = new Dictionary<string, decimal>
+        {
+            ["C Şekeri"] = 0m,
+            ["B Şekeri"] = 0m,
+            ["A Şekeri"] = 0m,
+            ["Paketli Şeker"] = 0m,
+        };
+
+        foreach (var ozet in ozetler)
+        {
+            var kat = MalzemeKategoriAdi(ozet.MalzemeAdi, ozet.MalzemeKodu);
+            if (gruplar.ContainsKey(kat))
+                gruplar[kat] += ozet.ToplamKg;
+            else
+                gruplar["Paketli Şeker"] += ozet.ToplamKg;
+        }
+
+        return gruplar
+            .Where(kvp => kvp.Value != 0m)
+            .Select(kvp => new KatOzetRow(kvp.Key, kvp.Value))
+            .ToList();
+    }
+
+    private static string MalzemeKategoriAdi(string ad, string kod)
+    {
+        var adUpper = (ad ?? "").ToUpperInvariant();
+        if (adUpper.Contains("A KOTASI") || adUpper.Contains("A KOTA")) return "A Şekeri";
+        if (adUpper.Contains("B KOTASI") || adUpper.Contains("B KOTA")) return "B Şekeri";
+        if (adUpper.Contains("C KOTASI") || adUpper.Contains("C KOTA")) return "C Şekeri";
+
+        return kod.Trim() switch
+        {
+            "S.T.0.0.0" or "S.T.0.0.4" or "S.705.00.0005" => "A Şekeri",
+            "S.T.0.0.8" or "S.705.00.0001"                 => "B Şekeri",
+            "S.T.0.0.7" or "S.705.00.0008"                 => "C Şekeri",
+            _                                               => "Paketli Şeker",
+        };
+    }
+
+    // ── Hızlı tarih seçimi ───────────────────────────────────────────
+    private void SetAnalizAraligi(int tip)
+    {
+        var today = DateTime.Today;
+        switch (tip)
+        {
+            case 0:
+                _analizBaslangic = new DateTime(today.Year, today.Month, 1);
+                _analizBitis     = today;
+                break;
+            case 1:
+                _analizBaslangic = new DateTime(today.Year, 1, 1);
+                _analizBitis     = today;
+                break;
+            case 2:
+                var gAy = today.AddMonths(-1);
+                _analizBaslangic = new DateTime(gAy.Year, gAy.Month, 1);
+                _analizBitis     = new DateTime(gAy.Year, gAy.Month,
+                    DateTime.DaysInMonth(gAy.Year, gAy.Month));
+                break;
+        }
+    }
+}

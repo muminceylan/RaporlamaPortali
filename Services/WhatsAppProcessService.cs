@@ -170,12 +170,19 @@ public class WhatsAppProcessService : BackgroundService
         try
         {
             var tcs = new TaskCompletionSource<bool>();
+            // node_modules'u kaynak WhatsApp klasöründen kopyala (cmd.exe devre dışıysa npm install çalışmaz)
+            var kaynakNodeModules = Path.Combine(
+                Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? "",
+                "WhatsApp", "node_modules");
+            if (!Directory.Exists(kaynakNodeModules))
+                kaynakNodeModules = Path.Combine(klasor, "..", "node_modules_backup");
+
             var npm = new Process
             {
                 StartInfo = new ProcessStartInfo
                 {
-                    FileName               = "cmd.exe",
-                    Arguments              = "/c npm install",
+                    FileName               = "powershell.exe",
+                    Arguments              = $"-NoProfile -Command \"& 'C:\\Program Files\\nodejs\\npm.cmd' install\"",
                     WorkingDirectory       = klasor,
                     UseShellExecute        = false,
                     CreateNoWindow         = true,

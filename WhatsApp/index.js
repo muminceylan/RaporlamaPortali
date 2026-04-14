@@ -77,6 +77,80 @@ if (!fs.existsSync(CIKTI_KLASORU)) {
 durumYaz('BAGLI_DEGIL', '');
 
 // =====================================================
+// ŞEKER RAPORU — KONUŞMA DURUMU
+// Anahtar: numara → { adim: 'BASLANGIC' | 'BITIS', baslangic: 'YYYY-MM-DD' }
+// =====================================================
+const sekerKonusma = new Map();
+
+// Türkçe ay adı → ay numarası
+const AYLAR = {
+    'ocak': 1, 'subat': 2, 'şubat': 2, 'mart': 3, 'nisan': 4,
+    'mayis': 5, 'mayıs': 5, 'haziran': 6, 'temmuz': 7,
+    'agustos': 8, 'ağustos': 8, 'eylul': 9, 'eylül': 9,
+    'ekim': 10, 'kasim': 11, 'kasım': 11, 'aralik': 12, 'aralık': 12
+};
+
+/** "Eylül", "Ekim 2025" vb. → {baslangic, bitis} veya null */
+function ayAdindenTarih(metin) {
+    const temiz = metin.toLowerCase().replace(/[ığüşöçiI]/g, c =>
+        ({'ı':'i','ğ':'g','ü':'u','ş':'s','ö':'o','ç':'c','i':'i','I':'i'}[c]||c));
+    for (const [isim, no] of Object.entries(AYLAR)) {
+        if (temiz.includes(isim)) {
+            // Yıl var mı?
+            const yilEsles = temiz.match(/\b(20\d{2})\b/);
+            const yil = yilEsles ? parseInt(yilEsles[1]) : new Date().getFullYear();
+            const son = new Date(yil, no, 0).getDate(); // ayın son günü
+            return {
+                baslangic: `${yil}-${String(no).padStart(2,'0')}-01`,
+                bitis:     `${yil}-${String(no).padStart(2,'0')}-${String(son).padStart(2,'0')}`
+            };
+        }
+    }
+    return null;
+}
+
+/** "01.09.2025" veya "01/09/2025" veya "2025-09-01" → "YYYY-MM-DD" veya null */
+function tarihParse(metin) {
+    metin = metin.trim();
+    // DD.MM.YYYY veya DD/MM/YYYY
+    let m = metin.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})$/);
+    if (m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+    // YYYY-MM-DD
+    m = metin.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) return metin;
+    return null;
+}
+
+async function sekerRaporuGonder(message, baslangicStr, bitisStr) {
+    const baseUrl = (config.raporApiUrl || 'http://localhost:5050/api/rapor')
+        .replace(/\/api\/.*$/, '');
+    const urlAnaliz = `${baseUrl}/api/seker-analiz?baslangic=${baslangicStr}&bitis=${bitisStr}`;
+    const urlRapor  = `${baseUrl}/api/seker-raporu?baslangic=${baslangicStr}&bitis=${bitisStr}`;
+
+    console.log(`[Seker] Analiz tablosu: ${urlAnaliz}`);
+    console.log(`[Seker] Baskanlık tablosu: ${urlRapor}`);
+
+    const [htmlAnaliz, htmlRapor] = await Promise.all([
+        sqlRaporuGetirRetry(urlAnaliz),
+        sqlRaporuGetirRetry(urlRapor)
+    ]);
+
+    if (!htmlAnaliz && !htmlRapor) {
+        await message.reply('Seker raporu alinamadi, sunucu kapali olabilir.');
+        return;
+    }
+
+    // 1. resim: Ham analiz tablosu (üst tablo) — geniş viewport
+    if (htmlAnaliz) {
+        await htmldenPngOlusturVeGonder(message, htmlAnaliz, 'seker-analiz', 1620);
+    }
+    // 2. resim: Başkanlık tablosu (alt tablo)
+    if (htmlRapor) {
+        await htmldenPngOlusturVeGonder(message, htmlRapor, 'seker');
+    }
+}
+
+// =====================================================
 // WHATSAPP CLIENT
 // =====================================================
 
@@ -131,16 +205,82 @@ client.on('message', async (message) => {
 
         const mesajIcerigi = message.body.toLowerCase().trim();
 
+        // ── Şeker Raporu konuşma durumu kontrolü ──────────────────────
+        if (sekerKonusma.has(gonderenNumara)) {
+            const durum = sekerKonusma.get(gonderenNumara);
+
+            // İptal komutu
+            if (mesajIcerigi === 'iptal' || mesajIcerigi === 'vazgec') {
+                sekerKonusma.delete(gonderenNumara);
+                await message.reply('Seker raporu iptal edildi.');
+                logYaz(gonderenNumara, message.body, 'Iptal');
+                return;
+            }
+
+            if (durum.adim === 'BASLANGIC') {
+                const tarih = tarihParse(message.body.trim());
+                if (!tarih) {
+                    await message.reply('Tarih anlasılamadı. Lütfen DD.MM.YYYY formatında girin (örn: 01.09.2025) veya "iptal" yazın.');
+                    return;
+                }
+                sekerKonusma.set(gonderenNumara, { adim: 'BITIS', baslangic: tarih });
+                await message.reply(`Baslangic: ${tarih}\nSimdi bitis tarihini girin (DD.MM.YYYY):`);
+                return;
+            }
+
+            if (durum.adim === 'BITIS') {
+                const tarih = tarihParse(message.body.trim());
+                if (!tarih) {
+                    await message.reply('Tarih anlasılamadı. Lütfen DD.MM.YYYY formatında girin (örn: 30.09.2025) veya "iptal" yazın.');
+                    return;
+                }
+                sekerKonusma.delete(gonderenNumara);
+                await message.reply('Seker raporu hazirlaniyor, lutfen bekleyin...');
+                logYaz(gonderenNumara, message.body, 'Hazirlaniyor...');
+                try {
+                    await sekerRaporuGonder(message, durum.baslangic, tarih);
+                    logYaz(gonderenNumara, message.body, 'Gonderildi');
+                } catch (e) {
+                    logYaz(gonderenNumara, message.body, 'HATA: ' + e.message);
+                    await message.reply('Seker raporu gonderilirken hata: ' + e.message);
+                }
+                return;
+            }
+        }
+
         // Pancar raporu tetikleyicileri
         const pancarTetikleyiciler = ['pancar rapor', 'pancarrapor'];
         const pancarTetiklendi = pancarTetikleyiciler.some(k => mesajIcerigi.includes(k));
 
+        // Şeker raporu tetikleyicileri
+        const sekerTetikleyiciler = ['seker rapor', 'şeker rapor', 'sekerrapor', 'şekerrapor'];
+        const sekerTetiklendi = sekerTetikleyiciler.some(k => mesajIcerigi.includes(k));
+
         // Genel rapor tetikleyicileri
-        const tetiklendi = !pancarTetiklendi && config.tetikleyiciler.some(kelime =>
+        const tetiklendi = !pancarTetiklendi && !sekerTetiklendi && config.tetikleyiciler.some(kelime =>
             mesajIcerigi.includes(kelime.toLowerCase())
         );
 
-        if (pancarTetiklendi) {
+        if (sekerTetiklendi) {
+            console.log(`\n[${new Date().toLocaleString('tr-TR')}] Seker rapor talebi: ${gonderenNumara}`);
+            // Mesajda ay adı var mı? (örn: "Şeker Rapor Eylül")
+            const ayTarih = ayAdindenTarih(mesajIcerigi);
+            if (ayTarih) {
+                logYaz(gonderenNumara, message.body, 'Hazirlaniyor...');
+                await message.reply(`Seker raporu hazirlaniyor (${ayTarih.baslangic} – ${ayTarih.bitis}), lutfen bekleyin...`);
+                try {
+                    await sekerRaporuGonder(message, ayTarih.baslangic, ayTarih.bitis);
+                    logYaz(gonderenNumara, message.body, 'Gonderildi');
+                } catch (e) {
+                    logYaz(gonderenNumara, message.body, 'HATA: ' + e.message);
+                    await message.reply('Seker raporu gonderilirken hata: ' + e.message);
+                }
+            } else {
+                // Tarih yok → konuşma modunu başlat
+                sekerKonusma.set(gonderenNumara, { adim: 'BASLANGIC' });
+                await message.reply('Seker raporu - baslangic tarihini girin (DD.MM.YYYY):\n(veya "Seker Rapor Eylul" gibi ay adi ile de gonderebilirsiniz)\n"iptal" yazarak vazgecebilirsiniz.');
+            }
+        } else if (pancarTetiklendi) {
             console.log(`\n[${new Date().toLocaleString('tr-TR')}] Pancar rapor talebi: ${gonderenNumara}`);
             logYaz(gonderenNumara, message.body, 'Hazirlaniyor...');
             await message.reply('Pancar raporu hazirlaniyor, lutfen bekleyin...');
@@ -273,7 +413,7 @@ async function browserGetir() {
     return _browser;
 }
 
-async function htmldenPngOlusturVeGonder(message, htmlIcerik, kaynak) {
+async function htmldenPngOlusturVeGonder(message, htmlIcerik, kaynak, viewportGenislik = 1400) {
     // Kilit bekle (max 120 sn)
     let bekleme = 0;
     while (_puppeteerKilit && bekleme < 120000) {
@@ -288,7 +428,7 @@ async function htmldenPngOlusturVeGonder(message, htmlIcerik, kaynak) {
 
     let page = null;
     try {
-        const dosyaAdi = kaynak === 'pancar' ? 'pancar' : 'rapor';
+        const dosyaAdi = kaynak === 'pancar' ? 'pancar' : kaynak === 'seker-analiz' ? 'seker-analiz' : kaynak === 'seker' ? 'seker' : 'rapor';
         const htmlDosya = path.join(CIKTI_KLASORU, dosyaAdi + '.html');
         const pngDosya  = path.join(CIKTI_KLASORU, dosyaAdi + '.png');
 
@@ -297,7 +437,7 @@ async function htmldenPngOlusturVeGonder(message, htmlIcerik, kaynak) {
         const browser = await browserGetir();
         page = await browser.newPage();
         await page.setExtraHTTPHeaders({ 'Accept-Language': 'tr-TR,tr;q=0.9' });
-        await page.setViewport({ width: 1400, height: 900, deviceScaleFactor: 1 });
+        await page.setViewport({ width: viewportGenislik, height: 900, deviceScaleFactor: 1 });
 
         const fileUrl = 'file:///' + htmlDosya.replace(/\\/g, '/');
         await page.goto(fileUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
@@ -317,7 +457,11 @@ async function htmldenPngOlusturVeGonder(message, htmlIcerik, kaynak) {
                 ? `Yan Urunler + Seker Uretim-Satis-Stok Raporu\n${tarih}`
                 : kaynak === 'pancar'
                     ? `Pancar Raporu\n${tarih}`
-                    : `Tum Rapor (Excel)\n${tarih}`;
+                    : kaynak === 'seker-analiz'
+                        ? `Seker Kategorisi Bazli Analiz (Ham Veri)\n${tarih}`
+                        : kaynak === 'seker'
+                        ? `Seker Uretim-Satis-Stok Raporu\n${tarih}`
+                        : `Tum Rapor (Excel)\n${tarih}`;
             await message.reply(media, undefined, { caption: baslik });
             console.log('Rapor gonderildi!\n');
         } else {

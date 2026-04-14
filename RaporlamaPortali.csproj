@@ -32,10 +32,30 @@
     <PackageReference Include="QRCoder" Version="1.6.0" />
   </ItemGroup>
 
+  <!-- publish, bin, obj ve node_modules klasörlerini içerik taramasından hariç tut -->
+  <ItemGroup>
+    <Content Remove="publish\**" />
+    <None    Remove="publish\**" />
+    <Compile Remove="publish\**" />
+    <Content Remove="bin\**" />
+    <None    Remove="bin\**" />
+    <Content Remove="obj\**" />
+    <None    Remove="obj\**" />
+    <Content Remove="WhatsApp\node_modules\**" />
+    <None    Remove="WhatsApp\node_modules\**" />
+  </ItemGroup>
+
   <!-- WhatsApp index.js publish'e dahil et -->
   <ItemGroup>
     <Content Include="WhatsApp\index.js" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" />
     <Content Update="WhatsApp\package.json" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" />
   </ItemGroup>
+
+  <!-- index.js her publish'te publish klasörüne zorla kopyala -->
+  <Target Name="CopyWhatsAppIndexJs" AfterTargets="Publish">
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\WhatsApp\index.js"
+          DestinationFiles="$(PublishDir)WhatsApp\index.js"
+          OverwriteReadOnlyFiles="true" />
+  </Target>
 
 </Project>
