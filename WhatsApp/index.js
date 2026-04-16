@@ -191,12 +191,10 @@ client.on('message', async (message) => {
     try {
         config = configOku(); // Her mesajda taze config oku
 
-        // Bireysel mesaj: message.from = "905xxxxxxx@c.us" veya "905xxxxxxx@lid"
+        // Bireysel mesaj: message.from = "905xxxxxxx@c.us" veya "905xxxxxxx@lid" (Meta LID)
         // Grup mesajı:    message.from = "12036xxx@g.us", message.author = "905xxxxxxx@c.us"
         // @ işaretinden sonraki her şeyi sil, sadece rakamları al
         const numaraTemizle = (raw) => raw ? raw.replace(/@\S+$/, '').replace(/\D/g, '') : null;
-        const bireyselNumara = numaraTemizle(message.from);
-        const grupGonderenNumara = message.author ? numaraTemizle(message.author) : null;
 
         // Listedeki numaralarla normalleştirilmiş karşılaştırma (son 10 hane eşleşmesi)
         const numaraEslesiyor = (numara, liste) => {
@@ -208,9 +206,30 @@ client.on('message', async (message) => {
             });
         };
 
-        const gonderenNumara = numaraEslesiyor(bireyselNumara, config.yetkiliNumaralar)
+        let bireyselNumara = numaraTemizle(message.from);
+        let grupGonderenNumara = message.author ? numaraTemizle(message.author) : null;
+
+        let gonderenNumara = numaraEslesiyor(bireyselNumara, config.yetkiliNumaralar)
             ? bireyselNumara
             : (numaraEslesiyor(grupGonderenNumara, config.yetkiliNumaralar) ? grupGonderenNumara : null);
+
+        // Eşleşme bulunamadıysa getContact() ile gerçek telefon numarasını sorgula
+        // (Meta LID formatında from alanı gerçek numara içermez)
+        if (!gonderenNumara) {
+            try {
+                const contact = await message.getContact();
+                if (contact && contact.number) {
+                    const gercekNumara = contact.number.replace(/\D/g, '');
+                    if (numaraEslesiyor(gercekNumara, config.yetkiliNumaralar)) {
+                        gonderenNumara = gercekNumara;
+                        bireyselNumara = gercekNumara;
+                        logYaz('DEBUG', `LID cozumlendi: from=${message.from} → ${gercekNumara}`, 'Yetkili');
+                    }
+                }
+            } catch (e) {
+                // getContact başarısız olursa sessizce devam et
+            }
+        }
 
         if (!gonderenNumara) {
             return;
