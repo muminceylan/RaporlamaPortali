@@ -30,6 +30,7 @@
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.0" />
     <PackageReference Include="ClosedXML" Version="0.102.2" />
     <PackageReference Include="QRCoder" Version="1.6.0" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.4" />
   </ItemGroup>
 
   <!-- publish, bin, obj ve node_modules klasörlerini içerik taramasından hariç tut -->

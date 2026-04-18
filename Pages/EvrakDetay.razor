@@ -1,0 +1,220 @@
+@page "/evrak-detay/{Kategori}/{Id:int}"
+@using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
+@inject EvrakArsivService Arsiv
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject IDialogService Dialog
+
+<PageTitle>Evrak Detayı</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.Description" Class="mr-2" />
+    Evrak Detayı
+</MudText>
+
+@if (_bulunamadi)
+{
+    <MudAlert Severity="Severity.Error">Kayıt bulunamadı.</MudAlert>
+    <MudButton Variant="Variant.Outlined" Class="mt-3"
+               OnClick='() => Nav.NavigateTo("/evrak-arsivi")'>Geri</MudButton>
+}
+else if (_tesisKayit != null)
+{
+    <MudPaper Class="pa-4">
+        <MudGrid>
+            <MudItem xs="12" md="6">
+                <MudField Label="Defter No" Variant="Variant.Outlined">@_tesisKayit.DefterNo</MudField>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudField Label="Tesis" Variant="Variant.Outlined">@_tesisKayit.TesisAdi</MudField>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudField Label="Belge Tipi" Variant="Variant.Outlined">@_tesisKayit.BelgeTipiAdi</MudField>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudField Label="Tebellüğ Tarihi" Variant="Variant.Outlined">
+                    @_tesisKayit.TebellugTarihi.ToString("dd.MM.yyyy")
+                </MudField>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudField Label="Evrak Tarihi" Variant="Variant.Outlined">
+                    @(_tesisKayit.EvrakTarihi?.ToString("dd.MM.yyyy") ?? "-")
+                </MudField>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudField Label="Evrak No" Variant="Variant.Outlined">
+                    @(string.IsNullOrWhiteSpace(_tesisKayit.EvrakNo) ? "-" : _tesisKayit.EvrakNo)
+                </MudField>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudField Label="Geçerlilik Başlangıç" Variant="Variant.Outlined">
+                    @(_tesisKayit.GecerlilikBaslangic?.ToString("dd.MM.yyyy") ?? "-")
+                </MudField>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudField Label="Geçerlilik Bitiş" Variant="Variant.Outlined">
+                    @(_tesisKayit.GecerlilikBitis?.ToString("dd.MM.yyyy") ?? "-")
+                </MudField>
+            </MudItem>
+            <MudItem xs="12">
+                <MudField Label="Açıklama" Variant="Variant.Outlined">
+                    @(string.IsNullOrWhiteSpace(_tesisKayit.Aciklama) ? "-" : _tesisKayit.Aciklama)
+                </MudField>
+            </MudItem>
+            <MudItem xs="12">
+                <MudField Label="Dosya" Variant="Variant.Outlined">
+                    @_tesisKayit.DosyaAdi (@((_tesisKayit.DosyaBoyutu / 1024.0).ToString("N0")) KB)
+                </MudField>
+            </MudItem>
+            <MudItem xs="12">
+                <MudField Label="Yüklenme" Variant="Variant.Outlined">
+                    @_tesisKayit.YuklemeTarihi.ToString("dd.MM.yyyy HH:mm")
+                </MudField>
+            </MudItem>
+            <MudItem xs="12" Class="d-flex gap-2">
+                <MudButton Variant="Variant.Filled" Color="Color.Info" StartIcon="@Icons.Material.Filled.Visibility"
+                           Href="@($"/evrak-dosya?kategori=tesis&id={_tesisKayit.Id}&inline=true")" Target="_blank">
+                    Görüntüle
+                </MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Download"
+                           Href="@($"/evrak-dosya?kategori=tesis&id={_tesisKayit.Id}")" Target="_blank">
+                    İndir
+                </MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.Delete"
+                           OnClick="TesisSil">
+                    Sil
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" OnClick='() => Nav.NavigateTo("/evrak-arsivi")'>Geri</MudButton>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+}
+else if (_mustKayit != null)
+{
+    <MudPaper Class="pa-4">
+        <MudGrid>
+            <MudItem xs="12" md="6">
+                <MudField Label="Defter No" Variant="Variant.Outlined">@_mustKayit.DefterNo</MudField>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudField Label="Kampanya Yılı" Variant="Variant.Outlined">@_mustKayit.KampanyaYili</MudField>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudField Label="Müstahsil" Variant="Variant.Outlined">@_mustKayit.MustahsilAdSoyadi</MudField>
+            </MudItem>
+            <MudItem xs="12" md="3">
+                <MudField Label="TC Kimlik No" Variant="Variant.Outlined">@(_mustKayit.TcKimlikNo ?? "-")</MudField>
+            </MudItem>
+            <MudItem xs="12" md="3">
+                <MudField Label="Müstahsil No" Variant="Variant.Outlined">@(_mustKayit.MustahsilNo ?? "-")</MudField>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudField Label="Hesap No" Variant="Variant.Outlined">@(_mustKayit.HesapNo ?? "-")</MudField>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudField Label="Belge Tipi" Variant="Variant.Outlined">@_mustKayit.BelgeTipiAdi</MudField>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudField Label="Tebellüğ Tarihi" Variant="Variant.Outlined">
+                    @_mustKayit.TebellugTarihi.ToString("dd.MM.yyyy")
+                </MudField>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudField Label="Evrak Tarihi" Variant="Variant.Outlined">
+                    @(_mustKayit.EvrakTarihi?.ToString("dd.MM.yyyy") ?? "-")
+                </MudField>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudField Label="Evrak No" Variant="Variant.Outlined">
+                    @(string.IsNullOrWhiteSpace(_mustKayit.EvrakNo) ? "-" : _mustKayit.EvrakNo)
+                </MudField>
+            </MudItem>
+            <MudItem xs="12">
+                <MudField Label="Açıklama" Variant="Variant.Outlined">
+                    @(string.IsNullOrWhiteSpace(_mustKayit.Aciklama) ? "-" : _mustKayit.Aciklama)
+                </MudField>
+            </MudItem>
+            <MudItem xs="12">
+                <MudField Label="Dosya" Variant="Variant.Outlined">
+                    @_mustKayit.DosyaAdi (@((_mustKayit.DosyaBoyutu / 1024.0).ToString("N0")) KB)
+                </MudField>
+            </MudItem>
+            <MudItem xs="12">
+                <MudField Label="Yüklenme" Variant="Variant.Outlined">
+                    @_mustKayit.YuklemeTarihi.ToString("dd.MM.yyyy HH:mm")
+                </MudField>
+            </MudItem>
+            <MudItem xs="12" Class="d-flex gap-2">
+                <MudButton Variant="Variant.Filled" Color="Color.Info" StartIcon="@Icons.Material.Filled.Visibility"
+                           Href="@($"/evrak-dosya?kategori=mustahsil&id={_mustKayit.Id}&inline=true")" Target="_blank">
+                    Görüntüle
+                </MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Download"
+                           Href="@($"/evrak-dosya?kategori=mustahsil&id={_mustKayit.Id}")" Target="_blank">
+                    İndir
+                </MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.Delete"
+                           OnClick="MustahsilSil">
+                    Sil
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" OnClick='() => Nav.NavigateTo("/evrak-arsivi")'>Geri</MudButton>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+}
+
+@code {
+    [Parameter] public string Kategori { get; set; } = "";
+    [Parameter] public int Id { get; set; }
+
+    private TesisEvraki? _tesisKayit;
+    private MustahsilEvraki? _mustKayit;
+    private bool _bulunamadi = false;
+
+    protected override void OnParametersSet()
+    {
+        _tesisKayit = null;
+        _mustKayit = null;
+        _bulunamadi = false;
+
+        if (string.Equals(Kategori, "tesis", StringComparison.OrdinalIgnoreCase))
+        {
+            _tesisKayit = Arsiv.TesisEvrakGetir(Id);
+            if (_tesisKayit == null) _bulunamadi = true;
+        }
+        else if (string.Equals(Kategori, "mustahsil", StringComparison.OrdinalIgnoreCase))
+        {
+            _mustKayit = Arsiv.MustahsilEvrakGetir(Id);
+            if (_mustKayit == null) _bulunamadi = true;
+        }
+        else
+        {
+            _bulunamadi = true;
+        }
+    }
+
+    private async Task TesisSil()
+    {
+        if (_tesisKayit == null) return;
+        var onay = await Dialog.ShowMessageBox("Silme Onayı",
+            $"{_tesisKayit.DefterNo} - {_tesisKayit.DosyaAdi} silinsin mi?",
+            yesText: "Sil", cancelText: "İptal");
+        if (onay != true) return;
+        Arsiv.TesisEvrakSil(_tesisKayit.Id);
+        Snackbar.Add("Silindi.", Severity.Success);
+        Nav.NavigateTo("/evrak-arsivi");
+    }
+
+    private async Task MustahsilSil()
+    {
+        if (_mustKayit == null) return;
+        var onay = await Dialog.ShowMessageBox("Silme Onayı",
+            $"{_mustKayit.DefterNo} - {_mustKayit.DosyaAdi} silinsin mi?",
+            yesText: "Sil", cancelText: "İptal");
+        if (onay != true) return;
+        Arsiv.MustahsilEvrakSil(_mustKayit.Id);
+        Snackbar.Add("Silindi.", Severity.Success);
+        Nav.NavigateTo("/evrak-arsivi");
+    }
+}

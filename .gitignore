@@ -19,3 +19,8 @@ WhatsApp/screenshots/
 WhatsApp/whatsapp-status.json
 WhatsApp/whatsapp-log.json
 appsettings.Development.json
+
+# Evrak Arsivi runtime / kullanici verileri
+publish/EvrakArsiv.db
+publish/EvrakArsiv/
+publish/giris_ayarlari.json

@@ -1,0 +1,150 @@
+@page "/tesisler"
+@using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
+@inject EvrakArsivService Arsiv
+@inject ISnackbar Snackbar
+@inject IDialogService Dialog
+
+<PageTitle>Tesisler</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.Factory" Class="mr-2" />
+    Tesisler
+</MudText>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudText Typo="Typo.subtitle1" Class="mb-2">Yeni Tesis Ekle</MudText>
+    <MudGrid>
+        <MudItem xs="12" md="8">
+            <MudTextField @bind-Value="_yeniAd" Label="Tesis Adı" Placeholder="Örn: Şeker Fabrikası" Variant="Variant.Outlined" />
+        </MudItem>
+        <MudItem xs="12" md="4" Class="d-flex align-center">
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="Ekle">Ekle</MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudPaper Class="pa-4">
+    <MudTable Items="_liste" Dense="true" Hover="true" Bordered="true" Striped="true"
+              Loading="_yukleniyor" LoadingProgressColor="Color.Info">
+        <HeaderContent>
+            <MudTh>Tesis Adı</MudTh>
+            <MudTh>Durum</MudTh>
+            <MudTh>Oluşturma</MudTh>
+            <MudTh Style="width:180px">İşlemler</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>
+                @if (_duzenlenenId == context.Id)
+                {
+                    <MudTextField @bind-Value="_duzenAd" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                }
+                else
+                {
+                    @context.Ad
+                }
+            </MudTd>
+            <MudTd>
+                @if (context.Aktif)
+                {
+                    <MudChip T="string" Color="Color.Success" Size="Size.Small">Aktif</MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Color="Color.Default" Size="Size.Small">Pasif</MudChip>
+                }
+            </MudTd>
+            <MudTd>@context.OlusturmaTarihi.ToString("dd.MM.yyyy")</MudTd>
+            <MudTd>
+                @if (_duzenlenenId == context.Id)
+                {
+                    <MudIconButton Icon="@Icons.Material.Filled.Save" Color="Color.Success" Size="Size.Small"
+                                   OnClick="() => Kaydet(context)" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                                   OnClick="() => _duzenlenenId = 0" />
+                }
+                else
+                {
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Primary" Size="Size.Small"
+                                   OnClick="() => Duzenle(context)" />
+                    <MudIconButton Icon="@(context.Aktif ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                                   Size="Size.Small"
+                                   OnClick="() => AktifDegistir(context)" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
+                                   OnClick="() => Sil(context)" />
+                }
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText>Henüz tesis eklenmemiş.</MudText>
+        </NoRecordsContent>
+    </MudTable>
+</MudPaper>
+
+@code {
+    private List<Tesis> _liste = new();
+    private string _yeniAd = "";
+    private int _duzenlenenId = 0;
+    private string _duzenAd = "";
+    private bool _yukleniyor = false;
+
+    protected override void OnInitialized() => Yukle();
+
+    private void Yukle()
+    {
+        _yukleniyor = true;
+        _liste = Arsiv.TesisListesi();
+        _yukleniyor = false;
+    }
+
+    private void Ekle()
+    {
+        if (string.IsNullOrWhiteSpace(_yeniAd))
+        {
+            Snackbar.Add("Tesis adı boş olamaz.", Severity.Warning);
+            return;
+        }
+        Arsiv.TesisEkle(_yeniAd.Trim());
+        _yeniAd = "";
+        Yukle();
+        Snackbar.Add("Tesis eklendi.", Severity.Success);
+    }
+
+    private void Duzenle(Tesis t)
+    {
+        _duzenlenenId = t.Id;
+        _duzenAd = t.Ad;
+    }
+
+    private void Kaydet(Tesis t)
+    {
+        if (string.IsNullOrWhiteSpace(_duzenAd))
+        {
+            Snackbar.Add("Tesis adı boş olamaz.", Severity.Warning);
+            return;
+        }
+        Arsiv.TesisGuncelle(t.Id, _duzenAd.Trim(), t.Aktif);
+        _duzenlenenId = 0;
+        Yukle();
+        Snackbar.Add("Güncellendi.", Severity.Success);
+    }
+
+    private void AktifDegistir(Tesis t)
+    {
+        Arsiv.TesisGuncelle(t.Id, t.Ad, !t.Aktif);
+        Yukle();
+    }
+
+    private async Task Sil(Tesis t)
+    {
+        var onay = await Dialog.ShowMessageBox(
+            "Silme Onayı",
+            $"\"{t.Ad}\" silinsin mi? Bu tesise ait evraklar kaydı varsa bağlantı bozulur.",
+            yesText: "Sil", cancelText: "İptal");
+        if (onay != true) return;
+        Arsiv.TesisSil(t.Id);
+        Yukle();
+        Snackbar.Add("Silindi.", Severity.Success);
+    }
+}

@@ -74,6 +74,10 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<WhatsAppProcessSer
 // Giriş servisi
 builder.Services.AddSingleton<GirisAyarlariService>();
 
+// Evrak Arşivi servisleri
+builder.Services.AddSingleton<EvrakArsivService>();
+builder.Services.AddSingleton<MustahsilLookupService>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -174,7 +178,8 @@ app.MapGet("/api/rapor", async (HttpContext context) =>
             });
         }
 
-        var html = htmlService.BirlesikRaporHtmlOlustur(sekerVerileri, yanUrunVerileri, baslangic, bitis);
+        bool bulanik = context.Request.Query["bulanik"] == "true";
+        var html = htmlService.BirlesikRaporHtmlOlustur(sekerVerileri, yanUrunVerileri, baslangic, bitis, bulanik);
         context.Response.ContentType = "text/html; charset=utf-8";
         await context.Response.WriteAsync(html);
     }
@@ -203,8 +208,9 @@ app.MapGet("/api/pancar-raporu", async (HttpContext context) =>
         var t6 = pancarService.GetOzetIstatistikAsync();
         await Task.WhenAll(t1, t2, t3, t4, t5, t6);
 
+        bool bulanik = context.Request.Query["bulanik"] == "true";
         var html = htmlService.PancarRaporHtmlOlustur(
-            t1.Result, t2.Result, DateTime.Today, t3.Result, t4.Result, t5.Result, t6.Result);
+            t1.Result, t2.Result, DateTime.Today, t3.Result, t4.Result, t5.Result, t6.Result, bulanik);
         context.Response.ContentType = "text/html; charset=utf-8";
         await context.Response.WriteAsync(html);
     }
@@ -277,8 +283,9 @@ app.MapGet("/api/seker-analiz", async (HttpContext context) =>
             bitis = new DateTime(DateTime.Today.Year, DateTime.Today.Month,
                 DateTime.DaysInMonth(DateTime.Today.Year, DateTime.Today.Month));
 
+        bool bulanik = context.Request.Query["bulanik"] == "true";
         var (analiz, _) = await sekerDairesiService.GetSadeSekerAnaliziAsync(baslangic, bitis);
-        var html = htmlService.SekerAnalizHtmlOlustur(analiz, baslangic, bitis);
+        var html = htmlService.SekerAnalizHtmlOlustur(analiz, baslangic, bitis, bulanik);
         context.Response.ContentType = "text/html; charset=utf-8";
         await context.Response.WriteAsync(html);
     }
@@ -305,11 +312,12 @@ app.MapGet("/api/seker-raporu", async (HttpContext context) =>
             bitis = new DateTime(DateTime.Today.Year, DateTime.Today.Month,
                 DateTime.DaysInMonth(DateTime.Today.Year, DateTime.Today.Month));
 
+        bool bulanik = context.Request.Query["bulanik"] == "true";
         var (analiz, dipnotlar) = await sekerDairesiService.GetSadeSekerAnaliziAsync(baslangic, bitis);
         var tBas = sekerDairesiService.GetBaskanlikDonemBasiAsync(baslangic);
         var tSon = sekerDairesiService.GetBaskanlikDonemBasiAsync(bitis.AddDays(1));
         await Task.WhenAll(tBas, tSon);
-        var html = htmlService.SekerRaporHtmlOlustur(analiz, dipnotlar, baslangic, bitis, tBas.Result, tSon.Result);
+        var html = htmlService.SekerRaporHtmlOlustur(analiz, dipnotlar, baslangic, bitis, tBas.Result, tSon.Result, bulanik);
         context.Response.ContentType = "text/html; charset=utf-8";
         await context.Response.WriteAsync(html);
     }
@@ -319,6 +327,40 @@ app.MapGet("/api/seker-raporu", async (HttpContext context) =>
         await context.Response.WriteAsync("Hata: " + ex.Message);
     }
 }).AllowAnonymous();
+
+// Evrak dosyası indirme / görüntüleme (auth zorunlu)
+// GET /evrak-dosya?kategori=tesis|mustahsil&id=123&inline=true
+app.MapGet("/evrak-dosya", (HttpContext ctx, EvrakArsivService arsiv,
+    string kategori, int id, bool inline) =>
+{
+    string? fullPath = null;
+    string  dosyaAdi = "dosya";
+    string? mime     = "application/octet-stream";
+
+    if (kategori.Equals("tesis", StringComparison.OrdinalIgnoreCase))
+    {
+        var e = arsiv.TesisEvrakGetir(id);
+        if (e == null) return Results.NotFound();
+        fullPath = arsiv.TamYolaCevir(e.DosyaYolu);
+        dosyaAdi = e.DosyaAdi;
+        mime     = e.MimeType ?? mime;
+    }
+    else if (kategori.Equals("mustahsil", StringComparison.OrdinalIgnoreCase))
+    {
+        var e = arsiv.MustahsilEvrakGetir(id);
+        if (e == null) return Results.NotFound();
+        fullPath = arsiv.TamYolaCevir(e.DosyaYolu);
+        dosyaAdi = e.DosyaAdi;
+        mime     = e.MimeType ?? mime;
+    }
+
+    if (fullPath == null || !File.Exists(fullPath)) return Results.NotFound();
+
+    var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+    return inline
+        ? Results.File(stream, mime, enableRangeProcessing: true)
+        : Results.File(stream, mime, dosyaAdi);
+}).RequireAuthorization();
 
 // Blazor fallback — giriş zorunlu
 app.MapFallbackToPage("/_Host").RequireAuthorization();
