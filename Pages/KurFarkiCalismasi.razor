@@ -1,0 +1,466 @@
+@page "/kur-farki-calismasi"
+@using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
+@inject LogoIslemleriService Logo
+@inject ISnackbar Snackbar
+
+<PageTitle>Kur Farkı Çalışması</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.CurrencyExchange" Class="mr-2" />
+    Kur Farkı Çalışması
+</MudText>
+
+<MudAlert Severity="Severity.Info" Class="mb-3" Dense="true">
+    Seçili carinin tarih aralığındaki <b>dövizli hareketleri</b> (CLFLINE.TRCURR ≠ 0) para birimi bazında gruplanır.
+    <b>Net FC bakiyesi × Güncel Kur</b> ile <b>defter TL bakiyesi</b> karşılaştırılır. Sonuç <i>lehimize</i> ise biz, <i>aleyhimize</i> ise karşı firma kur farkı faturası keser.
+    <br /><b>Kredi Kartı İşlem Fişi</b> (TRCODE=20) TL satırları, tahsilat tarihindeki kura bölünerek <b>sentetik döviz tutarına</b> çevrilir ve baskın para biriminin bakiyesine dahil edilir.
+</MudAlert>
+
+<MudPaper Class="pa-3 mb-3">
+    <MudGrid>
+        <MudItem xs="12" md="2">
+            <MudDatePicker @bind-Date="_baslangic" Label="Başlangıç" DateFormat="dd.MM.yyyy"
+                           Editable="true" Mask="@(new DateMask("dd.MM.yyyy"))"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="2">
+            <MudDatePicker @bind-Date="_bitis" Label="Bitiş" DateFormat="dd.MM.yyyy"
+                           Editable="true" Mask="@(new DateMask("dd.MM.yyyy"))"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="2">
+            <MudDatePicker @bind-Date="_hesaplamaTarihi" Label="Hesaplama Tarihi (güncel kur)"
+                           DateFormat="dd.MM.yyyy"
+                           Editable="true" Mask="@(new DateMask("dd.MM.yyyy"))"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudSelect T="int" @bind-Value="_rateKolonu" Label="Kur Türü"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                <MudSelectItem Value="1">TCMB Döviz Alış (RATES1)</MudSelectItem>
+                <MudSelectItem Value="2">TCMB Döviz Satış (RATES2)</MudSelectItem>
+                <MudSelectItem Value="3">Serbest Piyasa Alış (RATES3)</MudSelectItem>
+                <MudSelectItem Value="4">Serbest Piyasa Satış (RATES4)</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="3" Class="d-flex align-center gap-2">
+            <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.Calculate"
+                       OnClick="Hesapla" Disabled="_yukleniyor">
+                @(_yukleniyor ? "Hesaplanıyor..." : "Kur Farkı Hesapla")
+            </MudButton>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudRadioGroup T="string" @bind-Value="_mod">
+                <MudRadio T="string" Value="@("Basit")" Color="Color.Primary">Basit Revalüasyon</MudRadio>
+                <MudRadio T="string" Value="@("Fifo")" Color="Color.Secondary">FIFO Mahsuplaştırma (Havale + KK + Virman)</MudRadio>
+            </MudRadioGroup>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            @if (_mod == "Basit")
+            {
+                <MudSwitch T="bool" @bind-Value="_krediKartiSentetikle" Color="Color.Primary"
+                           Label="Kredi Kartı fişlerini tahsilat günü kuruyla dövizlendir" />
+            }
+        </MudItem>
+
+        <MudItem xs="12">
+            <MudAutocomplete T="CariSecenek"
+                             Label="Cari Hesap (kod, ünvan, TC, VKN)"
+                             Variant="Variant.Outlined" Margin="Margin.Dense"
+                             SearchFunc="@CariAra"
+                             ToStringFunc="@(c => c == null ? "" : c.Etiket)"
+                             Value="_seciliCari"
+                             ValueChanged="@OnCariChanged"
+                             Clearable="true"
+                             Dense="true"
+                             CoerceText="false"
+                             MaxItems="50"
+                             ResetValueOnEmptyText="true"
+                             ShowProgressIndicator="true" />
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@if (_mod == "Fifo" && _fifo != null)
+{
+    <MudPaper Class="pa-3 mb-3" Style="background:linear-gradient(135deg,#f5f7fa 0%,#c3cfe2 100%)">
+        <MudText Typo="Typo.h6" Class="mb-2">
+            <MudIcon Icon="@Icons.Material.Filled.AccountTree" Class="mr-1" />
+            FIFO Mahsuplaştırma Sonucu — @(_seciliCari?.Etiket ?? "")
+        </MudText>
+        <MudGrid>
+            <MudItem xs="12" md="3">
+                <MudPaper Class="pa-3" Elevation="2" Style="background:#e8f5e9">
+                    <MudText Typo="Typo.caption">Gerçekleşmiş Kur Farkı</MudText>
+                    <MudText Typo="Typo.h5" Style="@(_fifo.ToplamGerceklesmis >= 0 ? "color:#2e7d32" : "color:#c62828")">
+                        @_fifo.ToplamGerceklesmis.ToString("N2") TL
+                    </MudText>
+                    <MudText Typo="Typo.caption">@_fifo.Eslesmeler.Count eşleşme</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="3">
+                <MudPaper Class="pa-3" Elevation="2" Style="background:#fff3e0">
+                    <MudText Typo="Typo.caption">Gerçekleşmemiş Kur Farkı</MudText>
+                    <MudText Typo="Typo.h5" Style="@(_fifo.ToplamGerceklesmemis >= 0 ? "color:#2e7d32" : "color:#c62828")">
+                        @_fifo.ToplamGerceklesmemis.ToString("N2") TL
+                    </MudText>
+                    <MudText Typo="Typo.caption">@_fifo.AcikFaturalar.Count açık fatura</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="3">
+                <MudPaper Class="pa-3" Elevation="2" Style="background:#e3f2fd">
+                    <MudText Typo="Typo.caption">TOPLAM Kur Farkı</MudText>
+                    <MudText Typo="Typo.h4" Style="@(_fifo.ToplamKurFarki >= 0 ? "color:#2e7d32; font-weight:700" : "color:#c62828; font-weight:700")">
+                        @_fifo.ToplamKurFarki.ToString("N2") TL
+                    </MudText>
+                    <MudText Typo="Typo.caption">@_fifo.Yon</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="3">
+                <MudPaper Class="pa-3" Elevation="2" Style="background:#fce4ec">
+                    <MudText Typo="Typo.caption">Faturayı Kesen</MudText>
+                    <MudText Typo="Typo.h6" Style="font-weight:700">@_fifo.KesenTaraf</MudText>
+                    <MudText Typo="Typo.caption">@_fifo.FazlaTahsilatlar.Count fazla tahsilat</MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    @if (_fifo.Eslesmeler.Count > 0)
+    {
+        <MudExpansionPanels Elevation="1" Class="mb-3">
+            <MudExpansionPanel Text="@($"Eşleşmeler ({_fifo.Eslesmeler.Count} satır)")" IsInitiallyExpanded="true">
+                <MudTable Items="_fifo.Eslesmeler" Dense="true" Bordered="true" Striped="true" Hover="true"
+                          FixedHeader="true" Height="500px" RowsPerPage="100">
+                    <HeaderContent>
+                        <MudTh>Fatura Tarihi</MudTh>
+                        <MudTh>Vade</MudTh>
+                        <MudTh>Fatura</MudTh>
+                        <MudTh>Tahsilat Tarihi</MudTh>
+                        <MudTh>Tahsilat</MudTh>
+                        <MudTh>Tip</MudTh>
+                        <MudTh Style="text-align:right">Mahsup TL</MudTh>
+                        <MudTh Style="text-align:right">Mahsup FC</MudTh>
+                        <MudTh Style="text-align:right">Kullanılan Kur</MudTh>
+                        <MudTh Style="text-align:right">Fatura Kuru</MudTh>
+                        <MudTh Style="text-align:right; background:#fffde7">Gerç. Kur Farkı</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.FaturaTarihi.ToString("dd.MM.yyyy")</MudTd>
+                        <MudTd>@context.FaturaVade.ToString("dd.MM.yyyy")</MudTd>
+                        <MudTd>@context.FaturaFisTuru @context.FaturaFisNo @(context.FaturaTrCurr != 0 ? $"[{context.FaturaDovizKodu}]" : "")</MudTd>
+                        <MudTd>@context.TahsilatTarihi.ToString("dd.MM.yyyy")</MudTd>
+                        <MudTd>@context.TahsilatFisTuru @context.TahsilatFisNo</MudTd>
+                        <MudTd><MudChip Size="Size.Small" Color="@(context.Tip.Contains("→") && context.Tip != "TL → TL" ? Color.Secondary : Color.Default)">@context.Tip</MudChip></MudTd>
+                        <MudTd Style="text-align:right">@context.MahsupTl.ToString("N2")</MudTd>
+                        <MudTd Style="text-align:right">@(context.MahsupFc == 0 ? "" : context.MahsupFc.ToString("N2"))</MudTd>
+                        <MudTd Style="text-align:right">@(context.KullanilanKur == 0 ? "" : context.KullanilanKur.ToString("N4"))</MudTd>
+                        <MudTd Style="text-align:right">@(context.FaturaKuru == 0 ? "" : context.FaturaKuru.ToString("N4"))</MudTd>
+                        <MudTd Style="@(context.GerceklesmisKurFarki > 0 ? "text-align:right; color:#2e7d32; font-weight:600" : (context.GerceklesmisKurFarki < 0 ? "text-align:right; color:#c62828; font-weight:600" : "text-align:right"))">@context.GerceklesmisKurFarki.ToString("N2")</MudTd>
+                    </RowTemplate>
+                    <PagerContent>
+                        <MudTablePager PageSizeOptions="new int[] { 50, 100, 250 }" />
+                    </PagerContent>
+                </MudTable>
+            </MudExpansionPanel>
+
+            @if (_fifo.AcikFaturalar.Count > 0)
+            {
+                <MudExpansionPanel Text="@($"Açık Faturalar ({_fifo.AcikFaturalar.Count})")">
+                    <MudTable Items="_fifo.AcikFaturalar" Dense="true" Bordered="true" Striped="true" Hover="true">
+                        <HeaderContent>
+                            <MudTh>Tarih</MudTh>
+                            <MudTh>Vade</MudTh>
+                            <MudTh>Fatura</MudTh>
+                            <MudTh>Döviz</MudTh>
+                            <MudTh Style="text-align:right">Kalan TL</MudTh>
+                            <MudTh Style="text-align:right">Kalan FC</MudTh>
+                            <MudTh Style="text-align:right">Fatura Kuru</MudTh>
+                            <MudTh Style="text-align:right">Güncel Kur</MudTh>
+                            <MudTh Style="text-align:right">Güncel TL Değer</MudTh>
+                            <MudTh Style="text-align:right; background:#fffde7">Gerç.memiş K.F.</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.Tarih.ToString("dd.MM.yyyy")</MudTd>
+                            <MudTd>@context.Vade.ToString("dd.MM.yyyy")</MudTd>
+                            <MudTd>@context.FisTuru @context.FisNo</MudTd>
+                            <MudTd>@(context.TrCurr == 0 ? "TL" : context.DovizKodu)</MudTd>
+                            <MudTd Style="text-align:right">@context.KalanTl.ToString("N2")</MudTd>
+                            <MudTd Style="text-align:right">@(context.KalanFc == 0 ? "" : context.KalanFc.ToString("N2"))</MudTd>
+                            <MudTd Style="text-align:right">@(context.FaturaKuru == 0 ? "" : context.FaturaKuru.ToString("N4"))</MudTd>
+                            <MudTd Style="text-align:right">@(context.GuncelKur == 0 ? "" : context.GuncelKur.ToString("N4"))</MudTd>
+                            <MudTd Style="text-align:right">@(context.GuncelTlDeger == 0 ? "" : context.GuncelTlDeger.ToString("N2"))</MudTd>
+                            <MudTd Style="@(context.GerceklesmemisKurFarki > 0 ? "text-align:right; color:#2e7d32; font-weight:600" : (context.GerceklesmemisKurFarki < 0 ? "text-align:right; color:#c62828; font-weight:600" : "text-align:right"))">@context.GerceklesmemisKurFarki.ToString("N2")</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                </MudExpansionPanel>
+            }
+
+            @if (_fifo.FazlaTahsilatlar.Count > 0)
+            {
+                <MudExpansionPanel Text="@($"Fazla / Eşleşmeyen Tahsilatlar ({_fifo.FazlaTahsilatlar.Count})")">
+                    <MudTable Items="_fifo.FazlaTahsilatlar" Dense="true" Bordered="true" Striped="true">
+                        <HeaderContent>
+                            <MudTh>Tarih</MudTh>
+                            <MudTh>Fiş</MudTh>
+                            <MudTh>Döviz</MudTh>
+                            <MudTh Style="text-align:right">Kalan TL</MudTh>
+                            <MudTh Style="text-align:right">Kalan FC</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.Tarih.ToString("dd.MM.yyyy")</MudTd>
+                            <MudTd>@context.FisTuru @context.FisNo</MudTd>
+                            <MudTd>@(context.TrCurr == 0 ? "TL" : context.DovizKodu)</MudTd>
+                            <MudTd Style="text-align:right">@context.KalanTl.ToString("N2")</MudTd>
+                            <MudTd Style="text-align:right">@(context.KalanFc == 0 ? "" : context.KalanFc.ToString("N2"))</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                </MudExpansionPanel>
+            }
+        </MudExpansionPanels>
+    }
+}
+else if (_mod == "Basit" && _sonuclar.Count > 0)
+{
+    <MudPaper Class="pa-3 mb-3">
+        <MudText Typo="Typo.h6" Class="mb-2">
+            <MudIcon Icon="@Icons.Material.Filled.Summarize" Class="mr-1" />
+            Özet — @(_seciliCari?.Etiket ?? "")
+        </MudText>
+        <MudTable Items="_sonuclar" Dense="true" Bordered="true" Striped="true" Hover="true">
+            <HeaderContent>
+                <MudTh Style="background:#f3e5f5">Döviz</MudTh>
+                <MudTh Style="text-align:right; background:#f3e5f5">İşlem (Sentetik)</MudTh>
+                <MudTh Style="text-align:right; background:#e8f5e9">FC Borç</MudTh>
+                <MudTh Style="text-align:right; background:#fff3e0">FC Alacak</MudTh>
+                <MudTh Style="text-align:right; background:#e3f2fd">FC Bakiye</MudTh>
+                <MudTh Style="text-align:right">Ort. İşlem Kuru</MudTh>
+                <MudTh Style="text-align:right">Güncel Kur</MudTh>
+                <MudTh Style="text-align:right; background:#e3f2fd">Defter TL Bakiye</MudTh>
+                <MudTh Style="text-align:right; background:#e3f2fd">Güncel TL Değer</MudTh>
+                <MudTh Style="text-align:right; background:#fffde7">Kur Farkı (TL)</MudTh>
+                <MudTh Style="background:#fce4ec">Yön</MudTh>
+                <MudTh Style="background:#fce4ec">Faturayı Kesen</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd Style="font-weight:600; color:#6a1b9a">@context.DovizKodu</MudTd>
+                <MudTd Style="text-align:right">
+                    @context.IslemSayisi
+                    @if (context.SentetikSayisi > 0)
+                    {
+                        <small style="color:#ef6c00"> (+@context.SentetikSayisi)</small>
+                    }
+                </MudTd>
+                <MudTd Style="text-align:right">@context.FcBorc.ToString("N2")</MudTd>
+                <MudTd Style="text-align:right">@context.FcAlacak.ToString("N2")</MudTd>
+                <MudTd Style="text-align:right; font-weight:600">@context.FcBakiye.ToString("N2")</MudTd>
+                <MudTd Style="text-align:right">@(context.OrtalamaKur == 0 ? "" : context.OrtalamaKur.ToString("N4"))</MudTd>
+                <MudTd Style="text-align:right">
+                    @(context.GuncelKur == 0 ? "—" : context.GuncelKur.ToString("N4"))
+                    @if (context.GuncelKurTarihi != null)
+                    {
+                        <br /><small style="color:#666">@context.GuncelKurTarihi.Value.ToString("dd.MM.yyyy")</small>
+                    }
+                </MudTd>
+                <MudTd Style="text-align:right">@context.TlBakiye.ToString("N2")</MudTd>
+                <MudTd Style="text-align:right">@context.GuncelTlDeger.ToString("N2")</MudTd>
+                <MudTd Style="@(context.KurFarki > 0 ? "text-align:right; color:#2e7d32; font-weight:700" : (context.KurFarki < 0 ? "text-align:right; color:#c62828; font-weight:700" : "text-align:right"))">@context.KurFarki.ToString("N2")</MudTd>
+                <MudTd Style="@(context.KurFarki > 0 ? "color:#2e7d32; font-weight:600" : (context.KurFarki < 0 ? "color:#c62828; font-weight:600" : ""))">@context.Yon</MudTd>
+                <MudTd Style="font-weight:600">@context.KesenTaraf</MudTd>
+            </RowTemplate>
+        </MudTable>
+
+        <MudDivider Class="my-3" />
+
+        <MudText Typo="Typo.subtitle2" Class="mt-2">Sonuç Yorumu:</MudText>
+        <ul style="margin-top:6px">
+            @foreach (var s in _sonuclar.Where(x => Math.Abs(x.KurFarki) >= 0.01m))
+            {
+                <li>
+                    <b>@s.DovizKodu</b> — @s.Aciklama.
+                    Kur farkı: <b style="color:@(s.KurFarki > 0 ? "#2e7d32" : "#c62828")">@s.KurFarki.ToString("N2") TL</b>.
+                    <b>@s.KesenTaraf</b> kur farkı faturası kesmelidir.
+                    @if (s.SentetikSayisi > 0)
+                    {
+                        <span style="color:#ef6c00"> (@s.SentetikSayisi kredi kartı fişi sentetik dövize çevrildi: Borç @s.SentetikFcBorc.ToString("N2"), Alacak @s.SentetikFcAlacak.ToString("N2"))</span>
+                    }
+                </li>
+            }
+            @if (!_sonuclar.Any(x => Math.Abs(x.KurFarki) >= 0.01m))
+            {
+                <li>Anlamlı bir kur farkı oluşmadı.</li>
+            }
+        </ul>
+    </MudPaper>
+
+    @if (_detay.Count > 0)
+    {
+        <MudExpansionPanels Elevation="1" Class="mb-3">
+            <MudExpansionPanel Text="@($"Dövizli Hareket Detayı ({_detay.Count} satır — sentetik dahil)")">
+                <MudTable Items="_detay" Dense="true" Bordered="true" Striped="true" Hover="true"
+                          FixedHeader="true" Height="500px" RowsPerPage="100">
+                    <HeaderContent>
+                        <MudTh>Tarih</MudTh>
+                        <MudTh>Fiş Türü</MudTh>
+                        <MudTh>Fiş No</MudTh>
+                        <MudTh>Açıklama</MudTh>
+                        <MudTh>Döviz</MudTh>
+                        <MudTh Style="text-align:right">İşlem Kuru</MudTh>
+                        <MudTh Style="text-align:right">FC Borç</MudTh>
+                        <MudTh Style="text-align:right">FC Alacak</MudTh>
+                        <MudTh Style="text-align:right">TL Borç</MudTh>
+                        <MudTh Style="text-align:right">TL Alacak</MudTh>
+                        <MudTh Style="text-align:center">Kaynak</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.Tarih.ToString("dd.MM.yyyy")</MudTd>
+                        <MudTd>@context.FisTuru</MudTd>
+                        <MudTd>@context.FisNo</MudTd>
+                        <MudTd>@context.Aciklama</MudTd>
+                        <MudTd Style="font-weight:600; color:#6a1b9a">@context.DovizKodu</MudTd>
+                        <MudTd Style="text-align:right">@(context.DovizKur == 0 ? "" : context.DovizKur.ToString("N4"))</MudTd>
+                        <MudTd Style="text-align:right">@(context.DovizBorc == 0 ? "" : context.DovizBorc.ToString("N2"))</MudTd>
+                        <MudTd Style="text-align:right">@(context.DovizAlacak == 0 ? "" : context.DovizAlacak.ToString("N2"))</MudTd>
+                        <MudTd Style="text-align:right">@(context.Borc == 0 ? "" : context.Borc.ToString("N2"))</MudTd>
+                        <MudTd Style="text-align:right">@(context.Alacak == 0 ? "" : context.Alacak.ToString("N2"))</MudTd>
+                        <MudTd Style="text-align:center">
+                            @if (context.SentetikDoviz)
+                            {
+                                <MudChip Size="Size.Small" Color="Color.Warning">Sentetik</MudChip>
+                            }
+                            else
+                            {
+                                <MudChip Size="Size.Small" Color="Color.Default">Gerçek</MudChip>
+                            }
+                        </MudTd>
+                    </RowTemplate>
+                    <PagerContent>
+                        <MudTablePager PageSizeOptions="new int[] { 50, 100, 250 }" />
+                    </PagerContent>
+                </MudTable>
+            </MudExpansionPanel>
+        </MudExpansionPanels>
+    }
+}
+else if (_hesaplandi)
+{
+    <MudAlert Severity="Severity.Warning" Dense="true">
+        Bu cari için seçilen tarih aralığında dövizli hareket bulunamadı.
+    </MudAlert>
+}
+
+@code {
+    private DateTime? _baslangic = new DateTime(DateTime.Today.Year, 1, 1);
+    private DateTime? _bitis = DateTime.Today;
+    private DateTime? _hesaplamaTarihi = DateTime.Today;
+    private int _rateKolonu = 2;
+    private bool _krediKartiSentetikle = true;
+    private bool _yukleniyor = false;
+    private bool _hesaplandi = false;
+    private string _mod = "Fifo";
+
+    private List<CariSecenek> _tumCariler = new();
+    private CariSecenek? _seciliCari;
+    private List<KurFarkiSatiri> _sonuclar = new();
+    private List<CariHareket> _detay = new();
+    private KurFarkiFifoSonuc? _fifo;
+
+    private static readonly System.Globalization.CultureInfo _tr = new("tr-TR");
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _tumCariler = await Logo.CariSecenekleriAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Cari listesi yüklenemedi: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private Task<IEnumerable<CariSecenek>> CariAra(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return Task.FromResult<IEnumerable<CariSecenek>>(_tumCariler.Take(50));
+
+        var q = text.ToUpper(_tr);
+        var sonuc = _tumCariler.Where(c =>
+            (!string.IsNullOrEmpty(c.Kod) && c.Kod.ToUpper(_tr).Contains(q)) ||
+            (!string.IsNullOrEmpty(c.Unvan) && c.Unvan.ToUpper(_tr).Contains(q)) ||
+            (!string.IsNullOrEmpty(c.TcKimlikNo) && c.TcKimlikNo.Contains(q)) ||
+            (!string.IsNullOrEmpty(c.VergiNo) && c.VergiNo.Contains(q))
+        ).Take(100);
+
+        return Task.FromResult<IEnumerable<CariSecenek>>(sonuc);
+    }
+
+    private void OnCariChanged(CariSecenek? cari)
+    {
+        _seciliCari = cari;
+    }
+
+    private async Task Hesapla()
+    {
+        if (_baslangic == null || _bitis == null || _hesaplamaTarihi == null)
+        {
+            Snackbar.Add("Tarihleri seçin.", Severity.Warning);
+            return;
+        }
+        if (_seciliCari == null || string.IsNullOrWhiteSpace(_seciliCari.Kod))
+        {
+            Snackbar.Add("Bir cari hesap seçin.", Severity.Warning);
+            return;
+        }
+
+        _yukleniyor = true;
+        try
+        {
+            if (_mod == "Fifo")
+            {
+                _fifo = await Logo.KurFarkiFifoHesaplaAsync(
+                    _baslangic.Value, _bitis.Value,
+                    _seciliCari.Kod, _seciliCari.Unvan,
+                    _hesaplamaTarihi.Value,
+                    _rateKolonu);
+                _sonuclar = new();
+                _detay = new();
+                _hesaplandi = true;
+                if (_fifo.Eslesmeler.Count == 0 && _fifo.AcikFaturalar.Count == 0 && _fifo.FazlaTahsilatlar.Count == 0)
+                    Snackbar.Add("Eşleşecek fatura/tahsilat bulunamadı.", Severity.Warning);
+                else
+                    Snackbar.Add($"{_fifo.Eslesmeler.Count} eşleşme, {_fifo.AcikFaturalar.Count} açık fatura.", Severity.Success);
+            }
+            else
+            {
+                var (ozet, detay) = await Logo.KurFarkiHesaplaAsync(
+                    _baslangic.Value, _bitis.Value,
+                    _seciliCari.Kod, _seciliCari.Unvan,
+                    _hesaplamaTarihi.Value,
+                    _rateKolonu,
+                    _krediKartiSentetikle);
+                _sonuclar = ozet;
+                _detay = detay;
+                _fifo = null;
+
+                _hesaplandi = true;
+                if (_sonuclar.Count == 0)
+                    Snackbar.Add("Dövizli hareket yok — kur farkı hesaplanmadı.", Severity.Warning);
+                else
+                    Snackbar.Add($"{_sonuclar.Count} para birimi için kur farkı hesaplandı.", Severity.Success);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Hata: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _yukleniyor = false;
+        }
+    }
+}

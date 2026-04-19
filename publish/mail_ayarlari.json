@@ -3,10 +3,21 @@
   "SmtpPort": 587,
   "UseSsl": true,
   "GondericiMail": "muminceylan@doguscay.com.tr",
-  "GondericiAdi": "Muhasebe Raporlar\u0131",
+  "GondericiAdi": "Muhasebe Raporları",
   "Sifre": "",
-  "Alicilar": [],
+  "Alicilar": [
+    "muminceylan@doguscay.com.tr",
+    "guclukarakan@doguscay.com.tr",
+    "murattozman@doguscay.com.tr",
+    "turkeroksuz@doguscay.com.tr",
+    "ebrutozman@doguscay.com.tr",
+    "huseyinoksuz@doguscay.com.tr",
+    "ensarkarakan@doguscay.com.tr",
+    "bilgekaankarakan@doguscay.com.tr",
+    "fakidonmez@doguscay.com.tr",
+    "mustafacelik@doguscay.com.tr"
+  ],
   "GonderimSaati": "12:00:00",
   "OtomatikGonderimAktif": false,
-  "SonGonderimZamani": null
+  "SonGonderimZamani": "2026-04-17T08:39:57.734426+03:00"
 }

@@ -1,9 +1,10 @@
 @inherits LayoutComponentBase
 
 <MudLayout>
-    <MudAppBar Elevation="1">
+    <MudAppBar Elevation="4" Style="background:linear-gradient(90deg,#0d47a1 0%,#1976d2 40%,#1565c0 100%);">
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@ToggleDrawer" />
-        <MudText Typo="Typo.h5" Class="ml-3 d-flex align-center" Style="font-family:'Segoe UI', sans-serif;">
+        <MudSpacer />
+        <MudText Typo="Typo.h5" Class="d-flex align-center" Style="font-family:'Segoe UI', sans-serif;">
             <MudAvatar Size="Size.Medium" Class="mr-2" Style="border:2px solid #FFC107; box-shadow:0 2px 6px rgba(0,0,0,0.3);">
                 <MudImage Src="/images/mumin.png" Alt="Mümin CEYLAN" ObjectFit="ObjectFit.Cover" />
             </MudAvatar>
@@ -15,98 +16,135 @@
             </span>
         </MudText>
         <MudSpacer />
-        <MudText Typo="Typo.body2" Class="mr-4">Doğuş Çay - Afyon Şeker Fabrikası</MudText>
+        <MudText Typo="Typo.body2" Class="mr-4" Style="color:#FFECB3; font-weight:500;">Doğuş Çay - Afyon Şeker Fabrikası</MudText>
         <MudIconButton Icon="@Icons.Material.Filled.Refresh" Color="Color.Inherit" Title="Yenile" OnClick="@(() => NavigationManager.NavigateTo(NavigationManager.Uri, true))" />
     </MudAppBar>
 
-    <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="2">
-        <MudNavMenu>
-            <MudText Typo="Typo.h6" Class="px-4 py-3" Style="color: #1B5E20;">
-                📊 Raporlar
+    <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="4"
+               Style="background:linear-gradient(180deg,#e8f5e9 0%,#e3f2fd 50%,#f3e5f5 100%);">
+        <MudNavMenu Class="portal-nav">
+            <MudText Typo="Typo.h6" Class="px-4 py-3 d-flex align-center"
+                     Style="color:#ffffff; background:linear-gradient(90deg,#1B5E20 0%,#2E7D32 100%); font-weight:700; letter-spacing:0.5px; box-shadow:0 2px 4px rgba(0,0,0,0.2);">
+                📊 Raporlar ve Kontrol
             </MudText>
             <MudDivider />
 
-            <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">
+            <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard"
+                        Style="color:#0d47a1; font-weight:600;">
                 Ana Sayfa
             </MudNavLink>
 
-            <MudNavGroup Title="Raporlar" Icon="@Icons.Material.Filled.Assessment" Expanded="true">
-                <MudNavLink Href="/yan-urunler" Icon="@Icons.Material.Filled.Assessment">
+            <MudNavGroup Title="Raporlar" Icon="@Icons.Material.Filled.Assessment" Expanded="true"
+                         IconColor="Color.Success">
+                <MudNavLink Href="/yan-urunler" Icon="@Icons.Material.Filled.Assessment" IconColor="Color.Success">
                     Özet Rapor (Ürünler)
                 </MudNavLink>
-                <MudNavLink Href="/pancar-raporu" Icon="@Icons.Material.Filled.Agriculture">
+                <MudNavLink Href="/pancar-raporu" Icon="@Icons.Material.Filled.Agriculture" IconColor="Color.Success">
                     Pancar Raporu
                 </MudNavLink>
-                <MudNavLink Href="/seker-dairesi" Icon="@Icons.Material.Filled.Inventory">
+                <MudNavLink Href="/seker-dairesi" Icon="@Icons.Material.Filled.Inventory" IconColor="Color.Success">
                     Şeker Dairesi Raporu
                 </MudNavLink>
-                <MudNavLink Href="/seker-dairesi-yan-urunler" Icon="@Icons.Material.Filled.Grass">
+                <MudNavLink Href="/seker-dairesi-yan-urunler" Icon="@Icons.Material.Filled.Grass" IconColor="Color.Success">
                     Şeker Dairesi Yan Ürünler
                 </MudNavLink>
             </MudNavGroup>
 
-            <MudNavGroup Title="Logo İşlemleri" Icon="@Icons.Material.Filled.Business" Expanded="false">
-                <MudNavLink Href="/kasa-hareketleri" Icon="@Icons.Material.Filled.AccountBalanceWallet">
+            <MudNavGroup Title="Logo İşlemleri" Icon="@Icons.Material.Filled.Business" Expanded="false"
+                         IconColor="Color.Primary">
+                <MudNavLink Href="/kasa-hareketleri" Icon="@Icons.Material.Filled.AccountBalanceWallet" IconColor="Color.Primary">
                     Kasa Hareketleri
                 </MudNavLink>
-                <MudNavLink Href="/kur-bilgileri" Icon="@Icons.Material.Filled.CurrencyExchange">
+                <MudNavLink Href="/kur-bilgileri" Icon="@Icons.Material.Filled.CurrencyExchange" IconColor="Color.Primary">
                     Kur Bilgileri
                 </MudNavLink>
-                <MudNavLink Href="/stok-durumu" Icon="@Icons.Material.Filled.Inventory2">
+                <MudNavLink Href="/stok-durumu" Icon="@Icons.Material.Filled.Inventory2" IconColor="Color.Primary">
                     Stok Durumu
+                </MudNavLink>
+                <MudNavLink Href="/cari-bakiye" Icon="@Icons.Material.Filled.AccountBalance" IconColor="Color.Primary">
+                    Cari Hesap Bakiye Sorgulama
+                </MudNavLink>
+                <MudNavLink Href="/cari-hareket" Icon="@Icons.Material.Filled.ReceiptLong" IconColor="Color.Primary">
+                    Cari Hesap Hareketleri
+                </MudNavLink>
+                <MudNavLink Href="/kur-farki-calismasi" Icon="@Icons.Material.Filled.Calculate" IconColor="Color.Primary">
+                    Kur Farkı Çalışması
                 </MudNavLink>
             </MudNavGroup>
 
-            <MudNavGroup Title="Kontrol Menüsü" Icon="@Icons.Material.Filled.Rule" Expanded="false">
-                <MudNavLink Href="/kantar-logo-karsilastirma" Icon="@Icons.Material.Filled.CompareArrows">
+            <MudNavGroup Title="Kontrol Menüsü" Icon="@Icons.Material.Filled.Rule" Expanded="false"
+                         IconColor="Color.Warning">
+                <MudNavLink Href="/kantar-logo-karsilastirma" Icon="@Icons.Material.Filled.CompareArrows" IconColor="Color.Warning">
                     Kantar - Logo Karşılaştırması
                 </MudNavLink>
-                <MudNavLink Href="/mustahsil-karsilastirma" Icon="@Icons.Material.Filled.People">
+                <MudNavLink Href="/mustahsil-karsilastirma" Icon="@Icons.Material.Filled.People" IconColor="Color.Warning">
                     SabNet - Logo (Müstahsil Hareketleri)
                 </MudNavLink>
             </MudNavGroup>
 
-            <MudNavGroup Title="Evrak Arşivi" Icon="@Icons.Material.Filled.FolderOpen" Expanded="false">
-                <MudNavLink Href="/evrak-arsivi" Icon="@Icons.Material.Filled.FolderOpen">
+            <MudNavGroup Title="Evrak Arşivi" Icon="@Icons.Material.Filled.FolderOpen" Expanded="false"
+                         IconColor="Color.Tertiary">
+                <MudNavLink Href="/evrak-arsivi" Icon="@Icons.Material.Filled.FolderOpen" IconColor="Color.Tertiary">
                     Evrak Arşivi
                 </MudNavLink>
-                <MudNavLink Href="/evrak-ekle" Icon="@Icons.Material.Filled.UploadFile">
+                <MudNavLink Href="/evrak-ekle" Icon="@Icons.Material.Filled.UploadFile" IconColor="Color.Tertiary">
                     Evrak Ekle
                 </MudNavLink>
-                <MudNavLink Href="/tesisler" Icon="@Icons.Material.Filled.Factory">
+                <MudNavLink Href="/tesisler" Icon="@Icons.Material.Filled.Factory" IconColor="Color.Tertiary">
                     Tesisler
                 </MudNavLink>
-                <MudNavLink Href="/belge-tipleri" Icon="@Icons.Material.Filled.Description">
+                <MudNavLink Href="/belge-tipleri" Icon="@Icons.Material.Filled.Description" IconColor="Color.Tertiary">
                     Belge Tipleri
                 </MudNavLink>
             </MudNavGroup>
 
-            <MudNavGroup Title="Ayarlar" Icon="@Icons.Material.Filled.Settings" Expanded="false">
-                <MudNavLink Href="/mail-ayarlari" Icon="@Icons.Material.Filled.Email">
+            <MudNavGroup Title="Ayarlar" Icon="@Icons.Material.Filled.Settings" Expanded="false"
+                         IconColor="Color.Info">
+                <MudNavLink Href="/mail-ayarlari" Icon="@Icons.Material.Filled.Email" IconColor="Color.Info">
                     Mail Ayarları
                 </MudNavLink>
-                <MudNavLink Href="/whatsapp-ayarlari" Icon="@Icons.Material.Filled.Chat" Style="color:#25D366">
+                <MudNavLink Href="/whatsapp-ayarlari" Icon="@Icons.Material.Filled.Chat" Style="color:#25D366; font-weight:600;">
                     WhatsApp Ayarları
                 </MudNavLink>
-                <MudNavLink Href="/ayarlar" Icon="@Icons.Material.Filled.Settings">
+                <MudNavLink Href="/ayarlar" Icon="@Icons.Material.Filled.Settings" IconColor="Color.Info">
                     Genel Ayarlar
                 </MudNavLink>
             </MudNavGroup>
 
             <MudDivider Class="my-2" />
 
-            <MudNavLink Href="/cikis" Icon="@Icons.Material.Filled.Logout" Style="color:#c62828">
+            <MudNavLink Href="/cikis" Icon="@Icons.Material.Filled.Logout" Style="color:#c62828; font-weight:600;">
                 Çıkış Yap
             </MudNavLink>
         </MudNavMenu>
     </MudDrawer>
 
-    <MudMainContent>
+    <MudMainContent Style="background:linear-gradient(135deg,#f5f7fa 0%,#e8eef5 50%,#eef2f7 100%); min-height:100vh;">
         <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
             @Body
         </MudContainer>
     </MudMainContent>
 </MudLayout>
+
+<style>
+    .portal-nav .mud-nav-link {
+        border-radius: 6px;
+        margin: 2px 6px;
+        transition: all 0.2s ease;
+    }
+    .portal-nav .mud-nav-link:hover {
+        background: rgba(25, 118, 210, 0.08);
+        transform: translateX(3px);
+    }
+    .portal-nav .mud-nav-link.active {
+        background: linear-gradient(90deg, rgba(25,118,210,0.18) 0%, rgba(25,118,210,0.06) 100%) !important;
+        border-left: 3px solid #1976d2;
+        font-weight: 600;
+    }
+    .portal-nav .mud-nav-group .mud-nav-link {
+        font-weight: 500;
+    }
+</style>
 
 @code {
     private bool _drawerOpen = true;

@@ -7,60 +7,48 @@
     Hoş Geldiniz
 </MudText>
 
+<MudText Typo="Typo.h6" Class="mb-3" Style="color:#1B5E20;">
+    <MudIcon Icon="@Icons.Material.Filled.Assessment" Class="mr-2" />
+    Raporlar
+</MudText>
 <MudGrid>
-    <MudItem xs="12" md="6">
-        <MudCard Class="mud-height-full" Style="cursor: pointer;" @onclick="@(() => NavigationManager.NavigateTo("/yan-urunler"))">
-            <MudCardHeader>
-                <CardHeaderAvatar>
-                    <MudAvatar Color="Color.Success" Size="Size.Large">
-                        <MudIcon Icon="@Icons.Material.Filled.Inventory" />
-                    </MudAvatar>
-                </CardHeaderAvatar>
-                <CardHeaderContent>
-                    <MudText Typo="Typo.h6">Tüm Ürünler Satış Raporu</MudText>
-                    <MudText Typo="Typo.body2">Melas, Küspe, Alkol, Şeker</MudText>
-                </CardHeaderContent>
-            </MudCardHeader>
-            <MudCardContent>
-                <MudText Typo="Typo.body2" Class="mb-2">
-                    Yan ürün ve şeker satış, üretim ve iade raporları. Melas, yaş/kuru küspe, etil alkol ve şeker takibi.
-                </MudText>
-                <MudChipSet>
-                    <MudChip Color="Color.Success" Size="Size.Small">Aktif</MudChip>
-                </MudChipSet>
-            </MudCardContent>
-            <MudCardActions>
-                <MudButton Variant="Variant.Text" Color="Color.Primary">Raporlara Git</MudButton>
-            </MudCardActions>
-        </MudCard>
-    </MudItem>
+    @foreach (var k in _raporlar)
+    {
+        <MudItem xs="12" sm="6" md="4" lg="3">@KartCiz(k)</MudItem>
+    }
+</MudGrid>
 
-    <MudItem xs="12" md="6">
-        <MudCard Class="mud-height-full" Style="cursor: pointer;" @onclick="@(() => NavigationManager.NavigateTo("/pancar-raporu"))">
-            <MudCardHeader>
-                <CardHeaderAvatar>
-                    <MudAvatar Color="Color.Success" Size="Size.Large">
-                        <MudIcon Icon="@Icons.Material.Filled.Agriculture" />
-                    </MudAvatar>
-                </CardHeaderAvatar>
-                <CardHeaderContent>
-                    <MudText Typo="Typo.h6">Pancar Raporu</MudText>
-                    <MudText Typo="Typo.body2">Çiftçi Borç/Alacak, Avans, İcmal</MudText>
-                </CardHeaderContent>
-            </MudCardHeader>
-            <MudCardContent>
-                <MudText Typo="Typo.body2" Class="mb-2">
-                    Pancar ödemeleri ve çiftçi hesap takibi. Avans, kantar, kesinti ve hakediş raporları.
-                </MudText>
-                <MudChipSet>
-                    <MudChip Color="Color.Success" Size="Size.Small">Aktif</MudChip>
-                </MudChipSet>
-            </MudCardContent>
-            <MudCardActions>
-                <MudButton Variant="Variant.Text" Color="Color.Primary">Raporlara Git</MudButton>
-            </MudCardActions>
-        </MudCard>
-    </MudItem>
+<MudText Typo="Typo.h6" Class="mt-6 mb-3" Style="color:#0D47A1;">
+    <MudIcon Icon="@Icons.Material.Filled.Business" Class="mr-2" />
+    Logo İşlemleri
+</MudText>
+<MudGrid>
+    @foreach (var k in _logoIslemleri)
+    {
+        <MudItem xs="12" sm="6" md="4" lg="3">@KartCiz(k)</MudItem>
+    }
+</MudGrid>
+
+<MudText Typo="Typo.h6" Class="mt-6 mb-3" Style="color:#E65100;">
+    <MudIcon Icon="@Icons.Material.Filled.Rule" Class="mr-2" />
+    Kontrol Menüsü
+</MudText>
+<MudGrid>
+    @foreach (var k in _kontrol)
+    {
+        <MudItem xs="12" sm="6" md="4" lg="3">@KartCiz(k)</MudItem>
+    }
+</MudGrid>
+
+<MudText Typo="Typo.h6" Class="mt-6 mb-3" Style="color:#6A1B9A;">
+    <MudIcon Icon="@Icons.Material.Filled.FolderOpen" Class="mr-2" />
+    Evrak Arşivi
+</MudText>
+<MudGrid>
+    @foreach (var k in _evrak)
+    {
+        <MudItem xs="12" sm="6" md="4" lg="3">@KartCiz(k)</MudItem>
+    }
 </MudGrid>
 
 <MudDivider Class="my-6" />
@@ -99,4 +87,111 @@
 @code {
     [Inject]
     private NavigationManager NavigationManager { get; set; } = default!;
+
+    private record Kisayol(string Baslik, string AltBaslik, string Aciklama, string Icon, Color Renk, string Yol);
+
+    private readonly List<Kisayol> _raporlar = new()
+    {
+        new("Tüm Ürünler Satış Raporu", "Melas, Küspe, Alkol, Şeker",
+            "Yan ürün ve şeker satış, üretim ve iade raporları.",
+            Icons.Material.Filled.Assessment, Color.Success, "/yan-urunler"),
+        new("Pancar Raporu", "Çiftçi Borç/Alacak, Avans, İcmal",
+            "Pancar ödemeleri, avans, kantar, kesinti ve hakediş.",
+            Icons.Material.Filled.Agriculture, Color.Success, "/pancar-raporu"),
+        new("Şeker Dairesi Raporu", "Stok, Satış, Üretim",
+            "Şeker dairesi kapsamlı stok ve satış takibi.",
+            Icons.Material.Filled.Inventory, Color.Success, "/seker-dairesi"),
+        new("Şeker Dairesi Yan Ürünler", "Melas, Küspe",
+            "Yan ürün bazında şeker dairesi takibi.",
+            Icons.Material.Filled.Grass, Color.Success, "/seker-dairesi-yan-urunler"),
+    };
+
+    private readonly List<Kisayol> _logoIslemleri = new()
+    {
+        new("Kasa Hareketleri", "Tahsilat / Tediye",
+            "Kasa işlemleri, iptal ve dövizli kayıt takibi.",
+            Icons.Material.Filled.AccountBalanceWallet, Color.Primary, "/kasa-hareketleri"),
+        new("Kur Bilgileri", "TCMB & Serbest Piyasa",
+            "Günlük döviz kurları, tarih aralığı filtresi.",
+            Icons.Material.Filled.CurrencyExchange, Color.Primary, "/kur-bilgileri"),
+        new("Stok Durumu", "Ambar Bazlı",
+            "Malzeme ve ambar bazında stok miktarları.",
+            Icons.Material.Filled.Inventory2, Color.Primary, "/stok-durumu"),
+        new("Cari Hesap Bakiye", "Borç / Alacak / Bakiye",
+            "Cari bazında özet bakiye ve özel kod filtreleri.",
+            Icons.Material.Filled.AccountBalance, Color.Primary, "/cari-bakiye"),
+        new("Cari Hesap Hareketleri", "Ekstre",
+            "Cari hareket dökümü, dövizli tutarlar ile.",
+            Icons.Material.Filled.ReceiptLong, Color.Primary, "/cari-hareket"),
+        new("Kur Farkı Çalışması", "FIFO / Revalüasyon",
+            "Havale, kredi kartı ve virman FIFO mahsuplaştırma.",
+            Icons.Material.Filled.Calculate, Color.Primary, "/kur-farki-calismasi"),
+    };
+
+    private readonly List<Kisayol> _kontrol = new()
+    {
+        new("Kantar - Logo", "Karşılaştırma",
+            "Kantar fişleri ile Logo irsaliye / fatura mutabakatı.",
+            Icons.Material.Filled.CompareArrows, Color.Warning, "/kantar-logo-karsilastirma"),
+        new("SabNet - Logo", "Müstahsil Hareketleri",
+            "SabNet ile Logo müstahsil makbuzu karşılaştırması.",
+            Icons.Material.Filled.People, Color.Warning, "/mustahsil-karsilastirma"),
+    };
+
+    private readonly List<Kisayol> _evrak = new()
+    {
+        new("Evrak Arşivi", "Liste",
+            "Kayıtlı evrakları görüntüle, ara ve indir.",
+            Icons.Material.Filled.FolderOpen, Color.Tertiary, "/evrak-arsivi"),
+        new("Evrak Ekle", "Yeni Kayıt",
+            "Yeni evrak yükle, tesis ve belge tipi eşle.",
+            Icons.Material.Filled.UploadFile, Color.Tertiary, "/evrak-ekle"),
+        new("Tesisler", "Yönetim",
+            "Tesis tanımları.",
+            Icons.Material.Filled.Factory, Color.Tertiary, "/tesisler"),
+        new("Belge Tipleri", "Yönetim",
+            "Belge tipi tanımları.",
+            Icons.Material.Filled.Description, Color.Tertiary, "/belge-tipleri"),
+    };
+
+    private RenderFragment KartCiz(Kisayol k) => __builder =>
+    {
+        <MudCard Class="mud-height-full kisayol-kart" Style="cursor:pointer;"
+                 @onclick="@(() => NavigationManager.NavigateTo(k.Yol))">
+            <MudCardHeader>
+                <CardHeaderAvatar>
+                    <MudAvatar Color="@k.Renk" Size="Size.Large">
+                        <MudIcon Icon="@k.Icon" />
+                    </MudAvatar>
+                </CardHeaderAvatar>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">@k.Baslik</MudText>
+                    <MudText Typo="Typo.body2">@k.AltBaslik</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudText Typo="Typo.body2" Class="mb-2">@k.Aciklama</MudText>
+                <MudChipSet>
+                    <MudChip Color="@k.Renk" Size="Size.Small">Aktif</MudChip>
+                </MudChipSet>
+            </MudCardContent>
+            <MudCardActions>
+                <MudButton Variant="Variant.Text" Color="Color.Primary"
+                           EndIcon="@Icons.Material.Filled.ArrowForward">
+                    Aç
+                </MudButton>
+            </MudCardActions>
+        </MudCard>
+    };
 }
+
+<style>
+    .kisayol-kart {
+        transition: transform 0.18s ease, box-shadow 0.18s ease;
+        border-radius: 10px;
+    }
+    .kisayol-kart:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+    }
+</style>

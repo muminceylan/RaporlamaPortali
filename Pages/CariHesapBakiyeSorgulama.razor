@@ -1,0 +1,219 @@
+@page "/cari-bakiye"
+@using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
+@inject LogoIslemleriService Logo
+@inject ExcelExportService ExcelExportService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Cari Hesap Bakiye Sorgulama</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Class="mr-2" />
+    Cari Hesap Bakiye Sorgulama
+</MudText>
+
+<MudAlert Severity="Severity.Info" Class="mb-3" Dense="true">
+    Logo <b>LG_211_01_CLFLINE</b> × <b>LG_211_CLCARD</b> birleşiminden seçilen tarih aralığındaki
+    cari hareketlerinin TOPLAM BORÇ / ALACAK / BAKİYE değerleri hesaplanır.
+    (İptal edilmemiş, kapatılmamış ve aktif cari kartlar.)
+</MudAlert>
+
+<MudPaper Class="pa-3 mb-3">
+    <MudGrid>
+        <MudItem xs="12" md="3">
+            <MudDatePicker @bind-Date="_baslangic" Label="Başlangıç" DateFormat="dd.MM.yyyy"
+                           Editable="true" Mask="@(new DateMask("dd.MM.yyyy"))"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudDatePicker @bind-Date="_bitis" Label="Bitiş" DateFormat="dd.MM.yyyy"
+                           Editable="true" Mask="@(new DateMask("dd.MM.yyyy"))"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="3" Class="d-flex align-center">
+            <MudSwitch T="bool" @bind-Value="_sadeceBakiyeOlanlar" Label="Sadece bakiyesi olanlar"
+                       Color="Color.Primary" />
+        </MudItem>
+        <MudItem xs="12" md="3" Class="d-flex align-center gap-2">
+            <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.Search"
+                       OnClick="VeriYukle" Disabled="_yukleniyor">
+                @(_yukleniyor ? "Yükleniyor..." : "Getir")
+            </MudButton>
+            <MudButton Color="Color.Success" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.FileDownload"
+                       OnClick="ExcelIndir" Disabled="_bakiyeler.Count == 0">
+                Excel
+            </MudButton>
+        </MudItem>
+
+        <MudItem xs="12" md="4">
+            <MudTextField @bind-Value="_aramaGenel" Label="Arama" Placeholder="Kod, ünvan, TC, VKN, özel kod"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Immediate="true" DebounceInterval="300" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudSelect T="string" @bind-Value="_ozelKodFiltre" Label="Özel Kod"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                <MudSelectItem T="string" Value="@string.Empty">Hepsi</MudSelectItem>
+                @foreach (var k in _ozelKodSecenekleri)
+                {
+                    <MudSelectItem T="string" Value="@k">@k</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="5" Class="d-flex align-center">
+            @{
+                var topBorc = FiltreliKayit.Sum(x => x.Borc);
+                var topAlacak = FiltreliKayit.Sum(x => x.Alacak);
+                var netBak = FiltreliKayit.Sum(x => x.Bakiye);
+                var netDurum = netBak < 0 ? "Firma ALACAKLI" : (netBak > 0 ? "Firma BORÇLU" : "EŞİT");
+                var netRenk = netBak < 0 ? "#2e7d32" : (netBak > 0 ? "#c62828" : "#555");
+            }
+            <MudText Typo="Typo.body2">
+                Kayıt: <b>@FiltreliKayit.Count</b> |
+                Toplam Borç: <b>@topBorc.ToString("N2")</b> |
+                Toplam Alacak: <b>@topAlacak.ToString("N2")</b> |
+                Net Bakiye: <b style="color:@netRenk">@netBak.ToString("N2") (@netDurum)</b>
+            </MudText>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudTable Items="FiltreliKayit" Dense="true" Hover="true" Bordered="true" Striped="true"
+          FixedHeader="true" Height="calc(100vh - 360px)"
+          Breakpoint="Breakpoint.None"
+          RowsPerPage="100"
+          Class="mt-2">
+    <HeaderContent>
+        <MudTh><MudTableSortLabel SortBy="new Func<CariBakiye,object>(x => x.CariHesapKodu)">Cari Kodu</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortBy="new Func<CariBakiye,object>(x => x.CariHesapUnvani)">Cari Ünvanı</MudTableSortLabel></MudTh>
+        <MudTh>TC Kimlik</MudTh>
+        <MudTh>Vergi No</MudTh>
+        <MudTh Style="text-align:right; background:#e8f5e9"><MudTableSortLabel SortBy="new Func<CariBakiye,object>(x => x.Borc)">Borç</MudTableSortLabel></MudTh>
+        <MudTh Style="text-align:right; background:#fff3e0"><MudTableSortLabel SortBy="new Func<CariBakiye,object>(x => x.Alacak)">Alacak</MudTableSortLabel></MudTh>
+        <MudTh Style="text-align:right; background:#e3f2fd"><MudTableSortLabel SortBy="new Func<CariBakiye,object>(x => x.Bakiye)">Bakiye</MudTableSortLabel></MudTh>
+        <MudTh Style="text-align:center">Durum</MudTh>
+        <MudTh>Özel Kod</MudTh>
+        <MudTh>Özel Kod 2</MudTh>
+        <MudTh>Özel Kod 3</MudTh>
+        <MudTh>Özel Kod 4</MudTh>
+        <MudTh>Özel Kod 5</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@context.CariHesapKodu</MudTd>
+        <MudTd>@context.CariHesapUnvani</MudTd>
+        <MudTd>@context.TcKimlikNo</MudTd>
+        <MudTd>@context.VergiNo</MudTd>
+        <MudTd Style="text-align:right">@context.Borc.ToString("N2")</MudTd>
+        <MudTd Style="text-align:right">@context.Alacak.ToString("N2")</MudTd>
+        <MudTd Style="@(context.Bakiye < 0 ? "text-align:right; color:#2e7d32; font-weight:600" : (context.Bakiye > 0 ? "text-align:right; color:#c62828; font-weight:600" : "text-align:right"))">@context.Bakiye.ToString("N2")</MudTd>
+        <MudTd Style="text-align:center">
+            @if (context.Bakiye < 0)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Filled">Firma Alacaklı</MudChip>
+            }
+            else if (context.Bakiye > 0)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Filled">Firma Borçlu</MudChip>
+            }
+            else
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">Eşit</MudChip>
+            }
+        </MudTd>
+        <MudTd>@context.OzelKod</MudTd>
+        <MudTd>@context.OzelKod2</MudTd>
+        <MudTd>@context.OzelKod3</MudTd>
+        <MudTd>@context.OzelKod4</MudTd>
+        <MudTd>@context.OzelKod5</MudTd>
+    </RowTemplate>
+    <PagerContent>
+        <MudTablePager PageSizeOptions="new int[] { 50, 100, 250, 500, 1000 }" />
+    </PagerContent>
+    <NoRecordsContent>
+        <MudText>Kayıt bulunamadı.</MudText>
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudText>Yükleniyor...</MudText>
+    </LoadingContent>
+</MudTable>
+
+@code {
+    private DateTime? _baslangic = new DateTime(DateTime.Today.Year, 1, 1);
+    private DateTime? _bitis = DateTime.Today;
+    private bool _sadeceBakiyeOlanlar = true;
+    private bool _yukleniyor = false;
+
+    private string _aramaGenel = "";
+    private string _ozelKodFiltre = "";
+
+    private List<CariBakiye> _bakiyeler = new();
+    private List<string> _ozelKodSecenekleri = new();
+
+    private static readonly System.Globalization.CultureInfo _tr = new("tr-TR");
+
+    private static bool Icerir(string? kaynak, string aranan)
+    {
+        if (string.IsNullOrEmpty(kaynak)) return false;
+        return kaynak.ToUpper(_tr).Contains(aranan.ToUpper(_tr));
+    }
+
+    private List<CariBakiye> FiltreliKayit =>
+        _bakiyeler.Where(b =>
+            (string.IsNullOrEmpty(_ozelKodFiltre) || b.OzelKod == _ozelKodFiltre) &&
+            (string.IsNullOrWhiteSpace(_aramaGenel) ||
+                Icerir(b.CariHesapKodu, _aramaGenel) ||
+                Icerir(b.CariHesapUnvani, _aramaGenel) ||
+                Icerir(b.TcKimlikNo, _aramaGenel) ||
+                Icerir(b.VergiNo, _aramaGenel) ||
+                Icerir(b.OzelKod, _aramaGenel) ||
+                Icerir(b.OzelKod2, _aramaGenel))
+        ).ToList();
+
+    private async Task VeriYukle()
+    {
+        if (_baslangic == null || _bitis == null)
+        {
+            Snackbar.Add("Başlangıç ve bitiş tarihlerini seçin.", Severity.Warning);
+            return;
+        }
+
+        _yukleniyor = true;
+        try
+        {
+            _bakiyeler = await Logo.CariBakiyeAsync(_baslangic.Value, _bitis.Value, _sadeceBakiyeOlanlar);
+            _ozelKodSecenekleri = _bakiyeler
+                .Select(b => b.OzelKod).Where(s => !string.IsNullOrWhiteSpace(s))
+                .Distinct().OrderBy(x => x).ToList();
+            Snackbar.Add($"{_bakiyeler.Count} cari yüklendi.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Hata: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _yukleniyor = false;
+        }
+    }
+
+    private async Task ExcelIndir()
+    {
+        if (_bakiyeler.Count == 0 || _baslangic == null || _bitis == null) return;
+        try
+        {
+            var bytes = ExcelExportService.ExportCariBakiye(FiltreliKayit, _baslangic.Value, _bitis.Value);
+            var dosyaAdi = $"Cari_Bakiye_{_baslangic:yyyyMMdd}_{_bitis:yyyyMMdd}.xlsx";
+            using var stream = new MemoryStream(bytes);
+            using var streamRef = new DotNetStreamReference(stream);
+            await JS.InvokeVoidAsync("downloadFileFromStream", dosyaAdi, streamRef);
+            Snackbar.Add("Excel dosyası indirildi.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Excel hatası: {ex.Message}", Severity.Error);
+        }
+    }
+}

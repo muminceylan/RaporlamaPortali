@@ -457,6 +457,151 @@ public class ExcelExportService
         return stream.ToArray();
     }
 
+    public byte[] ExportCariBakiye(List<CariBakiye> veriler, DateTime baslangic, DateTime bitis)
+    {
+        using var workbook = new XLWorkbook();
+        var ws = workbook.Worksheets.Add("Cari Bakiye");
+
+        ws.Cell(1, 1).Value = $"Cari Hesap Bakiyesi — {baslangic:dd.MM.yyyy} / {bitis:dd.MM.yyyy}";
+        ws.Range(1, 1, 1, 12).Merge().Style.Font.Bold = true;
+
+        string[] basliklar = {
+            "CARI_HESAP_KODU","CARI_HESAP_UNVANI","TC_KIMLIK_NO","VERGI_NO",
+            "BORC","ALACAK","BAKIYE","DURUM",
+            "OZEL_KOD","OZEL_KOD2","OZEL_KOD3","OZEL_KOD4","OZEL_KOD5"
+        };
+        for (int i = 0; i < basliklar.Length; i++)
+        {
+            ws.Cell(3, i + 1).Value = basliklar[i];
+            ws.Cell(3, i + 1).Style.Font.Bold = true;
+            ws.Cell(3, i + 1).Style.Fill.BackgroundColor = XLColor.FromHtml("#E8F5E9");
+            ws.Cell(3, i + 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        }
+
+        int row = 4;
+        foreach (var c in veriler)
+        {
+            ws.Cell(row, 1).Value = c.CariHesapKodu;
+            ws.Cell(row, 2).Value = c.CariHesapUnvani;
+            ws.Cell(row, 3).Value = c.TcKimlikNo;
+            ws.Cell(row, 4).Value = c.VergiNo;
+            ws.Cell(row, 5).Value = c.Borc;
+            ws.Cell(row, 5).Style.NumberFormat.Format = "#,##0.00";
+            ws.Cell(row, 6).Value = c.Alacak;
+            ws.Cell(row, 6).Style.NumberFormat.Format = "#,##0.00";
+            ws.Cell(row, 7).Value = c.Bakiye;
+            ws.Cell(row, 7).Style.NumberFormat.Format = "#,##0.00";
+            string durum = c.Bakiye < 0 ? "FIRMA ALACAKLI" : (c.Bakiye > 0 ? "FIRMA BORÇLU" : "EŞİT");
+            ws.Cell(row, 8).Value = durum;
+            if (c.Bakiye < 0)
+            {
+                ws.Cell(row, 7).Style.Font.FontColor = XLColor.FromHtml("#2E7D32");
+                ws.Cell(row, 8).Style.Font.FontColor = XLColor.FromHtml("#2E7D32");
+            }
+            else if (c.Bakiye > 0)
+            {
+                ws.Cell(row, 7).Style.Font.FontColor = XLColor.Red;
+                ws.Cell(row, 8).Style.Font.FontColor = XLColor.Red;
+            }
+            ws.Cell(row, 9).Value = c.OzelKod;
+            ws.Cell(row, 10).Value = c.OzelKod2;
+            ws.Cell(row, 11).Value = c.OzelKod3;
+            ws.Cell(row, 12).Value = c.OzelKod4;
+            ws.Cell(row, 13).Value = c.OzelKod5;
+            row++;
+        }
+
+        ws.SheetView.FreezeRows(3);
+        ws.Range(3, 1, row - 1, 13).SetAutoFilter();
+        ws.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    public byte[] ExportCariHareket(List<CariHareket> veriler, DateTime baslangic, DateTime bitis, string cariEtiket)
+    {
+        using var workbook = new XLWorkbook();
+        var ws = workbook.Worksheets.Add("Cari Hareket");
+
+        const int colCount = 14;
+        ws.Cell(1, 1).Value = $"Cari Hesap Hareketleri — {baslangic:dd.MM.yyyy} / {bitis:dd.MM.yyyy}";
+        ws.Range(1, 1, 1, colCount).Merge().Style.Font.Bold = true;
+        if (!string.IsNullOrWhiteSpace(cariEtiket))
+        {
+            ws.Cell(2, 1).Value = cariEtiket;
+            ws.Range(2, 1, 2, colCount).Merge().Style.Font.Italic = true;
+        }
+
+        string[] basliklar = {
+            "TARIH","ODEMEPLANI","FISTURU","FISNO","ACIKLAMA",
+            "CARIKODU","CARIUNVAN","BORC","ALACAK","BAKIYE",
+            "DOVIZ","KUR","DOVIZ_BORC","DOVIZ_ALACAK"
+        };
+        int hdr = 4;
+        for (int i = 0; i < basliklar.Length; i++)
+        {
+            ws.Cell(hdr, i + 1).Value = basliklar[i];
+            ws.Cell(hdr, i + 1).Style.Font.Bold = true;
+            ws.Cell(hdr, i + 1).Style.Fill.BackgroundColor = XLColor.FromHtml("#E8F5E9");
+            ws.Cell(hdr, i + 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        }
+
+        int row = hdr + 1;
+        foreach (var c in veriler)
+        {
+            ws.Cell(row, 1).Value = c.Tarih;
+            ws.Cell(row, 1).Style.DateFormat.Format = "dd.MM.yyyy";
+            ws.Cell(row, 2).Value = c.OdemePlani;
+            ws.Cell(row, 3).Value = c.FisTuru;
+            ws.Cell(row, 4).Value = c.FisNo;
+            ws.Cell(row, 5).Value = c.Aciklama;
+            ws.Cell(row, 6).Value = c.CariKodu;
+            ws.Cell(row, 7).Value = c.CariUnvan;
+            ws.Cell(row, 8).Value = c.Borc;
+            ws.Cell(row, 8).Style.NumberFormat.Format = "#,##0.00";
+            ws.Cell(row, 9).Value = c.Alacak;
+            ws.Cell(row, 9).Style.NumberFormat.Format = "#,##0.00";
+            ws.Cell(row, 10).Value = c.Bakiye;
+            ws.Cell(row, 10).Style.NumberFormat.Format = "#,##0.00";
+            if (c.Bakiye < 0)
+                ws.Cell(row, 10).Style.Font.FontColor = XLColor.FromHtml("#2E7D32");
+            else if (c.Bakiye > 0)
+                ws.Cell(row, 10).Style.Font.FontColor = XLColor.Red;
+
+            ws.Cell(row, 11).Value = c.DovizKodu;
+            ws.Cell(row, 11).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            if (c.TrCurr != 0 && c.DovizKur != 0)
+            {
+                ws.Cell(row, 12).Value = c.DovizKur;
+                ws.Cell(row, 12).Style.NumberFormat.Format = "#,##0.0000";
+            }
+            if (c.DovizBorc != 0)
+            {
+                ws.Cell(row, 13).Value = c.DovizBorc;
+                ws.Cell(row, 13).Style.NumberFormat.Format = "#,##0.00";
+                ws.Cell(row, 13).Style.Font.FontColor = XLColor.FromHtml("#2E7D32");
+            }
+            if (c.DovizAlacak != 0)
+            {
+                ws.Cell(row, 14).Value = c.DovizAlacak;
+                ws.Cell(row, 14).Style.NumberFormat.Format = "#,##0.00";
+                ws.Cell(row, 14).Style.Font.FontColor = XLColor.Red;
+            }
+            row++;
+        }
+
+        ws.SheetView.FreezeRows(hdr);
+        if (row > hdr + 1)
+            ws.Range(hdr, 1, row - 1, colCount).SetAutoFilter();
+        ws.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
     public byte[] ExportStokDurumu(List<StokSatiri> veriler)
     {
         using var workbook = new XLWorkbook();
