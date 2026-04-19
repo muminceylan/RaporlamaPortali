@@ -78,6 +78,15 @@ builder.Services.AddSingleton<GirisAyarlariService>();
 builder.Services.AddSingleton<EvrakArsivService>();
 builder.Services.AddSingleton<MustahsilLookupService>();
 
+// Logo İşlemleri
+builder.Services.AddScoped<LogoIslemleriService>();
+
+// Kontrol: Kantar - Logo karşılaştırması
+builder.Services.AddScoped<KantarLogoKarsilastirmaService>();
+
+// Kontrol: SabNet - Logo (Müstahsil) karşılaştırması
+builder.Services.AddScoped<MustahsilKarsilastirmaService>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.

@@ -397,4 +397,136 @@ public class ExcelExportService
         workbook.SaveAs(stream);
         return stream.ToArray();
     }
+
+    public byte[] ExportKasaHareketleri(List<KasaHareketi> veriler, DateTime? baslangic, DateTime? bitis)
+    {
+        using var workbook = new XLWorkbook();
+        var ws = workbook.Worksheets.Add("Kasa İşlemleri");
+
+        string[] basliklar = {
+            "TARIH","İŞLEM_NO","BELGE_NO","CARI_UNVANI","CARI_KODU","SATIR_ACIKLAMASI",
+            "OZEL_KODU","TICARI_ISLEM_GRUBU","FIS_TURU","IPTAL","MUHASEBELESTIRME","TUTAR",
+            "IS_YERI","BOLUM","DOVIZ_TURU","KUR","ISLEM_DOVIZI_TUTARI",
+            "RAPORLAMA_DOVIZI_TUTARI","RAPORLAMA_DOVIZI_KURU"
+        };
+        for (int i = 0; i < basliklar.Length; i++)
+        {
+            ws.Cell(1, i + 1).Value = basliklar[i];
+            ws.Cell(1, i + 1).Style.Font.Bold = true;
+            ws.Cell(1, i + 1).Style.Fill.BackgroundColor = XLColor.FromHtml("#E8F5E9");
+            ws.Cell(1, i + 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        }
+
+        int row = 2;
+        foreach (var k in veriler)
+        {
+            ws.Cell(row, 1).Value = k.Tarih;
+            ws.Cell(row, 1).Style.DateFormat.Format = "dd.MM.yyyy";
+            ws.Cell(row, 2).Value = k.IslemNo;
+            ws.Cell(row, 3).Value = k.BelgeNo;
+            ws.Cell(row, 4).Value = k.CariUnvani;
+            ws.Cell(row, 5).Value = k.CariKodu;
+            ws.Cell(row, 6).Value = k.SatirAciklamasi;
+            ws.Cell(row, 7).Value = k.OzelKodu;
+            ws.Cell(row, 8).Value = k.TicariIslemGrubu;
+            ws.Cell(row, 9).Value = k.FisTuru;
+            ws.Cell(row, 10).Value = k.Iptal ? "EVET" : "HAYIR";
+            ws.Cell(row, 11).Value = k.Muhasebelesti ? "EVET" : "HAYIR";
+            ws.Cell(row, 12).Value = k.Tutar;
+            ws.Cell(row, 12).Style.NumberFormat.Format = "#,##0.00";
+            ws.Cell(row, 13).Value = k.IsYeri;
+            ws.Cell(row, 14).Value = k.Bolum;
+            ws.Cell(row, 15).Value = k.DovizTuru;
+            ws.Cell(row, 16).Value = k.Kur;
+            ws.Cell(row, 16).Style.NumberFormat.Format = "#,##0.0000";
+            ws.Cell(row, 17).Value = k.IslemDoviziTutari;
+            ws.Cell(row, 17).Style.NumberFormat.Format = "#,##0.00";
+            ws.Cell(row, 18).Value = k.RaporlamaDoviziTutari;
+            ws.Cell(row, 18).Style.NumberFormat.Format = "#,##0.00";
+            ws.Cell(row, 19).Value = k.RaporlamaDoviziKuru;
+            ws.Cell(row, 19).Style.NumberFormat.Format = "#,##0.0000";
+            row++;
+        }
+
+        ws.SheetView.FreezeRows(1);
+        ws.RangeUsed()?.SetAutoFilter();
+        ws.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    public byte[] ExportStokDurumu(List<StokSatiri> veriler)
+    {
+        using var workbook = new XLWorkbook();
+        var ws = workbook.Worksheets.Add("Stok Durumu");
+
+        string[] basliklar = { "AMBAR_NO", "AMBAR", "MALZEME_KODU", "MALZEME_ADI", "STOK" };
+        for (int i = 0; i < basliklar.Length; i++)
+        {
+            ws.Cell(1, i + 1).Value = basliklar[i];
+            ws.Cell(1, i + 1).Style.Font.Bold = true;
+            ws.Cell(1, i + 1).Style.Fill.BackgroundColor = XLColor.FromHtml("#E8F5E9");
+            ws.Cell(1, i + 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        }
+
+        int row = 2;
+        foreach (var s in veriler)
+        {
+            ws.Cell(row, 1).Value = s.AmbarNo;
+            ws.Cell(row, 2).Value = s.Ambar;
+            ws.Cell(row, 3).Value = s.MalzemeKodu;
+            ws.Cell(row, 4).Value = s.MalzemeAdi;
+            ws.Cell(row, 5).Value = s.Stok;
+            ws.Cell(row, 5).Style.NumberFormat.Format = "#,##0.00";
+            row++;
+        }
+
+        ws.SheetView.FreezeRows(1);
+        ws.RangeUsed()?.SetAutoFilter();
+        ws.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    public byte[] ExportKurBilgileri(List<KurBilgisi> veriler)
+    {
+        using var workbook = new XLWorkbook();
+        var ws = workbook.Worksheets.Add("Kurlar");
+
+        string[] basliklar = { "EDATE", "DOVIZ_KODU", "DOVIZ_ADI", "TUR1", "TUR2", "TUR3", "TUR4" };
+        for (int i = 0; i < basliklar.Length; i++)
+        {
+            ws.Cell(1, i + 1).Value = basliklar[i];
+            ws.Cell(1, i + 1).Style.Font.Bold = true;
+            ws.Cell(1, i + 1).Style.Fill.BackgroundColor = XLColor.FromHtml("#E8F5E9");
+            ws.Cell(1, i + 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        }
+
+        int row = 2;
+        foreach (var k in veriler)
+        {
+            ws.Cell(row, 1).Value = k.Tarih;
+            ws.Cell(row, 1).Style.DateFormat.Format = "dd.MM.yyyy";
+            ws.Cell(row, 2).Value = k.DovizKodu;
+            ws.Cell(row, 3).Value = k.DovizAdi;
+            ws.Cell(row, 4).Value = k.Rate1;
+            ws.Cell(row, 5).Value = k.Rate2;
+            ws.Cell(row, 6).Value = k.Rate3;
+            ws.Cell(row, 7).Value = k.Rate4;
+            ws.Range(row, 4, row, 7).Style.NumberFormat.Format = "#,##0.0000";
+            row++;
+        }
+
+        ws.SheetView.FreezeRows(1);
+        ws.RangeUsed()?.SetAutoFilter();
+        ws.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
 }

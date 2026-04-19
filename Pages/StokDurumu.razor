@@ -1,0 +1,196 @@
+@page "/stok-durumu"
+@using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
+@inject LogoIslemleriService Logo
+@inject ExcelExportService ExcelExportService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Stok Durumu</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.Inventory2" Class="mr-2" />
+    Stok Durumu
+</MudText>
+
+<MudPaper Class="pa-3 mb-3">
+    <MudGrid>
+        <MudItem xs="12" md="5">
+            <MudSelect T="int" Label="Ambar (çoklu seçim)"
+                       MultiSelection="true" SelectAll="true" SelectAllText="Hepsini Seç"
+                       @bind-SelectedValues="_secilenAmbarlar"
+                       MultiSelectionTextFunc="@(vals => AmbarSeciliText(vals))"
+                       Variant="Variant.Outlined" Margin="Margin.Dense">
+                @foreach (var a in _ambarlar)
+                {
+                    <MudSelectItem T="int" Value="@a.AmbarNo">@a.AmbarNo - @a.Ad</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="2" Class="d-flex align-center">
+            <MudSwitch T="bool" Value="_afyonSecili" ValueChanged="AfyonToggle"
+                       Label="Afyon Ambarları" Color="Color.Success" />
+        </MudItem>
+        <MudItem xs="12" md="2" Class="d-flex align-center">
+            <MudSwitch T="bool" @bind-Value="_sifirlariGizle" Label="Sıfırları gizle" Color="Color.Primary" />
+        </MudItem>
+        <MudItem xs="12" md="3" Class="d-flex align-center gap-2">
+            <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.Refresh"
+                       OnClick="VeriYukle" Disabled="_yukleniyor">
+                @(_yukleniyor ? "Yükleniyor..." : "Yenile")
+            </MudButton>
+            <MudButton Color="Color.Success" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.FileDownload"
+                       OnClick="ExcelIndir" Disabled="FiltreliKayit.Count == 0">
+                Excel
+            </MudButton>
+        </MudItem>
+
+        <MudItem xs="12" md="4">
+            <MudTextField @bind-Value="_aramaKod" Label="Malzeme Kodu (içinde ara)"
+                          Placeholder="örn: E.M.01 ya da 20654"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Clearable="true"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          Immediate="true" DebounceInterval="300" />
+        </MudItem>
+        <MudItem xs="12" md="5">
+            <MudTextField @bind-Value="_aramaAd" Label="Malzeme Adı (içinde ara)"
+                          Placeholder="örn: küspe, teknik alkol, kup seker"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Clearable="true"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          Immediate="true" DebounceInterval="300" />
+        </MudItem>
+        <MudItem xs="12" md="3" Class="d-flex align-center">
+            <MudText Typo="Typo.body2">
+                Toplam: <b>@FiltreliKayit.Count</b> / @_stoklar.Count kayıt
+            </MudText>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudTable Items="FiltreliKayit" Dense="true" Hover="true" Bordered="true" Striped="true"
+          FixedHeader="true" Height="calc(100vh - 360px)"
+          Breakpoint="Breakpoint.None"
+          RowsPerPage="100"
+          Class="mt-2">
+    <HeaderContent>
+        <MudTh><MudTableSortLabel SortBy="new Func<StokSatiri,object>(x => x.AmbarNo)">Ambar No</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortBy="new Func<StokSatiri,object>(x => x.Ambar)">Ambar</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortBy="new Func<StokSatiri,object>(x => x.MalzemeKodu)">Malzeme Kodu</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortBy="new Func<StokSatiri,object>(x => x.MalzemeAdi)">Malzeme Adı</MudTableSortLabel></MudTh>
+        <MudTh Style="text-align:right"><MudTableSortLabel SortBy="new Func<StokSatiri,object>(x => x.Stok)">Stok</MudTableSortLabel></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@context.AmbarNo</MudTd>
+        <MudTd>@context.Ambar</MudTd>
+        <MudTd>@context.MalzemeKodu</MudTd>
+        <MudTd>@context.MalzemeAdi</MudTd>
+        <MudTd Style="text-align:right">@context.Stok.ToString("N2")</MudTd>
+    </RowTemplate>
+    <PagerContent>
+        <MudTablePager PageSizeOptions="new int[] { 50, 100, 250, 500, 1000 }" />
+    </PagerContent>
+    <NoRecordsContent>
+        <MudText>Kayıt bulunamadı.</MudText>
+    </NoRecordsContent>
+</MudTable>
+
+@code {
+    private bool _sifirlariGizle = true;
+    private bool _yukleniyor = false;
+    private bool _afyonSecili = false;
+    private string _aramaKod = "";
+    private string _aramaAd = "";
+
+    // Afyon Şeker Fabrikası'na ait ambar numaraları (kullanıcı listesi).
+    private static readonly int[] AfyonAmbarNolari =
+    {
+        142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 157, 159,
+        712, 713, 714, 715, 716, 717, 718,
+        750, 752, 753, 754, 755, 756,
+        800, 801, 802, 803, 804, 805, 806, 807, 808, 810,
+        830, 831, 832, 833, 834, 835, 836, 837, 838
+    };
+
+    private IEnumerable<int> _secilenAmbarlar = new HashSet<int>();
+
+    private List<StokSatiri> _stoklar = new();
+    private List<AmbarSecenek> _ambarlar = new();
+
+    private List<StokSatiri> FiltreliKayit =>
+        _stoklar.Where(s =>
+            (!_secilenAmbarlar.Any() || _secilenAmbarlar.Contains(s.AmbarNo)) &&
+            (string.IsNullOrWhiteSpace(_aramaKod) || (s.MalzemeKodu ?? "").Contains(_aramaKod, StringComparison.OrdinalIgnoreCase)) &&
+            (string.IsNullOrWhiteSpace(_aramaAd)  || (s.MalzemeAdi  ?? "").Contains(_aramaAd,  StringComparison.OrdinalIgnoreCase))
+        ).ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _ambarlar = await Logo.AmbarSecenekleriAsync();
+        await VeriYukle();
+    }
+
+    private async Task VeriYukle()
+    {
+        _yukleniyor = true;
+        try
+        {
+            _stoklar = await Logo.StokDurumuAsync(null, _sifirlariGizle);
+            Snackbar.Add($"{_stoklar.Count} kayıt yüklendi.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Hata: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _yukleniyor = false;
+        }
+    }
+
+    private string AmbarSeciliText(List<string> vals)
+    {
+        if (vals == null || vals.Count == 0) return "Tüm ambarlar";
+        if (vals.Count == 1)
+        {
+            var nr = int.Parse(vals[0]);
+            var a = _ambarlar.FirstOrDefault(x => x.AmbarNo == nr);
+            return a != null ? $"{a.AmbarNo} - {a.Ad}" : vals[0];
+        }
+        return $"{vals.Count} ambar seçili";
+    }
+
+    private void AfyonToggle(bool val)
+    {
+        _afyonSecili = val;
+        if (val)
+        {
+            // Sadece gerçekten firmada tanımlı olan Afyon ambarlarını seç.
+            var tanimli = _ambarlar.Select(a => a.AmbarNo).ToHashSet();
+            _secilenAmbarlar = new HashSet<int>(AfyonAmbarNolari.Where(tanimli.Contains));
+        }
+        else
+        {
+            _secilenAmbarlar = new HashSet<int>();
+        }
+    }
+
+    private async Task ExcelIndir()
+    {
+        try
+        {
+            var bytes = ExcelExportService.ExportStokDurumu(FiltreliKayit);
+            var fileName = $"StokDurumu_{DateTime.Today:yyyyMMdd}.xlsx";
+            await JS.InvokeVoidAsync("downloadFile", fileName, Convert.ToBase64String(bytes),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            Snackbar.Add("Excel dosyası indirildi.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Excel hatası: {ex.Message}", Severity.Error);
+        }
+    }
+}

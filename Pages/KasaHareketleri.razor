@@ -1,0 +1,199 @@
+@page "/kasa-hareketleri"
+@using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
+@inject LogoIslemleriService Logo
+@inject ExcelExportService ExcelExportService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Kasa Hareketleri</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.AccountBalanceWallet" Class="mr-2" />
+    Kasa Hareketleri
+</MudText>
+
+<MudPaper Class="pa-3 mb-3">
+    <MudGrid>
+        <MudItem xs="12" md="3">
+            <MudDatePicker @bind-Date="_baslangic" Label="Başlangıç" DateFormat="dd.MM.yyyy"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudDatePicker @bind-Date="_bitis" Label="Bitiş" DateFormat="dd.MM.yyyy"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="2" Class="d-flex align-center">
+            <MudSwitch T="bool" @bind-Value="_iptalDahilEt" Label="İptalleri göster" Color="Color.Primary" />
+        </MudItem>
+        <MudItem xs="12" md="4" Class="d-flex align-center gap-2">
+            <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.Search"
+                       OnClick="VeriYukle" Disabled="_yukleniyor">
+                @(_yukleniyor ? "Yükleniyor..." : "Getir")
+            </MudButton>
+            <MudButton Color="Color.Success" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.FileDownload"
+                       OnClick="ExcelIndir" Disabled="_hareketler.Count == 0">
+                Excel
+            </MudButton>
+        </MudItem>
+
+        <MudItem xs="12" md="3">
+            <MudTextField @bind-Value="_aramaGenel" Label="Genel Arama" Placeholder="Cari, belge no, açıklama"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Immediate="true" DebounceInterval="300" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudSelect T="string" @bind-Value="_fisTuruFiltre" Label="Fiş Türü"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                <MudSelectItem T="string" Value="@string.Empty">Hepsi</MudSelectItem>
+                @foreach (var ft in _fisTuruSecenekleri)
+                {
+                    <MudSelectItem T="string" Value="@ft">@ft</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudSelect T="string" @bind-Value="_dovizFiltre" Label="Döviz Türü"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                <MudSelectItem T="string" Value="@string.Empty">Hepsi</MudSelectItem>
+                @foreach (var dv in _dovizSecenekleri)
+                {
+                    <MudSelectItem T="string" Value="@dv">@dv</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="3" Class="d-flex align-center">
+            <MudText Typo="Typo.body2">
+                Toplam: <b>@FiltreliKayit.Count</b> kayıt
+            </MudText>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudTable Items="FiltreliKayit" Dense="true" Hover="true" Bordered="true" Striped="true"
+          FixedHeader="true" Height="calc(100vh - 360px)"
+          Breakpoint="Breakpoint.None"
+          RowsPerPage="50"
+          Class="mt-2">
+    <HeaderContent>
+        <MudTh><MudTableSortLabel SortBy="new Func<KasaHareketi,object>(x => x.Tarih)">Tarih</MudTableSortLabel></MudTh>
+        <MudTh>İşlem No</MudTh>
+        <MudTh>Belge No</MudTh>
+        <MudTh>Cari Ünvanı</MudTh>
+        <MudTh>Cari Kodu</MudTh>
+        <MudTh>Satır Açıklaması</MudTh>
+        <MudTh>Özel Kodu</MudTh>
+        <MudTh>Tic. İşlem Grubu</MudTh>
+        <MudTh>Fiş Türü</MudTh>
+        <MudTh>İptal</MudTh>
+        <MudTh>Muh.</MudTh>
+        <MudTh Style="text-align:right"><MudTableSortLabel SortBy="new Func<KasaHareketi,object>(x => x.Tutar)">Tutar</MudTableSortLabel></MudTh>
+        <MudTh>İş Yeri</MudTh>
+        <MudTh>Bölüm</MudTh>
+        <MudTh>Döviz</MudTh>
+        <MudTh Style="text-align:right">Kur</MudTh>
+        <MudTh Style="text-align:right">İşl. Döv. Tutar</MudTh>
+        <MudTh Style="text-align:right">Rap. Döv. Tutar</MudTh>
+        <MudTh Style="text-align:right">Rap. Döv. Kur</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@context.Tarih.ToString("dd.MM.yyyy")</MudTd>
+        <MudTd>@context.IslemNo</MudTd>
+        <MudTd>@context.BelgeNo</MudTd>
+        <MudTd>@context.CariUnvani</MudTd>
+        <MudTd>@context.CariKodu</MudTd>
+        <MudTd>@context.SatirAciklamasi</MudTd>
+        <MudTd>@context.OzelKodu</MudTd>
+        <MudTd>@context.TicariIslemGrubu</MudTd>
+        <MudTd>@context.FisTuru</MudTd>
+        <MudTd>@(context.Iptal ? "EVET" : "HAYIR")</MudTd>
+        <MudTd>@(context.Muhasebelesti ? "EVET" : "HAYIR")</MudTd>
+        <MudTd Style="text-align:right">@context.Tutar.ToString("N2")</MudTd>
+        <MudTd>@context.IsYeri</MudTd>
+        <MudTd>@context.Bolum</MudTd>
+        <MudTd>@context.DovizTuru</MudTd>
+        <MudTd Style="text-align:right">@context.Kur.ToString("N4")</MudTd>
+        <MudTd Style="text-align:right">@context.IslemDoviziTutari.ToString("N2")</MudTd>
+        <MudTd Style="text-align:right">@context.RaporlamaDoviziTutari.ToString("N2")</MudTd>
+        <MudTd Style="text-align:right">@context.RaporlamaDoviziKuru.ToString("N4")</MudTd>
+    </RowTemplate>
+    <PagerContent>
+        <MudTablePager PageSizeOptions="new int[] { 25, 50, 100, 250, 500 }" />
+    </PagerContent>
+    <NoRecordsContent>
+        <MudText>Kayıt bulunamadı.</MudText>
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudText>Yükleniyor...</MudText>
+    </LoadingContent>
+</MudTable>
+
+@code {
+    private DateTime? _baslangic = new DateTime(DateTime.Today.Year, 1, 1);
+    private DateTime? _bitis = DateTime.Today;
+    private bool _iptalDahilEt = false;
+    private bool _yukleniyor = false;
+
+    private string _aramaGenel = "";
+    private string _fisTuruFiltre = "";
+    private string _dovizFiltre = "";
+
+    private List<KasaHareketi> _hareketler = new();
+    private List<string> _fisTuruSecenekleri = new();
+    private List<string> _dovizSecenekleri = new();
+
+    private List<KasaHareketi> FiltreliKayit =>
+        _hareketler.Where(h =>
+            (string.IsNullOrEmpty(_fisTuruFiltre) || h.FisTuru == _fisTuruFiltre) &&
+            (string.IsNullOrEmpty(_dovizFiltre) || h.DovizTuru == _dovizFiltre) &&
+            (string.IsNullOrWhiteSpace(_aramaGenel) ||
+                h.CariUnvani.Contains(_aramaGenel, StringComparison.OrdinalIgnoreCase) ||
+                h.CariKodu.Contains(_aramaGenel, StringComparison.OrdinalIgnoreCase) ||
+                h.BelgeNo.Contains(_aramaGenel, StringComparison.OrdinalIgnoreCase) ||
+                h.IslemNo.Contains(_aramaGenel, StringComparison.OrdinalIgnoreCase) ||
+                h.SatirAciklamasi.Contains(_aramaGenel, StringComparison.OrdinalIgnoreCase))
+        ).ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await VeriYukle();
+    }
+
+    private async Task VeriYukle()
+    {
+        _yukleniyor = true;
+        try
+        {
+            _hareketler = await Logo.KasaHareketleriAsync(_baslangic, _bitis, _iptalDahilEt);
+            _fisTuruSecenekleri = _hareketler.Select(h => h.FisTuru).Distinct().OrderBy(x => x).ToList();
+            _dovizSecenekleri = _hareketler.Select(h => h.DovizTuru).Distinct().OrderBy(x => x).ToList();
+            Snackbar.Add($"{_hareketler.Count} kayıt yüklendi.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Hata: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _yukleniyor = false;
+        }
+    }
+
+    private async Task ExcelIndir()
+    {
+        try
+        {
+            var bytes = ExcelExportService.ExportKasaHareketleri(FiltreliKayit, _baslangic, _bitis);
+            var fileName = $"KasaHareketleri_{_baslangic:yyyyMMdd}_{_bitis:yyyyMMdd}.xlsx";
+            await JS.InvokeVoidAsync("downloadFile", fileName, Convert.ToBase64String(bytes),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            Snackbar.Add("Excel dosyası indirildi.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Excel hatası: {ex.Message}", Severity.Error);
+        }
+    }
+}

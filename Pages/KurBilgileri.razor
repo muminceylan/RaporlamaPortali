@@ -1,0 +1,149 @@
+@page "/kur-bilgileri"
+@using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
+@inject LogoIslemleriService Logo
+@inject ExcelExportService ExcelExportService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Kur Bilgileri</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.CurrencyExchange" Class="mr-2" />
+    Kur Bilgileri
+</MudText>
+
+<MudPaper Class="pa-3 mb-3">
+    <MudGrid>
+        <MudItem xs="12" md="3">
+            <MudDatePicker @bind-Date="_baslangic" Label="Başlangıç" DateFormat="dd.MM.yyyy"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudDatePicker @bind-Date="_bitis" Label="Bitiş" DateFormat="dd.MM.yyyy"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudSelect T="int?" @bind-Value="_crType" Label="Döviz"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                <MudSelectItem T="int?" Value="@((int?)null)">Hepsi</MudSelectItem>
+                @foreach (var dv in _dovizler)
+                {
+                    <MudSelectItem T="int?" Value="@((int?)dv.CrType)">@dv.Kod @(string.IsNullOrEmpty(dv.Ad) ? "" : $"- {dv.Ad}")</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="3" Class="d-flex align-center gap-2">
+            <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.Search"
+                       OnClick="VeriYukle" Disabled="_yukleniyor">
+                @(_yukleniyor ? "Yükleniyor..." : "Getir")
+            </MudButton>
+            <MudButton Color="Color.Success" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.FileDownload"
+                       OnClick="ExcelIndir" Disabled="_kurlar.Count == 0">
+                Excel
+            </MudButton>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudTextField @bind-Value="_arama" Label="Arama" Placeholder="Döviz kodu veya adı"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Immediate="true" DebounceInterval="300" />
+        </MudItem>
+        <MudItem xs="12" md="6" Class="d-flex align-center">
+            <MudText Typo="Typo.body2">
+                Toplam: <b>@FiltreliKayit.Count</b> kayıt
+            </MudText>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudTable Items="FiltreliKayit" Dense="true" Hover="true" Bordered="true" Striped="true"
+          FixedHeader="true" Height="calc(100vh - 360px)"
+          Breakpoint="Breakpoint.None"
+          RowsPerPage="50"
+          Class="mt-2">
+    <HeaderContent>
+        <MudTh><MudTableSortLabel SortBy="new Func<KurBilgisi,object>(x => x.Tarih)">Tarih</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortBy="new Func<KurBilgisi,object>(x => x.DovizKodu)">Döviz Kodu</MudTableSortLabel></MudTh>
+        <MudTh>Döviz Adı</MudTh>
+        <MudTh Style="text-align:right">Tür 1 (Alış)</MudTh>
+        <MudTh Style="text-align:right">Tür 2 (Satış)</MudTh>
+        <MudTh Style="text-align:right">Tür 3 (Efektif Alış)</MudTh>
+        <MudTh Style="text-align:right">Tür 4 (Efektif Satış)</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@context.Tarih.ToString("dd.MM.yyyy")</MudTd>
+        <MudTd>@context.DovizKodu</MudTd>
+        <MudTd>@context.DovizAdi</MudTd>
+        <MudTd Style="text-align:right">@context.Rate1.ToString("N4")</MudTd>
+        <MudTd Style="text-align:right">@context.Rate2.ToString("N4")</MudTd>
+        <MudTd Style="text-align:right">@context.Rate3.ToString("N4")</MudTd>
+        <MudTd Style="text-align:right">@context.Rate4.ToString("N4")</MudTd>
+    </RowTemplate>
+    <PagerContent>
+        <MudTablePager PageSizeOptions="new int[] { 25, 50, 100, 250, 500 }" />
+    </PagerContent>
+    <NoRecordsContent>
+        <MudText>Kayıt bulunamadı.</MudText>
+    </NoRecordsContent>
+</MudTable>
+
+@code {
+    private DateTime? _baslangic = new DateTime(DateTime.Today.Year, 1, 1);
+    private DateTime? _bitis = DateTime.Today;
+    private int? _crType;
+    private string _arama = "";
+    private bool _yukleniyor = false;
+
+    private List<KurBilgisi> _kurlar = new();
+    private List<DovizSecenek> _dovizler = new();
+
+    private List<KurBilgisi> FiltreliKayit =>
+        _kurlar.Where(k =>
+            string.IsNullOrWhiteSpace(_arama) ||
+            k.DovizKodu.Contains(_arama, StringComparison.OrdinalIgnoreCase) ||
+            k.DovizAdi.Contains(_arama, StringComparison.OrdinalIgnoreCase)
+        ).ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _dovizler = await Logo.DovizSecenekleriAsync();
+        await VeriYukle();
+    }
+
+    private async Task VeriYukle()
+    {
+        _yukleniyor = true;
+        try
+        {
+            _kurlar = await Logo.KurlarAsync(_baslangic, _bitis, _crType);
+            Snackbar.Add($"{_kurlar.Count} kayıt yüklendi.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Hata: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _yukleniyor = false;
+        }
+    }
+
+    private async Task ExcelIndir()
+    {
+        try
+        {
+            var bytes = ExcelExportService.ExportKurBilgileri(FiltreliKayit);
+            var fileName = $"KurBilgileri_{_baslangic:yyyyMMdd}_{_bitis:yyyyMMdd}.xlsx";
+            await JS.InvokeVoidAsync("downloadFile", fileName, Convert.ToBase64String(bytes),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            Snackbar.Add("Excel dosyası indirildi.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Excel hatası: {ex.Message}", Severity.Error);
+        }
+    }
+}

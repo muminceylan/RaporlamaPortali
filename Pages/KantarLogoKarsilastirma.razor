@@ -1,0 +1,296 @@
+@page "/kantar-logo-karsilastirma"
+@using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
+@inject KantarLogoKarsilastirmaService Karsilastirma
+@inject ISnackbar Snackbar
+
+<PageTitle>Kantar - Logo Karşılaştırması</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.CompareArrows" Class="mr-2" />
+    Kantar - Logo Karşılaştırması
+</MudText>
+
+<MudAlert Severity="Severity.Info" Class="mb-3" Dense="true">
+    Kantar fişlerindeki çıkışlar ile Logo'ya işlenen satış irsaliyelerini ürün bazında karşılaştırır.
+    Miktar veya tutar farkı olan kalemler <b>"FARK VAR"</b> olarak işaretlenir.
+</MudAlert>
+
+<MudPaper Class="pa-3 mb-3">
+    <MudGrid>
+        <MudItem xs="12" md="3">
+            <MudDatePicker Label="Başlangıç" @bind-Date="_baslangic"
+                           DateFormat="dd.MM.yyyy" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudDatePicker Label="Bitiş" @bind-Date="_bitis"
+                           DateFormat="dd.MM.yyyy" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="6" Class="d-flex align-center gap-2">
+            <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.PlayArrow"
+                       OnClick="HesaplaAsync" Disabled="_yukleniyor">
+                @(_yukleniyor ? "Hesaplanıyor..." : "Karşılaştır")
+            </MudButton>
+            @if (_sonuc != null)
+            {
+                <MudText Typo="Typo.body2">
+                    Kantar: <b>@_sonuc.KantarSatirSayisi</b> satır &nbsp;|&nbsp;
+                    Logo: <b>@_sonuc.LogoSatirSayisi</b> satır
+                </MudText>
+            }
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@if (_yukleniyor)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-4" />
+}
+else if (_sonuc != null)
+{
+    <MudTabs Outlined="true" Position="Position.Top" Rounded="true" Border="true" Class="mb-4">
+        <MudTabPanel Text="@($"Toplu Rapor ({_sonuc.TopluRapor.Count})")" Icon="@Icons.Material.Filled.Summarize">
+            <MudTable Items="_sonuc.TopluRapor" Dense="true" Hover="true" Bordered="true" Striped="true"
+                      FixedHeader="true" Height="calc(100vh - 480px)" Class="mt-2">
+                <HeaderContent>
+                    <MudTh>Malzeme Kodu</MudTh>
+                    <MudTh>Malzeme Adı</MudTh>
+                    <MudTh Style="text-align:right">Kantar Miktar</MudTh>
+                    <MudTh Style="text-align:right">Kantar Tutar</MudTh>
+                    <MudTh Style="text-align:right">Logo Miktar</MudTh>
+                    <MudTh Style="text-align:right">Logo Tutar</MudTh>
+                    <MudTh Style="text-align:right">Miktar Farkı</MudTh>
+                    <MudTh Style="text-align:right">Tutar Farkı</MudTh>
+                    <MudTh>Durum</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.LogoKodu</MudTd>
+                    <MudTd>@context.MalzemeAdi</MudTd>
+                    <MudTd Style="text-align:right">@context.KantarMiktar.ToString("N2")</MudTd>
+                    <MudTd Style="text-align:right">@context.KantarTutar.ToString("N2")</MudTd>
+                    <MudTd Style="text-align:right">@context.LogoMiktar.ToString("N2")</MudTd>
+                    <MudTd Style="text-align:right">@context.LogoTutar.ToString("N2")</MudTd>
+                    <MudTd Style="@DurumStyle(context.MiktarFarki)">@context.MiktarFarki.ToString("N2")</MudTd>
+                    <MudTd Style="@DurumStyle(context.TutarFarki)">@context.TutarFarki.ToString("N2")</MudTd>
+                    <MudTd>
+                        <MudChip T="string" Size="Size.Small" Color="@(context.Eslesiyor ? Color.Success : Color.Warning)">
+                            @context.Durum
+                        </MudChip>
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent><MudText>Seçili tarih aralığında veri yok.</MudText></NoRecordsContent>
+            </MudTable>
+        </MudTabPanel>
+
+        <MudTabPanel Text="@($"Günlük Rapor ({_sonuc.GunlukRapor.Count})")" Icon="@Icons.Material.Filled.CalendarViewDay">
+            <MudPaper Class="pa-2 mb-2" Elevation="0">
+                <MudSwitch T="bool" @bind-Value="_sadeceFarklar" Label="Sadece fark olanlar" Color="Color.Warning" />
+            </MudPaper>
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-2">
+                <b>"FARK VAR"</b> satırına tıklayın → o gün o ürün için fiş bazında Kantar ↔ Logo eşleştirmesi açılır.
+            </MudAlert>
+            <MudTable Items="FiltreliGunluk" Dense="true" Hover="true" Bordered="true" Striped="true"
+                      FixedHeader="true" Height="calc(100vh - 540px)" RowsPerPage="100"
+                      OnRowClick="@((TableRowClickEventArgs<KarsilastirmaSatiri> e) => FisDetayAc(e.Item!))"
+                      T="KarsilastirmaSatiri">
+                <HeaderContent>
+                    <MudTh><MudTableSortLabel SortBy="new Func<KarsilastirmaSatiri,object>(x => x.Tarih)">Tarih</MudTableSortLabel></MudTh>
+                    <MudTh>Malzeme Kodu</MudTh>
+                    <MudTh>Malzeme Adı</MudTh>
+                    <MudTh Style="text-align:right">Kantar Miktar</MudTh>
+                    <MudTh Style="text-align:right">Kantar Fiyat</MudTh>
+                    <MudTh Style="text-align:right">Kantar Tutar</MudTh>
+                    <MudTh Style="text-align:right">Logo Miktar</MudTh>
+                    <MudTh Style="text-align:right">Logo Fiyat</MudTh>
+                    <MudTh Style="text-align:right">Logo Tutar</MudTh>
+                    <MudTh Style="text-align:right">Miktar Farkı</MudTh>
+                    <MudTh Style="text-align:right">Tutar Farkı</MudTh>
+                    <MudTh>Durum</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.Tarih.ToString("dd.MM.yyyy")</MudTd>
+                    <MudTd>@context.LogoKodu</MudTd>
+                    <MudTd>@context.MalzemeAdi</MudTd>
+                    <MudTd Style="text-align:right">@context.KantarMiktar.ToString("N2")</MudTd>
+                    <MudTd Style="text-align:right">@context.KantarBirimFiyat.ToString("N3")</MudTd>
+                    <MudTd Style="text-align:right">@context.KantarTutar.ToString("N2")</MudTd>
+                    <MudTd Style="text-align:right">@context.LogoMiktar.ToString("N2")</MudTd>
+                    <MudTd Style="text-align:right">@context.LogoBirimFiyat.ToString("N3")</MudTd>
+                    <MudTd Style="text-align:right">@context.LogoTutar.ToString("N2")</MudTd>
+                    <MudTd Style="@DurumStyle(context.MiktarFarki)">@context.MiktarFarki.ToString("N2")</MudTd>
+                    <MudTd Style="@DurumStyle(context.TutarFarki)">@context.TutarFarki.ToString("N2")</MudTd>
+                    <MudTd>
+                        <MudChip T="string" Size="Size.Small" Color="@(context.Eslesiyor ? Color.Success : Color.Warning)">
+                            @context.Durum
+                        </MudChip>
+                    </MudTd>
+                </RowTemplate>
+                <PagerContent>
+                    <MudTablePager PageSizeOptions="new int[] { 50, 100, 250, 500 }" />
+                </PagerContent>
+                <NoRecordsContent><MudText>Fark veya kayıt bulunamadı.</MudText></NoRecordsContent>
+            </MudTable>
+        </MudTabPanel>
+
+        <MudTabPanel Text="Eşleştirme Tablosu" Icon="@Icons.Material.Filled.Link">
+            <MudTable Items="KantarLogoKarsilastirmaService.Eslestirmeler" Dense="true" Bordered="true" Striped="true" Class="mt-2">
+                <HeaderContent>
+                    <MudTh>Kantar Kodu</MudTh>
+                    <MudTh>Logo Kodu</MudTh>
+                    <MudTh>Malzeme Adı</MudTh>
+                    <MudTh>KDV (%1) Düş?</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.KantarKodu</MudTd>
+                    <MudTd>@context.LogoKodu</MudTd>
+                    <MudTd>@context.MalzemeAdi</MudTd>
+                    <MudTd>@(context.KdvDus ? "Evet" : "-")</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudTabPanel>
+    </MudTabs>
+}
+
+<MudDialog @bind-IsVisible="_detayAcik" Options="@(new DialogOptions{ MaxWidth=MaxWidth.ExtraExtraLarge, FullWidth=true, CloseButton=true })">
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.Receipt" Class="mr-2" />
+            Fiş Detayı — @_detayTarih.ToString("dd.MM.yyyy") / @_detayMalzeme
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (_detayYukleniyor)
+        {
+            <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+        }
+        else if (_fisDetay != null)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-2">
+                Eşleştirme: <b>(Net ≈ Miktar) AND (Tutar ≈ Tutar)</b>. Kırmızı satırlar tespit edilen eksik/fazla fişlerdir.
+            </MudAlert>
+            <MudTable Items="_fisDetay" Dense="true" Hover="true" Bordered="true" Striped="true" Height="calc(100vh - 360px)" FixedHeader="true">
+                <HeaderContent>
+                    <MudTh Style="background:#e8f5e9">Kantar Fiş</MudTh>
+                    <MudTh Style="background:#e8f5e9">Plaka</MudTh>
+                    <MudTh Style="background:#e8f5e9">Şoför</MudTh>
+                    <MudTh Style="background:#e8f5e9; text-align:right">Net</MudTh>
+                    <MudTh Style="background:#e8f5e9; text-align:right">Fiyat</MudTh>
+                    <MudTh Style="background:#e8f5e9; text-align:right">Tutar</MudTh>
+                    <MudTh Style="background:#e3f2fd">Logo Fiş</MudTh>
+                    <MudTh Style="background:#e3f2fd">Cari Kodu</MudTh>
+                    <MudTh Style="background:#e3f2fd">Cari Ünvan</MudTh>
+                    <MudTh Style="background:#e3f2fd; text-align:right">Miktar</MudTh>
+                    <MudTh Style="background:#e3f2fd; text-align:right">Fiyat</MudTh>
+                    <MudTh Style="background:#e3f2fd; text-align:right">Tutar</MudTh>
+                    <MudTh>Durum</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd Style="@RowStyle(context)">@context.KantarFisNo</MudTd>
+                    <MudTd Style="@RowStyle(context)">@context.KantarPlaka</MudTd>
+                    <MudTd Style="@RowStyle(context)">@context.KantarSofor</MudTd>
+                    <MudTd Style="@(RowStyle(context) + " text-align:right")">@context.KantarNet?.ToString("N2")</MudTd>
+                    <MudTd Style="@(RowStyle(context) + " text-align:right")">@context.KantarBirimFiyat?.ToString("N3")</MudTd>
+                    <MudTd Style="@(RowStyle(context) + " text-align:right")">@context.KantarTutar?.ToString("N2")</MudTd>
+                    <MudTd Style="@RowStyle(context)">@context.LogoFisNumarasi</MudTd>
+                    <MudTd Style="@RowStyle(context)">@context.LogoCariKodu</MudTd>
+                    <MudTd Style="@RowStyle(context)">@context.LogoCariUnvani</MudTd>
+                    <MudTd Style="@(RowStyle(context) + " text-align:right")">@context.LogoMiktar?.ToString("N2")</MudTd>
+                    <MudTd Style="@(RowStyle(context) + " text-align:right")">@context.LogoBirimFiyat?.ToString("N3")</MudTd>
+                    <MudTd Style="@(RowStyle(context) + " text-align:right")">@context.LogoTutar?.ToString("N2")</MudTd>
+                    <MudTd>
+                        <MudChip T="string" Size="Size.Small" Color="@(context.Eslesiyor ? Color.Success : Color.Error)">
+                            @context.Durum
+                        </MudChip>
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent><MudText>Bu tarih/ürün için fiş bulunamadı.</MudText></NoRecordsContent>
+            </MudTable>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _detayAcik = false">Kapat</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private DateTime? _baslangic = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private DateTime? _bitis = DateTime.Today;
+    private bool _yukleniyor;
+    private bool _sadeceFarklar = true;
+    private KarsilastirmaSonuc? _sonuc;
+
+    private bool _detayAcik;
+    private bool _detayYukleniyor;
+    private DateTime _detayTarih;
+    private string _detayMalzeme = "";
+    private List<FisEslestirmesi>? _fisDetay;
+
+    private async Task FisDetayAc(KarsilastirmaSatiri satir)
+    {
+        _detayTarih = satir.Tarih;
+        _detayMalzeme = $"{satir.LogoKodu} — {satir.MalzemeAdi}";
+        _fisDetay = null;
+        _detayYukleniyor = true;
+        _detayAcik = true;
+        try
+        {
+            _fisDetay = await Karsilastirma.FisDetayAsync(satir.Tarih, satir.LogoKodu);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Fiş detayı yüklenemedi: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _detayYukleniyor = false;
+        }
+    }
+
+    private string RowStyle(FisEslestirmesi f) =>
+        f.Durum == "LOGO'DA YOK" ? "background:#ffebee;" :
+        f.Durum == "KANTAR'DA YOK" ? "background:#fff3e0;" :
+        "";
+
+    private IEnumerable<KarsilastirmaSatiri> FiltreliGunluk =>
+        _sonuc == null ? Enumerable.Empty<KarsilastirmaSatiri>() :
+        _sadeceFarklar ? _sonuc.GunlukRapor.Where(r => !r.Eslesiyor) : _sonuc.GunlukRapor;
+
+    private string DurumStyle(decimal fark) =>
+        Math.Abs(fark) < 0.01m
+            ? "text-align:right"
+            : "text-align:right; color:#c62828; font-weight:600";
+
+    private async Task HesaplaAsync()
+    {
+        if (_baslangic == null || _bitis == null)
+        {
+            Snackbar.Add("Başlangıç ve bitiş tarihi seçin.", Severity.Warning);
+            return;
+        }
+        if (_baslangic > _bitis)
+        {
+            Snackbar.Add("Başlangıç, bitişten büyük olamaz.", Severity.Warning);
+            return;
+        }
+
+        _yukleniyor = true;
+        try
+        {
+            _sonuc = await Karsilastirma.KarsilastirmaYapAsync(_baslangic.Value, _bitis.Value);
+            var farkli = _sonuc.TopluRapor.Count(r => !r.Eslesiyor);
+            if (farkli == 0)
+                Snackbar.Add("Tüm ürünler eşleşiyor.", Severity.Success);
+            else
+                Snackbar.Add($"{farkli} üründe fark tespit edildi.", Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Hata: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _yukleniyor = false;
+        }
+    }
+}

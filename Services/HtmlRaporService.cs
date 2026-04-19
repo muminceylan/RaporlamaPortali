@@ -46,7 +46,8 @@ public class HtmlRaporService
         List<SekerSatisOzet> sekerVerileri,
         List<YanUrunOzet> yanUrunVerileri,
         DateTime baslangic,
-        DateTime bitis)
+        DateTime bitis,
+        bool bulanik = false)
     {
         var sb = new StringBuilder();
         var logo = LogoImgHtml();
@@ -179,7 +180,7 @@ public class HtmlRaporService
 </body>
 </html>");
 
-        return sb.ToString();
+        return UygulaBlur(sb.ToString(), bulanik);
     }
 
     /// <summary>
@@ -357,7 +358,8 @@ public class HtmlRaporService
         List<PancarAvansKayit>?  avans       = null,
         PancarFinansOzet?        finans      = null,
         PancarIcmalDetay?        icmalDetay  = null,
-        PancarOzetIstatistik?    ozet        = null)
+        PancarOzetIstatistik?    ozet        = null,
+        bool                     bulanik     = false)
     {
         var tr   = new CultureInfo("tr-TR");
         var logo = LogoImgHtml();
@@ -545,7 +547,7 @@ public class HtmlRaporService
         sb.AppendLine($"<p class='info'>Bu mail <strong>Mümin CEYLAN</strong> tarafından geliştirilen otomasyon ile otomatik olarak gönderilmiştir. | {DateTime.Now:dd.MM.yyyy HH:mm}</p>");
         sb.AppendLine("</body></html>");
 
-        return sb.ToString();
+        return UygulaBlur(sb.ToString(), bulanik);
     }
 
     /// <summary>
@@ -554,7 +556,8 @@ public class HtmlRaporService
     public string SekerAnalizHtmlOlustur(
         List<SekerKategoriAnaliz> analiz,
         DateTime baslangic,
-        DateTime bitis)
+        DateTime bitis,
+        bool bulanik = false)
     {
         var tr = new CultureInfo("tr-TR");
         string N0(decimal v) => v.ToString("N0", tr);
@@ -699,7 +702,7 @@ public class HtmlRaporService
 </div>
 </body>
 </html>");
-        return sb.ToString();
+        return UygulaBlur(sb.ToString(), bulanik);
     }
 
     /// <summary>
@@ -712,7 +715,8 @@ public class HtmlRaporService
         DateTime baslangic,
         DateTime bitis,
         Dictionary<string, decimal>? baskanlikDonemBasi = null,
-        Dictionary<string, decimal>? baskanlikDonemSonu = null)
+        Dictionary<string, decimal>? baskanlikDonemSonu = null,
+        bool bulanik = false)
     {
         var tr = new CultureInfo("tr-TR");
         string N0(decimal v) => v.ToString("N0", tr);
@@ -1009,6 +1013,83 @@ public class HtmlRaporService
         }
 
         sb2.AppendLine($"  <div class='footer'>{ayAdi} &nbsp;|&nbsp; Oluşturma: {DateTime.Now:dd.MM.yyyy HH:mm} &nbsp;|&nbsp; © {DateTime.Now.Year} Doğuş Çay – Afyon Şeker Fabrikası</div>\n</div>\n</body>\n</html>");
-        return sb2.ToString();
+        return UygulaBlur(sb2.ToString(), bulanik);
+    }
+
+    // =========================================================
+    // BUZLAMA YARDIMCISI
+    // =========================================================
+
+    /// <summary>
+    /// Yetkisiz WhatsApp kullanıcıları için rapor verilerini bulanıklaştırır.
+    /// Sadece veri hücrelerini etkiler; satır başlıkları (td:first-child, td.L) açık kalır.
+    /// </summary>
+    private static string UygulaBlur(string html, bool bulanik)
+    {
+        if (!bulanik) return html;
+
+        // CSS filter doğrudan <td>'de Puppeteer/Chromium'da güvenilir çalışmaz.
+        // Çözüm: JS ile td içeriğini display:inline-block span içine sar → filter garantili çalışır.
+        const string blurScript = @"
+<style>
+  .bz-span { filter:blur(5px); display:inline-block; user-select:none; pointer-events:none; }
+  .bz-wm {
+    position:fixed; top:50%; left:50%;
+    transform:translate(-50%,-50%) rotate(-30deg);
+    font-size:26px; font-weight:900; color:rgba(160,0,0,0.22);
+    z-index:9999; pointer-events:none; white-space:nowrap; font-family:sans-serif;
+    letter-spacing:2px;
+  }
+</style>
+<script>
+(function(){
+  function blurHucreler() {
+    var hedefler = [];
+    // 1. SekerRaporu: td.R
+    document.querySelectorAll('td.R').forEach(function(td){ hedefler.push(td); });
+    // 2. BirlesikRapor / YanUrunler: .dt tablosundaki veri hücreleri
+    document.querySelectorAll('.dt td').forEach(function(td){
+      if (!td.classList.contains('L')) {
+        var tr = td.parentElement;
+        if (tr && !tr.classList.contains('grp')) hedefler.push(td);
+      }
+    });
+    // 3. Genel tablolar (SekerAnaliz, PancarRapor, SekerSatis):
+    //    tbody içindeki, ilk sütun olmayan, L sınıfı olmayan hücreler
+    document.querySelectorAll('tbody tr td:not(:first-child):not(.L)').forEach(function(td){
+      if (!td.classList.contains('R')) hedefler.push(td); // R zaten eklendi
+    });
+
+    // Tekrarları kaldır ve sar
+    var gorulenler = new Set();
+    hedefler.forEach(function(td){
+      if (gorulenler.has(td)) return;
+      gorulenler.add(td);
+      if (td.querySelector('.bz-span')) return; // zaten sarilmis
+      var s = document.createElement('span');
+      s.className = 'bz-span';
+      s.innerHTML = td.innerHTML;
+      td.innerHTML = '';
+      td.appendChild(s);
+    });
+
+    // Filigran
+    if (!document.querySelector('.bz-wm')) {
+      var wm = document.createElement('div');
+      wm.className = 'bz-wm';
+      wm.textContent = '\uD83D\uDD12 ORNEK - YETKISIZ ERISIM';
+      document.body.appendChild(wm);
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', blurHucreler);
+  } else {
+    blurHucreler();
+  }
+})();
+</script>";
+
+        return html.Replace("</head>", blurScript + "\n</head>", StringComparison.OrdinalIgnoreCase);
     }
 }

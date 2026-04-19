@@ -758,12 +758,25 @@ public class SekerDairesiService
             if (bkBasi.GetValueOrDefault("TICARI_KRISTAL") < 0) bkBasi["TICARI_KRISTAL"] = 0m;
             if (bkBasi.GetValueOrDefault("TICARI_PAKET")   < 0) bkBasi["TICARI_PAKET"]   = 0m;
 
-            // Başkanlık kuralı: TM stoğu mevcutken A Kotası/Paketli bakiyesi sıfırlanır.
-            // TM bittikten sonra A/Paket kendi stoğuyla devam eder (artık TM yok).
-            if (bkBasi.GetValueOrDefault("TICARI_KRISTAL") > 0 && bkBasi.GetValueOrDefault("A_KOTASI") > 0)
-                bkBasi["A_KOTASI"] = 0m;
-            if (bkBasi.GetValueOrDefault("TICARI_PAKET") > 0 && bkBasi.GetValueOrDefault("PAKETLI") > 0)
-                bkBasi["PAKETLI"] = 0m;
+            // Başkanlık kuralı: TM stoğu A/Paket stoğunu mahsup eder (netting).
+            // TM büyükse A = 0 (TM tüm A'yı karşılar), küçükse A'dan TM kadar düş, TM = 0.
+            // Bu kural koşulsuz sıfırlamayı önler — 500 kg TM 17M kg A'yı sıfırlamamalı.
+            decimal aV  = bkBasi.GetValueOrDefault("A_KOTASI");
+            decimal tkV = bkBasi.GetValueOrDefault("TICARI_KRISTAL");
+            if (tkV > 0 && aV > 0)
+            {
+                decimal net = Math.Min(tkV, aV);
+                bkBasi["A_KOTASI"]       = aV  - net;
+                bkBasi["TICARI_KRISTAL"] = tkV - net;
+            }
+            decimal pakV = bkBasi.GetValueOrDefault("PAKETLI");
+            decimal tpV  = bkBasi.GetValueOrDefault("TICARI_PAKET");
+            if (tpV > 0 && pakV > 0)
+            {
+                decimal netP = Math.Min(tpV, pakV);
+                bkBasi["PAKETLI"]      = pakV - netP;
+                bkBasi["TICARI_PAKET"] = tpV  - netP;
+            }
 
             ayBaslangic = ayBaslangic.AddMonths(1);
         }

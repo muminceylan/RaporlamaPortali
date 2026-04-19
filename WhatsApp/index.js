@@ -121,11 +121,12 @@ function tarihParse(metin) {
     return null;
 }
 
-async function sekerRaporuGonder(message, baslangicStr, bitisStr) {
+async function sekerRaporuGonder(message, baslangicStr, bitisStr, bulanik = false) {
     const baseUrl = (config.raporApiUrl || 'http://localhost:5050/api/rapor')
         .replace(/\/api\/.*$/, '');
-    const urlAnaliz = `${baseUrl}/api/seker-analiz?baslangic=${baslangicStr}&bitis=${bitisStr}`;
-    const urlRapor  = `${baseUrl}/api/seker-raporu?baslangic=${baslangicStr}&bitis=${bitisStr}`;
+    const bulanikParam = bulanik ? '&bulanik=true' : '';
+    const urlAnaliz = `${baseUrl}/api/seker-analiz?baslangic=${baslangicStr}&bitis=${bitisStr}${bulanikParam}`;
+    const urlRapor  = `${baseUrl}/api/seker-raporu?baslangic=${baslangicStr}&bitis=${bitisStr}${bulanikParam}`;
 
     console.log(`[Seker] Analiz tablosu: ${urlAnaliz}`);
     console.log(`[Seker] Baskanlık tablosu: ${urlRapor}`);
@@ -231,14 +232,17 @@ client.on('message', async (message) => {
             }
         }
 
+        // Yetkisiz kullanıcı: bulanik=true yaparak devam et, yetkililer için bulanik=false
+        let bulanik = false;
         if (!gonderenNumara) {
-            return;
+            bulanik = true;
+            gonderenNumara = bireyselNumara || grupGonderenNumara || 'bilinmeyen';
         }
 
         const mesajIcerigi = message.body.toLowerCase().trim();
 
-        // ── Şeker Raporu konuşma durumu kontrolü ──────────────────────
-        if (sekerKonusma.has(gonderenNumara)) {
+        // ── Şeker Raporu konuşma durumu kontrolü (sadece yetkili kullanıcılar) ──
+        if (!bulanik && sekerKonusma.has(gonderenNumara)) {
             const durum = sekerKonusma.get(gonderenNumara);
 
             // İptal komutu
@@ -270,7 +274,7 @@ client.on('message', async (message) => {
                 await message.reply('Seker raporu hazirlaniyor, lutfen bekleyin...');
                 logYaz(gonderenNumara, message.body, 'Hazirlaniyor...');
                 try {
-                    await sekerRaporuGonder(message, durum.baslangic, tarih);
+                    await sekerRaporuGonder(message, durum.baslangic, tarih, false);
                     logYaz(gonderenNumara, message.body, 'Gonderildi');
                 } catch (e) {
                     logYaz(gonderenNumara, message.body, 'HATA: ' + e.message);
@@ -294,35 +298,53 @@ client.on('message', async (message) => {
         );
 
         if (sekerTetiklendi) {
-            console.log(`\n[${new Date().toLocaleString('tr-TR')}] Seker rapor talebi: ${gonderenNumara}`);
+            console.log(`\n[${new Date().toLocaleString('tr-TR')}] Seker rapor talebi: ${gonderenNumara}${bulanik?' (yetkisiz)':''}`);
             // Mesajda ay adı var mı? (örn: "Şeker Rapor Eylül")
             const ayTarih = ayAdindenTarih(mesajIcerigi);
             if (ayTarih) {
-                logYaz(gonderenNumara, message.body, 'Hazirlaniyor...');
+                logYaz(gonderenNumara, message.body, bulanik ? 'Hazirlaniyor (bulanik)...' : 'Hazirlaniyor...');
                 await message.reply(`Seker raporu hazirlaniyor (${ayTarih.baslangic} – ${ayTarih.bitis}), lutfen bekleyin...`);
                 try {
-                    await sekerRaporuGonder(message, ayTarih.baslangic, ayTarih.bitis);
-                    logYaz(gonderenNumara, message.body, 'Gonderildi');
+                    await sekerRaporuGonder(message, ayTarih.baslangic, ayTarih.bitis, bulanik);
+                    logYaz(gonderenNumara, message.body, bulanik ? 'Gonderildi (bulanik)' : 'Gonderildi');
                 } catch (e) {
                     logYaz(gonderenNumara, message.body, 'HATA: ' + e.message);
                     await message.reply('Seker raporu gonderilirken hata: ' + e.message);
                 }
-            } else {
-                // Tarih yok → konuşma modunu başlat
+            } else if (!bulanik) {
+                // Tarih yok ve yetkili → konuşma modunu başlat
                 sekerKonusma.set(gonderenNumara, { adim: 'BASLANGIC' });
                 await message.reply('Seker raporu - baslangic tarihini girin (DD.MM.YYYY):\n(veya "Seker Rapor Eylul" gibi ay adi ile de gonderebilirsiniz)\n"iptal" yazarak vazgecebilirsiniz.');
+            } else {
+                // Tarih yok ve yetkisiz → mevcut ay için gönder (bulanık)
+                const simdi = new Date();
+                const yil = simdi.getFullYear();
+                const ay = String(simdi.getMonth() + 1).padStart(2, '0');
+                const sonGun = String(new Date(yil, simdi.getMonth() + 1, 0).getDate()).padStart(2, '0');
+                const bas = `${yil}-${ay}-01`;
+                const bit = `${yil}-${ay}-${sonGun}`;
+                logYaz(gonderenNumara, message.body, 'Hazirlaniyor (bulanik, mevcut ay)...');
+                await message.reply('Seker raporu hazirlaniyor, lutfen bekleyin...');
+                try {
+                    await sekerRaporuGonder(message, bas, bit, true);
+                    logYaz(gonderenNumara, message.body, 'Gonderildi (bulanik)');
+                } catch (e) {
+                    logYaz(gonderenNumara, message.body, 'HATA: ' + e.message);
+                    await message.reply('Seker raporu gonderilirken hata: ' + e.message);
+                }
             }
         } else if (pancarTetiklendi) {
-            console.log(`\n[${new Date().toLocaleString('tr-TR')}] Pancar rapor talebi: ${gonderenNumara}`);
-            logYaz(gonderenNumara, message.body, 'Hazirlaniyor...');
+            console.log(`\n[${new Date().toLocaleString('tr-TR')}] Pancar rapor talebi: ${gonderenNumara}${bulanik?' (yetkisiz)':''}`);
+            logYaz(gonderenNumara, message.body, bulanik ? 'Hazirlaniyor (bulanik)...' : 'Hazirlaniyor...');
             await message.reply('Pancar raporu hazirlaniyor, lutfen bekleyin...');
             try {
-                const pancarApiUrl = (config.raporApiUrl || 'http://localhost:5050/api/rapor')
-                    .replace('/api/rapor', '/api/pancar-raporu');
+                const baseUrl = (config.raporApiUrl || 'http://localhost:5050/api/rapor')
+                    .replace(/\/api\/.*$/, '');
+                const pancarApiUrl = `${baseUrl}/api/pancar-raporu${bulanik ? '?bulanik=true' : ''}`;
                 const pancarHtml = await sqlRaporuGetirRetry(pancarApiUrl);
                 if (pancarHtml) {
                     await htmldenPngOlusturVeGonder(message, pancarHtml, 'pancar');
-                    logYaz(gonderenNumara, message.body, 'Gonderildi');
+                    logYaz(gonderenNumara, message.body, bulanik ? 'Gonderildi (bulanik)' : 'Gonderildi');
                 } else {
                     await message.reply('Pancar raporu alinamadi, sunucu kapali olabilir.');
                     logYaz(gonderenNumara, message.body, 'HATA: API yanit vermedi');
@@ -332,17 +354,17 @@ client.on('message', async (message) => {
                 await message.reply('Pancar raporu gonderilirken hata: ' + raporHata.message);
             }
         } else if (tetiklendi) {
-            console.log(`\n[${new Date().toLocaleString('tr-TR')}] Rapor talebi: ${gonderenNumara}`);
-            logYaz(gonderenNumara, message.body, 'Hazirlaniyor...');
+            console.log(`\n[${new Date().toLocaleString('tr-TR')}] Rapor talebi: ${gonderenNumara}${bulanik?' (yetkisiz)':''}`);
+            logYaz(gonderenNumara, message.body, bulanik ? 'Hazirlaniyor (bulanik)...' : 'Hazirlaniyor...');
             await message.reply('Rapor hazirlaniyor, lutfen bekleyin...');
             try {
-                await raporOlusturVeGonder(message);
-                logYaz(gonderenNumara, message.body, 'Gonderildi');
+                await raporOlusturVeGonder(message, bulanik);
+                logYaz(gonderenNumara, message.body, bulanik ? 'Gonderildi (bulanik)' : 'Gonderildi');
             } catch (raporHata) {
                 logYaz(gonderenNumara, message.body, 'HATA: ' + raporHata.message);
                 throw raporHata;
             }
-        } else {
+        } else if (!bulanik) {
             // Yetkili ama tetikleyici değil — kayıt tutma
         }
     } catch (error) {
@@ -354,9 +376,10 @@ client.on('message', async (message) => {
 // ANA FONKSİYON
 // =====================================================
 
-async function raporOlusturVeGonder(message) {
+async function raporOlusturVeGonder(message, bulanik = false) {
     config = configOku();
-    const apiUrl = config.raporApiUrl || 'http://localhost:5050/api/rapor';
+    const baseApiUrl = config.raporApiUrl || 'http://localhost:5050/api/rapor';
+    const apiUrl = bulanik ? `${baseApiUrl}?bulanik=true` : baseApiUrl;
 
     console.log('SQL raporu deneniyor:', apiUrl);
     const sqlHtml = await sqlRaporuGetirRetry(apiUrl);

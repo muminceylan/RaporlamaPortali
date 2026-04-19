@@ -3,9 +3,16 @@
 <MudLayout>
     <MudAppBar Elevation="1">
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@ToggleDrawer" />
-        <MudText Typo="Typo.h5" Class="ml-3">
-            <MudIcon Icon="@Icons.Material.Filled.Factory" Class="mr-2" />
-            Raporlama Portali
+        <MudText Typo="Typo.h5" Class="ml-3 d-flex align-center" Style="font-family:'Segoe UI', sans-serif;">
+            <MudAvatar Size="Size.Medium" Class="mr-2" Style="border:2px solid #FFC107; box-shadow:0 2px 6px rgba(0,0,0,0.3);">
+                <MudImage Src="/images/mumin.png" Alt="Mümin CEYLAN" ObjectFit="ObjectFit.Cover" />
+            </MudAvatar>
+            <span style="font-weight:900; font-size:1.15em; letter-spacing:0.5px; background:linear-gradient(90deg,#FFEB3B 0%,#FFC107 100%); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; text-shadow:0 1px 2px rgba(0,0,0,0.25); padding-right:6px;">
+                Mümin CEYLAN
+            </span>
+            <span style="color:#ffffff; font-weight:500; margin-left:4px;">
+                Raporlama ve Kontrol Portalı
+            </span>
         </MudText>
         <MudSpacer />
         <MudText Typo="Typo.body2" Class="mr-4">Doğuş Çay - Afyon Şeker Fabrikası</MudText>
@@ -23,52 +30,68 @@
                 Ana Sayfa
             </MudNavLink>
 
-            <MudNavLink Href="/yan-urunler" Icon="@Icons.Material.Filled.Assessment">
-                Özet Rapor (Ürünler)
-            </MudNavLink>
+            <MudNavGroup Title="Raporlar" Icon="@Icons.Material.Filled.Assessment" Expanded="true">
+                <MudNavLink Href="/yan-urunler" Icon="@Icons.Material.Filled.Assessment">
+                    Özet Rapor (Ürünler)
+                </MudNavLink>
+                <MudNavLink Href="/pancar-raporu" Icon="@Icons.Material.Filled.Agriculture">
+                    Pancar Raporu
+                </MudNavLink>
+                <MudNavLink Href="/seker-dairesi" Icon="@Icons.Material.Filled.Inventory">
+                    Şeker Dairesi Raporu
+                </MudNavLink>
+                <MudNavLink Href="/seker-dairesi-yan-urunler" Icon="@Icons.Material.Filled.Grass">
+                    Şeker Dairesi Yan Ürünler
+                </MudNavLink>
+            </MudNavGroup>
 
-            <MudNavLink Href="/pancar-raporu" Icon="@Icons.Material.Filled.Agriculture">
-                Pancar Raporu
-            </MudNavLink>
+            <MudNavGroup Title="Logo İşlemleri" Icon="@Icons.Material.Filled.Business" Expanded="false">
+                <MudNavLink Href="/kasa-hareketleri" Icon="@Icons.Material.Filled.AccountBalanceWallet">
+                    Kasa Hareketleri
+                </MudNavLink>
+                <MudNavLink Href="/kur-bilgileri" Icon="@Icons.Material.Filled.CurrencyExchange">
+                    Kur Bilgileri
+                </MudNavLink>
+                <MudNavLink Href="/stok-durumu" Icon="@Icons.Material.Filled.Inventory2">
+                    Stok Durumu
+                </MudNavLink>
+            </MudNavGroup>
 
-            <MudNavLink Href="/seker-dairesi" Icon="@Icons.Material.Filled.Inventory">
-                Şeker Dairesi Raporu
-            </MudNavLink>
+            <MudNavGroup Title="Kontrol Menüsü" Icon="@Icons.Material.Filled.Rule" Expanded="false">
+                <MudNavLink Href="/kantar-logo-karsilastirma" Icon="@Icons.Material.Filled.CompareArrows">
+                    Kantar - Logo Karşılaştırması
+                </MudNavLink>
+                <MudNavLink Href="/mustahsil-karsilastirma" Icon="@Icons.Material.Filled.People">
+                    SabNet - Logo (Müstahsil Hareketleri)
+                </MudNavLink>
+            </MudNavGroup>
 
-            <MudNavLink Href="/seker-dairesi-yan-urunler" Icon="@Icons.Material.Filled.Grass">
-                Şeker Dairesi Yan Ürünler
-            </MudNavLink>
+            <MudNavGroup Title="Evrak Arşivi" Icon="@Icons.Material.Filled.FolderOpen" Expanded="false">
+                <MudNavLink Href="/evrak-arsivi" Icon="@Icons.Material.Filled.FolderOpen">
+                    Evrak Arşivi
+                </MudNavLink>
+                <MudNavLink Href="/evrak-ekle" Icon="@Icons.Material.Filled.UploadFile">
+                    Evrak Ekle
+                </MudNavLink>
+                <MudNavLink Href="/tesisler" Icon="@Icons.Material.Filled.Factory">
+                    Tesisler
+                </MudNavLink>
+                <MudNavLink Href="/belge-tipleri" Icon="@Icons.Material.Filled.Description">
+                    Belge Tipleri
+                </MudNavLink>
+            </MudNavGroup>
 
-            <MudDivider Class="my-2" />
-
-            <MudText Typo="Typo.overline" Class="px-4 pt-2" Style="color:#1B5E20;">Evrak Arşivi</MudText>
-
-            <MudNavLink Href="/evrak-arsivi" Icon="@Icons.Material.Filled.FolderOpen">
-                Evrak Arşivi
-            </MudNavLink>
-            <MudNavLink Href="/evrak-ekle" Icon="@Icons.Material.Filled.UploadFile">
-                Evrak Ekle
-            </MudNavLink>
-            <MudNavLink Href="/tesisler" Icon="@Icons.Material.Filled.Factory">
-                Tesisler
-            </MudNavLink>
-            <MudNavLink Href="/belge-tipleri" Icon="@Icons.Material.Filled.Description">
-                Belge Tipleri
-            </MudNavLink>
-
-            <MudDivider Class="my-2" />
-
-            <MudNavLink Href="/mail-ayarlari" Icon="@Icons.Material.Filled.Email">
-                Mail Ayarları
-            </MudNavLink>
-
-            <MudNavLink Href="/whatsapp-ayarlari" Icon="@Icons.Material.Filled.Chat" Style="color:#25D366">
-                WhatsApp Ayarları
-            </MudNavLink>
-
-            <MudNavLink Href="/ayarlar" Icon="@Icons.Material.Filled.Settings">
-                Ayarlar
-            </MudNavLink>
+            <MudNavGroup Title="Ayarlar" Icon="@Icons.Material.Filled.Settings" Expanded="false">
+                <MudNavLink Href="/mail-ayarlari" Icon="@Icons.Material.Filled.Email">
+                    Mail Ayarları
+                </MudNavLink>
+                <MudNavLink Href="/whatsapp-ayarlari" Icon="@Icons.Material.Filled.Chat" Style="color:#25D366">
+                    WhatsApp Ayarları
+                </MudNavLink>
+                <MudNavLink Href="/ayarlar" Icon="@Icons.Material.Filled.Settings">
+                    Genel Ayarlar
+                </MudNavLink>
+            </MudNavGroup>
 
             <MudDivider Class="my-2" />
 

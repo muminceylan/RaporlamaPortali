@@ -1,0 +1,351 @@
+@page "/mustahsil-karsilastirma"
+@using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
+@inject MustahsilKarsilastirmaService Karsilastirma
+@inject ISnackbar Snackbar
+
+<PageTitle>SabNet - Logo (Müstahsil) Karşılaştırması</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.People" Class="mr-2" />
+    SabNet - Logo Müstahsil Hareketleri Karşılaştırması
+</MudText>
+
+<MudAlert Severity="Severity.Info" Class="mb-3" Dense="true">
+    Logo (<b>INF_Mustahsil_Hareketleri_211</b> view) ile SabNetPMHS'teki 3 tablo (Avans, Makbuz, Cari) TC bazında karşılaştırılır.
+    <br />Eşleştirmeler: Toptan satış faturası ↔ PMHS_AvansFormu &nbsp;|&nbsp; Müstahsil makbuzu ↔ PMHS_MustahsilMakbuzu &nbsp;|&nbsp; Virman Fişi ↔ PMHS_CariHareketler
+    <br />TC kimlik = <code>SUBSTRING(CARI_HESAP_KODU, 2, 11)</code>
+</MudAlert>
+
+<MudPaper Class="pa-3 mb-3">
+    <MudGrid>
+        <MudItem xs="12" md="3">
+            <MudDatePicker Label="Başlangıç" @bind-Date="_baslangic"
+                           DateFormat="dd.MM.yyyy" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudDatePicker Label="Bitiş" @bind-Date="_bitis"
+                           DateFormat="dd.MM.yyyy" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="6" md="2">
+            <MudNumericField T="int" @bind-Value="_kampanyaYili" Label="Kampanya Yılı"
+                             Variant="Variant.Outlined" Margin="Margin.Dense" Min="2000" Max="2100" />
+        </MudItem>
+        <MudItem xs="12" md="4" Class="d-flex align-center gap-2">
+            <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.PlayArrow"
+                       OnClick="HesaplaAsync" Disabled="_yukleniyor">
+                @(_yukleniyor ? "Hesaplanıyor..." : "Karşılaştır")
+            </MudButton>
+            <MudSwitch T="bool" @bind-Value="_sadeceFarklar" Label="Sadece fark olanlar" Color="Color.Warning" />
+        </MudItem>
+    </MudGrid>
+    @if (_sonuc != null)
+    {
+        <MudText Typo="Typo.body2" Class="mt-2">
+            Logo satır: <b>@_sonuc.LogoSatirSayisi</b> | SabNet Avans: <b>@_sonuc.SabAvansSatirSayisi</b>
+            | Makbuz: <b>@_sonuc.SabMakbuzSatirSayisi</b> | Cari: <b>@_sonuc.SabCariSatirSayisi</b>
+        </MudText>
+    }
+</MudPaper>
+
+@if (_yukleniyor)
+{
+    <MudAlert Severity="Severity.Info" Class="my-2" Dense="true">
+        Logo ve SabNet sorguları çalışıyor…
+    </MudAlert>
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-2" />
+}
+else if (_sonuc?.Hata != null)
+{
+    <MudAlert Severity="Severity.Error">@_sonuc.Hata</MudAlert>
+}
+else if (_sonuc != null)
+{
+    <MudTabs Rounded="true" Border="true" ApplyEffectsToContainer="true" PanelClass="pa-2" Class="mt-2">
+        <MudTabPanel>
+            <TabContent>
+                <MudBadge Content="@AvansFarkliSayisi" Color="Color.Warning" Overlap="true" Visible="@(AvansFarkliSayisi > 0)">
+                    <span style="padding-right:10px">💰 Avans Farkı</span>
+                </MudBadge>
+            </TabContent>
+            <ChildContent>
+                <MudTable Items="AvansListesi" Dense="true" Hover="true" Bordered="true" Striped="true"
+                          FixedHeader="true" Height="calc(100vh - 470px)" RowsPerPage="100" T="TcOzet"
+                          OnRowClick="@((TableRowClickEventArgs<TcOzet> e) => TcDetayAc(e.Item))">
+                    <HeaderContent>
+                        <MudTh><MudTableSortLabel SortBy="new Func<TcOzet,object>(x => x.TcKimlikNo)">TC Kimlik</MudTableSortLabel></MudTh>
+                        <MudTh><MudTableSortLabel SortBy="new Func<TcOzet,object>(x => x.AdiSoyadi)">Adı Soyadı</MudTableSortLabel></MudTh>
+                        <MudTh Style="text-align:right; background:#e8f5e9">Logo Avans</MudTh>
+                        <MudTh Style="text-align:right; background:#e3f2fd">SabNet Avans</MudTh>
+                        <MudTh Style="text-align:right"><MudTableSortLabel SortBy="new Func<TcOzet,object>(x => Math.Abs(x.AvansFarki))">Fark</MudTableSortLabel></MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.TcKimlikNo</MudTd>
+                        <MudTd>@context.AdiSoyadi</MudTd>
+                        <MudTd Style="text-align:right">@context.LogoToptanSatisFaturasi.ToString("N2")</MudTd>
+                        <MudTd Style="text-align:right">@context.SabAvans.ToString("N2")</MudTd>
+                        <MudTd Style="@FarkStyle(context.AvansFarki)">@context.AvansFarki.ToString("N2")</MudTd>
+                    </RowTemplate>
+                    <PagerContent><MudTablePager PageSizeOptions="new int[] { 50, 100, 250, 500 }" /></PagerContent>
+                    <NoRecordsContent><MudText>Kayıt bulunamadı.</MudText></NoRecordsContent>
+                </MudTable>
+            </ChildContent>
+        </MudTabPanel>
+
+        <MudTabPanel>
+            <TabContent>
+                <MudBadge Content="@MakbuzFarkliSayisi" Color="Color.Warning" Overlap="true" Visible="@(MakbuzFarkliSayisi > 0)">
+                    <span style="padding-right:10px">🧾 Makbuz Farkı</span>
+                </MudBadge>
+            </TabContent>
+            <ChildContent>
+                <MudTable Items="MakbuzListesi" Dense="true" Hover="true" Bordered="true" Striped="true"
+                          FixedHeader="true" Height="calc(100vh - 470px)" RowsPerPage="100" T="TcOzet"
+                          OnRowClick="@((TableRowClickEventArgs<TcOzet> e) => TcDetayAc(e.Item))">
+                    <HeaderContent>
+                        <MudTh><MudTableSortLabel SortBy="new Func<TcOzet,object>(x => x.TcKimlikNo)">TC Kimlik</MudTableSortLabel></MudTh>
+                        <MudTh><MudTableSortLabel SortBy="new Func<TcOzet,object>(x => x.AdiSoyadi)">Adı Soyadı</MudTableSortLabel></MudTh>
+                        <MudTh Style="text-align:right; background:#e8f5e9">Logo Makbuz</MudTh>
+                        <MudTh Style="text-align:right; background:#e3f2fd">SabNet Makbuz</MudTh>
+                        <MudTh Style="text-align:right"><MudTableSortLabel SortBy="new Func<TcOzet,object>(x => Math.Abs(x.MakbuzFarki))">Fark</MudTableSortLabel></MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.TcKimlikNo</MudTd>
+                        <MudTd>@context.AdiSoyadi</MudTd>
+                        <MudTd Style="text-align:right">@context.LogoMustahsilMakbuzu.ToString("N2")</MudTd>
+                        <MudTd Style="text-align:right">@context.SabMakbuz.ToString("N2")</MudTd>
+                        <MudTd Style="@FarkStyle(context.MakbuzFarki, TcOzet.MakbuzTolerans)">@context.MakbuzFarki.ToString("N2")</MudTd>
+                    </RowTemplate>
+                    <PagerContent><MudTablePager PageSizeOptions="new int[] { 50, 100, 250, 500 }" /></PagerContent>
+                    <NoRecordsContent><MudText>Kayıt bulunamadı.</MudText></NoRecordsContent>
+                </MudTable>
+                <MudText Typo="Typo.caption" Class="mt-1" Style="color:#666">
+                    ±@TcOzet.MakbuzTolerans TL'den küçük makbuz farkları göz ardı edilir.
+                </MudText>
+            </ChildContent>
+        </MudTabPanel>
+
+        <MudTabPanel>
+            <TabContent>
+                <MudBadge Content="@VirmanFarkliSayisi" Color="Color.Warning" Overlap="true" Visible="@(VirmanFarkliSayisi > 0)">
+                    <span style="padding-right:10px">🔁 Virman Farkı</span>
+                </MudBadge>
+            </TabContent>
+            <ChildContent>
+                <MudTable Items="VirmanListesi" Dense="true" Hover="true" Bordered="true" Striped="true"
+                          FixedHeader="true" Height="calc(100vh - 470px)" RowsPerPage="100" T="TcOzet"
+                          OnRowClick="@((TableRowClickEventArgs<TcOzet> e) => TcDetayAc(e.Item))">
+                    <HeaderContent>
+                        <MudTh><MudTableSortLabel SortBy="new Func<TcOzet,object>(x => x.TcKimlikNo)">TC Kimlik</MudTableSortLabel></MudTh>
+                        <MudTh><MudTableSortLabel SortBy="new Func<TcOzet,object>(x => x.AdiSoyadi)">Adı Soyadı</MudTableSortLabel></MudTh>
+                        <MudTh Style="text-align:right; background:#fff3e0">Logo Vir.Borç</MudTh>
+                        <MudTh Style="text-align:right; background:#e3f2fd">SabNet C.Borç</MudTh>
+                        <MudTh Style="text-align:right">Borç Farkı</MudTh>
+                        <MudTh Style="text-align:right; background:#fce4ec">Logo Vir.Alacak</MudTh>
+                        <MudTh Style="text-align:right; background:#e3f2fd">SabNet C.Alacak</MudTh>
+                        <MudTh Style="text-align:right">Alacak Farkı</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.TcKimlikNo</MudTd>
+                        <MudTd>@context.AdiSoyadi</MudTd>
+                        <MudTd Style="text-align:right">@context.LogoVirmanBorc.ToString("N2")</MudTd>
+                        <MudTd Style="text-align:right">@context.SabCariBorc.ToString("N2")</MudTd>
+                        <MudTd Style="@FarkStyle(context.VirmanBorcFarki)">@context.VirmanBorcFarki.ToString("N2")</MudTd>
+                        <MudTd Style="text-align:right">@context.LogoVirmanAlacak.ToString("N2")</MudTd>
+                        <MudTd Style="text-align:right">@context.SabCariAlacak.ToString("N2")</MudTd>
+                        <MudTd Style="@FarkStyle(context.VirmanAlacakFarki)">@context.VirmanAlacakFarki.ToString("N2")</MudTd>
+                    </RowTemplate>
+                    <PagerContent><MudTablePager PageSizeOptions="new int[] { 50, 100, 250, 500 }" /></PagerContent>
+                    <NoRecordsContent><MudText>Kayıt bulunamadı.</MudText></NoRecordsContent>
+                </MudTable>
+            </ChildContent>
+        </MudTabPanel>
+    </MudTabs>
+
+    <MudText Typo="Typo.caption" Class="mt-1" Style="color:#666">
+        💡 Detaylı eşleşme için satıra tıklayın — Logo'da var SabNet'te yok / SabNet'te var Logo'da yok satırları listelenir.
+    </MudText>
+}
+
+<MudDialog @bind-IsVisible="_detayAcik" Options="new DialogOptions { MaxWidth = MaxWidth.ExtraLarge, FullWidth = true, CloseOnEscapeKey = true }">
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.Search" Class="mr-2" />
+            @(_detay?.AdiSoyadi ?? "") (@_detay?.TcKimlikNo) — Satır Detayı
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (_detayYukleniyor)
+        {
+            <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+        }
+        else if (_detay != null)
+        {
+            <MudTabs Rounded="true" Border="true" ApplyEffectsToContainer="true" PanelClass="pa-2">
+                <MudTabPanel Text="@($"Avans ({_detay.Avans.Count})")" BadgeData="@FarkSayisi(_detay.Avans)" BadgeColor="Color.Warning">
+                    @DetayTablosu(_detay.Avans, "Toptan Satış Faturası", "Avans Formu")
+                </MudTabPanel>
+                <MudTabPanel Text="@($"Makbuz ({_detay.Makbuz.Count})")" BadgeData="@FarkSayisi(_detay.Makbuz)" BadgeColor="Color.Warning">
+                    @DetayTablosu(_detay.Makbuz, "Müstahsil Makbuzu", "Makbuz")
+                </MudTabPanel>
+                <MudTabPanel Text="@($"Virman ({_detay.Virman.Count})")" BadgeData="@FarkSayisi(_detay.Virman)" BadgeColor="Color.Warning">
+                    @DetayTablosu(_detay.Virman, "Virman Fişi", "Cari Hareket")
+                </MudTabPanel>
+            </MudTabs>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _detayAcik = false)" Variant="Variant.Text">Kapat</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@{
+    RenderFragment DetayTablosu(List<MustahsilDetayEslesme> kayitlar, string logoBaslik, string sabBaslik) => @<MudTable Items="kayitlar" Dense="true" Bordered="true" Striped="true" Hover="true" T="MustahsilDetayEslesme"
+                                     RowStyleFunc="@((MustahsilDetayEslesme x, int i) => RowStyle(x))">
+        <HeaderContent>
+            <MudTh Colspan="4" Style="background:#e8f5e9;text-align:center">Logo — @logoBaslik</MudTh>
+            <MudTh Colspan="4" Style="background:#e3f2fd;text-align:center">SabNet — @sabBaslik</MudTh>
+            <MudTh Style="text-align:center">Durum</MudTh>
+        </HeaderContent>
+        <ColGroup>
+            <col /><col /><col /><col />
+            <col /><col /><col /><col />
+            <col />
+        </ColGroup>
+        <RowTemplate>
+            <MudTd>@(context.LogoTarihi?.ToString("dd.MM.yyyy") ?? "-")</MudTd>
+            <MudTd>@(context.LogoIslemNo ?? "-")</MudTd>
+            <MudTd>@(context.LogoBelgeNo ?? "-")</MudTd>
+            <MudTd Style="text-align:right">@(context.LogoTutar?.ToString("N2") ?? "-")</MudTd>
+            <MudTd>@(context.SabNetTarihi?.ToString("dd.MM.yyyy") ?? "-")</MudTd>
+            <MudTd>@(context.SabNetNo ?? "-")</MudTd>
+            <MudTd Style="text-align:right">@(context.SabNetTutar?.ToString("N2") ?? "-")</MudTd>
+            <MudTd Style="font-size:0.85em">@(context.SabNetAciklama ?? "-")</MudTd>
+            <MudTd>
+                <MudChip T="string" Size="Size.Small" Color="@DurumRengi(context.Durum)">@context.Durum</MudChip>
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent><MudText Class="pa-2">Bu kategoride kayıt yok.</MudText></NoRecordsContent>
+    </MudTable>;
+}
+
+@code {
+    private DateTime? _baslangic = new DateTime(DateTime.Today.Year, 1, 1);
+    private DateTime? _bitis = DateTime.Today;
+    private int _kampanyaYili = DateTime.Today.Year;
+    private bool _yukleniyor;
+    private bool _sadeceFarklar = true;
+    private MustahsilKarsilastirmaSonuc? _sonuc;
+
+    private bool _detayAcik;
+    private bool _detayYukleniyor;
+    private MustahsilTcDetay? _detay;
+
+    private async Task TcDetayAc(TcOzet tc)
+    {
+        if (_baslangic == null || _bitis == null) return;
+        _detayAcik = true;
+        _detayYukleniyor = true;
+        _detay = null;
+        try
+        {
+            _detay = await Karsilastirma.TcDetayAsync(tc.TcKimlikNo, _baslangic.Value, _bitis.Value, _kampanyaYili.ToString());
+            if (string.IsNullOrWhiteSpace(_detay.AdiSoyadi))
+                _detay.AdiSoyadi = tc.AdiSoyadi;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Detay alınamadı: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _detayYukleniyor = false;
+        }
+    }
+
+    private int? FarkSayisi(List<MustahsilDetayEslesme> kayitlar)
+    {
+        var n = kayitlar.Count(k => !k.Eslesti);
+        return n == 0 ? null : n;
+    }
+
+    private string RowStyle(MustahsilDetayEslesme r) => r.Durum switch
+    {
+        "SABNET'TE YOK" => "background:#ffebee",  // kırmızımsı
+        "LOGO'DA YOK"   => "background:#fff3e0",  // turuncumsu
+        _ => ""
+    };
+
+    private Color DurumRengi(string d) => d switch
+    {
+        "EŞLEŞTİ"       => Color.Success,
+        "SABNET'TE YOK" => Color.Error,
+        "LOGO'DA YOK"   => Color.Warning,
+        _ => Color.Default
+    };
+
+    private static bool AvansFarkli(TcOzet r) => Math.Abs(r.AvansFarki) > 0.01m;
+    private static bool MakbuzFarkli(TcOzet r) => Math.Abs(r.MakbuzFarki) > TcOzet.MakbuzTolerans;
+    private static bool VirmanFarkli(TcOzet r) =>
+        Math.Abs(r.VirmanBorcFarki) > 0.01m || Math.Abs(r.VirmanAlacakFarki) > 0.01m;
+
+    private IEnumerable<TcOzet> AvansListesi =>
+        _sonuc == null ? Enumerable.Empty<TcOzet>()
+        : _sadeceFarklar
+            ? _sonuc.Kayitlar.Where(AvansFarkli).OrderByDescending(x => Math.Abs(x.AvansFarki))
+            : _sonuc.Kayitlar.Where(r => r.LogoToptanSatisFaturasi != 0 || r.SabAvans != 0);
+
+    private IEnumerable<TcOzet> MakbuzListesi =>
+        _sonuc == null ? Enumerable.Empty<TcOzet>()
+        : _sadeceFarklar
+            ? _sonuc.Kayitlar.Where(MakbuzFarkli).OrderByDescending(x => Math.Abs(x.MakbuzFarki))
+            : _sonuc.Kayitlar.Where(r => r.LogoMustahsilMakbuzu != 0 || r.SabMakbuz != 0);
+
+    private IEnumerable<TcOzet> VirmanListesi =>
+        _sonuc == null ? Enumerable.Empty<TcOzet>()
+        : _sadeceFarklar
+            ? _sonuc.Kayitlar.Where(VirmanFarkli).OrderByDescending(x => Math.Abs(x.VirmanBorcFarki) + Math.Abs(x.VirmanAlacakFarki))
+            : _sonuc.Kayitlar.Where(r => r.LogoVirmanBorc != 0 || r.SabCariBorc != 0 || r.LogoVirmanAlacak != 0 || r.SabCariAlacak != 0);
+
+    private int AvansFarkliSayisi => _sonuc?.Kayitlar.Count(AvansFarkli) ?? 0;
+    private int MakbuzFarkliSayisi => _sonuc?.Kayitlar.Count(MakbuzFarkli) ?? 0;
+    private int VirmanFarkliSayisi => _sonuc?.Kayitlar.Count(VirmanFarkli) ?? 0;
+
+    private string FarkStyle(decimal fark, decimal tolerans = 0.01m) =>
+        Math.Abs(fark) <= tolerans
+            ? "text-align:right"
+            : "text-align:right; color:#c62828; font-weight:600";
+
+    private async Task HesaplaAsync()
+    {
+        if (_baslangic == null || _bitis == null)
+        {
+            Snackbar.Add("Başlangıç ve bitiş tarihi seçin.", Severity.Warning);
+            return;
+        }
+        _yukleniyor = true;
+        try
+        {
+            _sonuc = await Karsilastirma.KarsilastirAsync(_baslangic.Value, _bitis.Value, _kampanyaYili.ToString());
+            if (_sonuc.Hata != null)
+                Snackbar.Add(_sonuc.Hata, Severity.Error);
+            else
+            {
+                var farkli = _sonuc.Kayitlar.Count(r => !r.Eslesiyor);
+                Snackbar.Add(farkli == 0
+                    ? $"{_sonuc.Kayitlar.Count} TC tamamen eşleşiyor."
+                    : $"{farkli} TC'de fark tespit edildi ({_sonuc.Kayitlar.Count} TC toplam).",
+                    farkli == 0 ? Severity.Success : Severity.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Hata: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _yukleniyor = false;
+        }
+    }
+}
