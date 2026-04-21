@@ -5,180 +5,382 @@
 @inject ISnackbar Snackbar
 @inject IDialogService Dialog
 
-<PageTitle>Belge Tipleri</PageTitle>
+<PageTitle>Kategori ve Belge Tipleri</PageTitle>
 
 <MudText Typo="Typo.h4" Class="mb-4">
     <MudIcon Icon="@Icons.Material.Filled.Description" Class="mr-2" />
-    Belge Tipleri
+    Kategori ve Belge Tipleri
 </MudText>
 
-<MudPaper Class="pa-4 mb-4">
-    <MudText Typo="Typo.subtitle1" Class="mb-2">Yeni Belge Tipi Ekle</MudText>
-    <MudGrid>
-        <MudItem xs="12" md="6">
-            <MudTextField @bind-Value="_yeniAd" Label="Belge Tipi Adı" Placeholder="Örn: Kapasite Raporu" Variant="Variant.Outlined" />
-        </MudItem>
-        <MudItem xs="12" md="4">
-            <MudSelect T="BelgeKategorisi" @bind-Value="_yeniKategori" Label="Kategori" Variant="Variant.Outlined">
-                <MudSelectItem Value="BelgeKategorisi.Tesis">Tesis</MudSelectItem>
-                <MudSelectItem Value="BelgeKategorisi.Mustahsil">Müstahsil</MudSelectItem>
-            </MudSelect>
-        </MudItem>
-        <MudItem xs="12" md="2" Class="d-flex align-center">
-            <MudButton Color="Color.Primary" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Add"
-                       OnClick="Ekle">Ekle</MudButton>
-        </MudItem>
-    </MudGrid>
-</MudPaper>
+<MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-4">
 
-<MudPaper Class="pa-4 mb-4">
-    <MudGrid>
-        <MudItem xs="12" md="4">
-            <MudSelect T="BelgeKategorisi?" @bind-Value="_filtreKategori" Label="Kategori Filtresi"
-                       Variant="Variant.Outlined" Margin="Margin.Dense">
-                <MudSelectItem T="BelgeKategorisi?" Value="@((BelgeKategorisi?)null)">Hepsi</MudSelectItem>
-                <MudSelectItem T="BelgeKategorisi?" Value="@((BelgeKategorisi?)BelgeKategorisi.Tesis)">Tesis</MudSelectItem>
-                <MudSelectItem T="BelgeKategorisi?" Value="@((BelgeKategorisi?)BelgeKategorisi.Mustahsil)">Müstahsil</MudSelectItem>
-            </MudSelect>
-        </MudItem>
-    </MudGrid>
-</MudPaper>
-
-<MudPaper Class="pa-4">
-    <MudTable Items="Filtrelenmis" Dense="true" Hover="true" Bordered="true" Striped="true"
-              Loading="_yukleniyor" LoadingProgressColor="Color.Info">
-        <HeaderContent>
-            <MudTh>Belge Tipi</MudTh>
-            <MudTh>Kategori</MudTh>
-            <MudTh>Durum</MudTh>
-            <MudTh>Oluşturma</MudTh>
-            <MudTh Style="width:200px">İşlemler</MudTh>
-        </HeaderContent>
-        <RowTemplate>
-            <MudTd>
-                @if (_duzenlenenId == context.Id)
-                {
-                    <MudTextField @bind-Value="_duzenAd" Variant="Variant.Outlined" Margin="Margin.Dense" />
-                }
-                else
-                {
-                    @context.Ad
-                }
-            </MudTd>
-            <MudTd>
-                @if (_duzenlenenId == context.Id)
-                {
-                    <MudSelect T="BelgeKategorisi" @bind-Value="_duzenKategori" Variant="Variant.Outlined" Margin="Margin.Dense">
+    @* ========== KATEGORİLER ========== *@
+    <MudTabPanel Text="Kategoriler" Icon="@Icons.Material.Filled.Category">
+        <MudPaper Class="pa-4 mb-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Yeni Kategori Ekle</MudText>
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_k_yeniAd" Label="Kategori Adı"
+                                  Placeholder="Örn: Tarım Kredi Faturaları" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudSelect T="BelgeKategorisi" @bind-Value="_k_yeniTur" Label="Tür" Variant="Variant.Outlined">
                         <MudSelectItem Value="BelgeKategorisi.Tesis">Tesis</MudSelectItem>
                         <MudSelectItem Value="BelgeKategorisi.Mustahsil">Müstahsil</MudSelectItem>
+                        <MudSelectItem Value="BelgeKategorisi.Genel">Genel (Firma/Fatura)</MudSelectItem>
                     </MudSelect>
-                }
-                else
+                </MudItem>
+                <MudItem xs="12" md="2" Class="d-flex align-center">
+                    <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                               StartIcon="@Icons.Material.Filled.Add" OnClick="KategoriEkle">Ekle</MudButton>
+                </MudItem>
+            </MudGrid>
+            <MudText Typo="Typo.caption" Class="mt-2" Style="color:#666">
+                Tür, kategoriye ait evrakın formunu belirler: <b>Tesis</b> (tesise bağlı),
+                <b>Müstahsil</b> (üreticiye bağlı), <b>Genel</b> (firma + fatura no + tutar).
+            </MudText>
+        </MudPaper>
+
+        <MudPaper Class="pa-4">
+            <MudTable Items="_kategoriler" Dense="true" Hover="true" Bordered="true" Striped="true">
+                <HeaderContent>
+                    <MudTh>Kategori Adı</MudTh>
+                    <MudTh>Tür</MudTh>
+                    <MudTh>Durum</MudTh>
+                    <MudTh>Oluşturma</MudTh>
+                    <MudTh Style="width:200px">İşlemler</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>
+                        @if (_k_duzenId == context.Id)
+                        {
+                            <MudTextField @bind-Value="_k_duzenAd" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        }
+                        else
+                        {
+                            @context.Ad
+                        }
+                    </MudTd>
+                    <MudTd>
+                        @if (_k_duzenId == context.Id)
+                        {
+                            <MudSelect T="BelgeKategorisi" @bind-Value="_k_duzenTur"
+                                       Variant="Variant.Outlined" Margin="Margin.Dense">
+                                <MudSelectItem Value="BelgeKategorisi.Tesis">Tesis</MudSelectItem>
+                                <MudSelectItem Value="BelgeKategorisi.Mustahsil">Müstahsil</MudSelectItem>
+                                <MudSelectItem Value="BelgeKategorisi.Genel">Genel</MudSelectItem>
+                            </MudSelect>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Size="Size.Small"
+                                     Color="@(context.Tur == BelgeKategorisi.Tesis ? Color.Info :
+                                              context.Tur == BelgeKategorisi.Mustahsil ? Color.Warning : Color.Success)">
+                                @TurAdi(context.Tur)
+                            </MudChip>
+                        }
+                    </MudTd>
+                    <MudTd>
+                        @if (context.Aktif)
+                        {
+                            <MudChip T="string" Color="Color.Success" Size="Size.Small">Aktif</MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Color="Color.Default" Size="Size.Small">Pasif</MudChip>
+                        }
+                    </MudTd>
+                    <MudTd>@context.OlusturmaTarihi.ToString("dd.MM.yyyy")</MudTd>
+                    <MudTd>
+                        @if (_k_duzenId == context.Id)
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.Save" Color="Color.Success" Size="Size.Small"
+                                           OnClick="() => KategoriKaydet(context)" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                                           OnClick="() => _k_duzenId = 0" />
+                        }
+                        else
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Primary" Size="Size.Small"
+                                           OnClick="() => KategoriDuzenle(context)" />
+                            <MudIconButton Icon="@(context.Aktif ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                                           Size="Size.Small"
+                                           OnClick="() => KategoriAktifDegistir(context)" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
+                                           OnClick="() => KategoriSil(context)" />
+                        }
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <MudText>Henüz kategori eklenmemiş.</MudText>
+                </NoRecordsContent>
+            </MudTable>
+        </MudPaper>
+    </MudTabPanel>
+
+    @* ========== BELGE TİPLERİ ========== *@
+    <MudTabPanel Text="Belge Tipleri" Icon="@Icons.Material.Filled.Description">
+        <MudPaper Class="pa-4 mb-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Yeni Belge Tipi Ekle</MudText>
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_bt_yeniAd" Label="Belge Tipi Adı"
+                                  Placeholder="Örn: Kapasite Raporu" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudSelect T="int" @bind-Value="_bt_yeniKategoriId" Label="Kategori" Variant="Variant.Outlined">
+                        @foreach (var k in _kategoriler.Where(x => x.Aktif))
+                        {
+                            <MudSelectItem Value="k.Id">@k.Ad (@TurAdi(k.Tur))</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="2" Class="d-flex align-center">
+                    <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                               StartIcon="@Icons.Material.Filled.Add" OnClick="BelgeTipiEkle">Ekle</MudButton>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        <MudPaper Class="pa-4 mb-4">
+            <MudSelect T="int?" @bind-Value="_bt_filtreKategoriId" Label="Kategori Filtresi"
+                       Variant="Variant.Outlined" Margin="Margin.Dense">
+                <MudSelectItem T="int?" Value="@((int?)null)">Hepsi</MudSelectItem>
+                @foreach (var k in _kategoriler)
                 {
-                    <MudChip T="string" Color="@(context.Kategori == BelgeKategorisi.Tesis ? Color.Info : Color.Warning)" Size="Size.Small">
-                        @(context.Kategori == BelgeKategorisi.Tesis ? "Tesis" : "Müstahsil")
-                    </MudChip>
+                    <MudSelectItem T="int?" Value="@((int?)k.Id)">@k.Ad (@TurAdi(k.Tur))</MudSelectItem>
                 }
-            </MudTd>
-            <MudTd>
-                @if (context.Aktif)
-                {
-                    <MudChip T="string" Color="Color.Success" Size="Size.Small">Aktif</MudChip>
-                }
-                else
-                {
-                    <MudChip T="string" Color="Color.Default" Size="Size.Small">Pasif</MudChip>
-                }
-            </MudTd>
-            <MudTd>@context.OlusturmaTarihi.ToString("dd.MM.yyyy")</MudTd>
-            <MudTd>
-                @if (_duzenlenenId == context.Id)
-                {
-                    <MudIconButton Icon="@Icons.Material.Filled.Save" Color="Color.Success" Size="Size.Small"
-                                   OnClick="() => Kaydet(context)" />
-                    <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
-                                   OnClick="() => _duzenlenenId = 0" />
-                }
-                else
-                {
-                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Primary" Size="Size.Small"
-                                   OnClick="() => Duzenle(context)" />
-                    <MudIconButton Icon="@(context.Aktif ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
-                                   Size="Size.Small"
-                                   OnClick="() => AktifDegistir(context)" />
-                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
-                                   OnClick="() => Sil(context)" />
-                }
-            </MudTd>
-        </RowTemplate>
-        <NoRecordsContent>
-            <MudText>Henüz belge tipi eklenmemiş.</MudText>
-        </NoRecordsContent>
-    </MudTable>
-</MudPaper>
+            </MudSelect>
+        </MudPaper>
+
+        <MudPaper Class="pa-4">
+            <MudTable Items="FiltrelenmisBelgeTipleri" Dense="true" Hover="true" Bordered="true" Striped="true">
+                <HeaderContent>
+                    <MudTh>Belge Tipi</MudTh>
+                    <MudTh>Kategori</MudTh>
+                    <MudTh>Durum</MudTh>
+                    <MudTh>Oluşturma</MudTh>
+                    <MudTh Style="width:200px">İşlemler</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>
+                        @if (_bt_duzenId == context.Id)
+                        {
+                            <MudTextField @bind-Value="_bt_duzenAd" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        }
+                        else
+                        {
+                            @context.Ad
+                        }
+                    </MudTd>
+                    <MudTd>
+                        @if (_bt_duzenId == context.Id)
+                        {
+                            <MudSelect T="int" @bind-Value="_bt_duzenKategoriId"
+                                       Variant="Variant.Outlined" Margin="Margin.Dense">
+                                @foreach (var k in _kategoriler.Where(x => x.Aktif))
+                                {
+                                    <MudSelectItem Value="k.Id">@k.Ad (@TurAdi(k.Tur))</MudSelectItem>
+                                }
+                            </MudSelect>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Size="Size.Small"
+                                     Color="@(context.KategoriTuru == BelgeKategorisi.Tesis ? Color.Info :
+                                              context.KategoriTuru == BelgeKategorisi.Mustahsil ? Color.Warning : Color.Success)">
+                                @context.KategoriAdi
+                            </MudChip>
+                        }
+                    </MudTd>
+                    <MudTd>
+                        @if (context.Aktif)
+                        {
+                            <MudChip T="string" Color="Color.Success" Size="Size.Small">Aktif</MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Color="Color.Default" Size="Size.Small">Pasif</MudChip>
+                        }
+                    </MudTd>
+                    <MudTd>@context.OlusturmaTarihi.ToString("dd.MM.yyyy")</MudTd>
+                    <MudTd>
+                        @if (_bt_duzenId == context.Id)
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.Save" Color="Color.Success" Size="Size.Small"
+                                           OnClick="() => BelgeTipiKaydet(context)" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                                           OnClick="() => _bt_duzenId = 0" />
+                        }
+                        else
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Primary" Size="Size.Small"
+                                           OnClick="() => BelgeTipiDuzenle(context)" />
+                            <MudIconButton Icon="@(context.Aktif ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                                           Size="Size.Small"
+                                           OnClick="() => BelgeTipiAktifDegistir(context)" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
+                                           OnClick="() => BelgeTipiSil(context)" />
+                        }
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <MudText>Henüz belge tipi eklenmemiş.</MudText>
+                </NoRecordsContent>
+            </MudTable>
+        </MudPaper>
+    </MudTabPanel>
+</MudTabs>
 
 @code {
-    private List<BelgeTipi> _liste = new();
-    private string _yeniAd = "";
-    private BelgeKategorisi _yeniKategori = BelgeKategorisi.Tesis;
-    private BelgeKategorisi? _filtreKategori = null;
-    private int _duzenlenenId = 0;
-    private string _duzenAd = "";
-    private BelgeKategorisi _duzenKategori = BelgeKategorisi.Tesis;
-    private bool _yukleniyor = false;
+    private List<BelgeKategori> _kategoriler = new();
+    private List<BelgeTipi> _belgeTipleri = new();
 
-    private IEnumerable<BelgeTipi> Filtrelenmis =>
-        _filtreKategori == null ? _liste : _liste.Where(x => x.Kategori == _filtreKategori);
+    // Kategori formu
+    private string _k_yeniAd = "";
+    private BelgeKategorisi _k_yeniTur = BelgeKategorisi.Genel;
+    private int _k_duzenId = 0;
+    private string _k_duzenAd = "";
+    private BelgeKategorisi _k_duzenTur = BelgeKategorisi.Genel;
 
-    protected override void OnInitialized() => Yukle();
+    // Belge tipi formu
+    private string _bt_yeniAd = "";
+    private int _bt_yeniKategoriId;
+    private int? _bt_filtreKategoriId = null;
+    private int _bt_duzenId = 0;
+    private string _bt_duzenAd = "";
+    private int _bt_duzenKategoriId;
 
-    private void Yukle()
+    private IEnumerable<BelgeTipi> FiltrelenmisBelgeTipleri =>
+        _bt_filtreKategoriId == null
+            ? _belgeTipleri
+            : _belgeTipleri.Where(x => x.KategoriId == _bt_filtreKategoriId);
+
+    protected override void OnInitialized() => YukleTumu();
+
+    private void YukleTumu()
     {
-        _yukleniyor = true;
-        _liste = Arsiv.BelgeTipiListesi();
-        _yukleniyor = false;
+        _kategoriler  = Arsiv.BelgeKategoriListesi();
+        _belgeTipleri = Arsiv.BelgeTipiListesi();
+        if (_bt_yeniKategoriId <= 0 && _kategoriler.Count > 0)
+            _bt_yeniKategoriId = _kategoriler.First(x => x.Aktif).Id;
     }
 
-    private void Ekle()
+    private static string TurAdi(BelgeKategorisi t) => t switch
     {
-        if (string.IsNullOrWhiteSpace(_yeniAd))
+        BelgeKategorisi.Tesis     => "Tesis",
+        BelgeKategorisi.Mustahsil => "Müstahsil",
+        BelgeKategorisi.Genel     => "Genel",
+        _ => "?"
+    };
+
+    // ===== Kategori işlemleri =====
+
+    private void KategoriEkle()
+    {
+        if (string.IsNullOrWhiteSpace(_k_yeniAd))
         {
-            Snackbar.Add("Belge tipi adı boş olamaz.", Severity.Warning);
+            Snackbar.Add("Kategori adı boş olamaz.", Severity.Warning);
             return;
         }
-        Arsiv.BelgeTipiEkle(_yeniAd.Trim(), _yeniKategori);
-        _yeniAd = "";
-        Yukle();
-        Snackbar.Add("Belge tipi eklendi.", Severity.Success);
+        Arsiv.BelgeKategoriEkle(_k_yeniAd.Trim(), _k_yeniTur);
+        _k_yeniAd = "";
+        YukleTumu();
+        Snackbar.Add("Kategori eklendi.", Severity.Success);
     }
 
-    private void Duzenle(BelgeTipi b)
+    private void KategoriDuzenle(BelgeKategori k)
     {
-        _duzenlenenId = b.Id;
-        _duzenAd = b.Ad;
-        _duzenKategori = b.Kategori;
+        _k_duzenId = k.Id;
+        _k_duzenAd = k.Ad;
+        _k_duzenTur = k.Tur;
     }
 
-    private void Kaydet(BelgeTipi b)
+    private void KategoriKaydet(BelgeKategori k)
     {
-        if (string.IsNullOrWhiteSpace(_duzenAd))
+        if (string.IsNullOrWhiteSpace(_k_duzenAd))
         {
-            Snackbar.Add("Belge tipi adı boş olamaz.", Severity.Warning);
+            Snackbar.Add("Kategori adı boş olamaz.", Severity.Warning);
             return;
         }
-        Arsiv.BelgeTipiGuncelle(b.Id, _duzenAd.Trim(), _duzenKategori, b.Aktif);
-        _duzenlenenId = 0;
-        Yukle();
+        Arsiv.BelgeKategoriGuncelle(k.Id, _k_duzenAd.Trim(), _k_duzenTur, k.Aktif);
+        _k_duzenId = 0;
+        YukleTumu();
         Snackbar.Add("Güncellendi.", Severity.Success);
     }
 
-    private void AktifDegistir(BelgeTipi b)
+    private void KategoriAktifDegistir(BelgeKategori k)
     {
-        Arsiv.BelgeTipiGuncelle(b.Id, b.Ad, b.Kategori, !b.Aktif);
-        Yukle();
+        Arsiv.BelgeKategoriGuncelle(k.Id, k.Ad, k.Tur, !k.Aktif);
+        YukleTumu();
     }
 
-    private async Task Sil(BelgeTipi b)
+    private async Task KategoriSil(BelgeKategori k)
+    {
+        var onay = await Dialog.ShowMessageBox(
+            "Silme Onayı",
+            $"\"{k.Ad}\" kategorisi silinsin mi? Altındaki belge tipleri varsa işlem engellenir.",
+            yesText: "Sil", cancelText: "İptal");
+        if (onay != true) return;
+        try
+        {
+            Arsiv.BelgeKategoriSil(k.Id);
+            YukleTumu();
+            Snackbar.Add("Kategori silindi.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    // ===== Belge tipi işlemleri =====
+
+    private void BelgeTipiEkle()
+    {
+        if (string.IsNullOrWhiteSpace(_bt_yeniAd))
+        {
+            Snackbar.Add("Belge tipi adı boş olamaz.", Severity.Warning);
+            return;
+        }
+        if (_bt_yeniKategoriId <= 0)
+        {
+            Snackbar.Add("Önce kategori seçin.", Severity.Warning);
+            return;
+        }
+        Arsiv.BelgeTipiEkle(_bt_yeniAd.Trim(), _bt_yeniKategoriId);
+        _bt_yeniAd = "";
+        YukleTumu();
+        Snackbar.Add("Belge tipi eklendi.", Severity.Success);
+    }
+
+    private void BelgeTipiDuzenle(BelgeTipi b)
+    {
+        _bt_duzenId = b.Id;
+        _bt_duzenAd = b.Ad;
+        _bt_duzenKategoriId = b.KategoriId;
+    }
+
+    private void BelgeTipiKaydet(BelgeTipi b)
+    {
+        if (string.IsNullOrWhiteSpace(_bt_duzenAd))
+        {
+            Snackbar.Add("Belge tipi adı boş olamaz.", Severity.Warning);
+            return;
+        }
+        Arsiv.BelgeTipiGuncelle(b.Id, _bt_duzenAd.Trim(), _bt_duzenKategoriId, b.Aktif);
+        _bt_duzenId = 0;
+        YukleTumu();
+        Snackbar.Add("Güncellendi.", Severity.Success);
+    }
+
+    private void BelgeTipiAktifDegistir(BelgeTipi b)
+    {
+        Arsiv.BelgeTipiGuncelle(b.Id, b.Ad, b.KategoriId, !b.Aktif);
+        YukleTumu();
+    }
+
+    private async Task BelgeTipiSil(BelgeTipi b)
     {
         var onay = await Dialog.ShowMessageBox(
             "Silme Onayı",
@@ -186,7 +388,7 @@
             yesText: "Sil", cancelText: "İptal");
         if (onay != true) return;
         Arsiv.BelgeTipiSil(b.Id);
-        Yukle();
+        YukleTumu();
         Snackbar.Add("Silindi.", Severity.Success);
     }
 }

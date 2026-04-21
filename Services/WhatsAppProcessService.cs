@@ -58,16 +58,18 @@ public class WhatsAppProcessService : BackgroundService
         SonHata         = null;
         _kullaniciDurdurdu = false;
 
-        var whatsappKlasor = WhatsAppAyarlariService.WhatsAppKlasor();
+        var kodKlasor  = WhatsAppAyarlariService.WhatsAppKodKlasor();
+        var veriKlasor = WhatsAppAyarlariService.WhatsAppVeriKlasor();
+        Directory.CreateDirectory(veriKlasor);
 
-        if (!Directory.Exists(whatsappKlasor))
+        if (!Directory.Exists(kodKlasor))
         {
-            SonHata = $"WhatsApp klasörü bulunamadı: {whatsappKlasor}";
+            SonHata = $"WhatsApp kod klasörü bulunamadı: {kodKlasor}";
             _logger.LogError(SonHata);
             return;
         }
 
-        var indexJs = Path.Combine(whatsappKlasor, "index.js");
+        var indexJs = Path.Combine(kodKlasor, "index.js");
         if (!File.Exists(indexJs))
         {
             SonHata = "index.js bulunamadı.";
@@ -76,11 +78,11 @@ public class WhatsAppProcessService : BackgroundService
         }
 
         // node_modules yoksa npm install çalıştır
-        var nodeModules = Path.Combine(whatsappKlasor, "node_modules");
+        var nodeModules = Path.Combine(kodKlasor, "node_modules");
         if (!Directory.Exists(nodeModules))
         {
             _logger.LogInformation("node_modules bulunamadi, npm install calistiriliyor...");
-            var npmBasarili = await NpmInstallAsync(whatsappKlasor);
+            var npmBasarili = await NpmInstallAsync(kodKlasor);
             if (!npmBasarili)
             {
                 SonHata = "npm install başarısız. Node.js kurulu mu?";
@@ -100,18 +102,22 @@ public class WhatsAppProcessService : BackgroundService
 
         _logger.LogInformation("WhatsApp botu baslatiliyor: {Node} {Script}", nodeExe, indexJs);
 
+        var psi = new ProcessStartInfo
+        {
+            FileName               = nodeExe,
+            Arguments              = $"\"{indexJs}\"",
+            WorkingDirectory       = kodKlasor,
+            UseShellExecute        = false,
+            CreateNoWindow         = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError  = true
+        };
+        // Node tarafı veri (config, session, log, screenshots) için bu klasörü kullanacak
+        psi.Environment["WHATSAPP_DATA_DIR"] = veriKlasor;
+
         _nodeProcess = new Process
         {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName               = nodeExe,
-                Arguments              = $"\"{indexJs}\"",
-                WorkingDirectory       = whatsappKlasor,
-                UseShellExecute        = false,
-                CreateNoWindow         = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError  = true
-            },
+            StartInfo = psi,
             EnableRaisingEvents = true
         };
 

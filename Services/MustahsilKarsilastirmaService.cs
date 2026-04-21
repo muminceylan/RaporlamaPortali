@@ -37,16 +37,21 @@ public class MustahsilKarsilastirmaService
 
         // Logo + SabNet toplamlarını paralel çek
         // + Diğer yıllara ait SabNet satırlarını çek (2025 gibi) — Logo'da eşleşenleri
-        //   özet hesabından düşmek için kullanılır.
+        //   özet hesabından düşmek için kullanılır (önce cari yıl eşleşmesi denendikten sonra).
         var exclTask = DigerYilExclusionAsync(baslangic, bitis, kampanyaYili, ct);
         var sabAvansTask = SabAvansToplamAsync(baslangic, bitis, kampanyaYili, ct);
         var sabMakbuzTask = SabMakbuzToplamAsync(baslangic, bitis, kampanyaYili, ct);
         var sabCariTask = SabCariToplamAsync(baslangic, bitis, kampanyaYili, ct);
+        var curAvansRowsTask = CurrentYearRowsAvansAsync(baslangic, bitis, kampanyaYili, ct);
+        var curMakbuzRowsTask = CurrentYearRowsMakbuzAsync(baslangic, bitis, kampanyaYili, ct);
+        var curVirmanRowsTask = CurrentYearRowsVirmanAsync(baslangic, bitis, kampanyaYili, ct);
         var ciftciAdTask = CiftciAdMapAsync(ct);
-        await Task.WhenAll(exclTask, sabAvansTask, sabMakbuzTask, sabCariTask, ciftciAdTask);
+        await Task.WhenAll(exclTask, sabAvansTask, sabMakbuzTask, sabCariTask,
+                           curAvansRowsTask, curMakbuzRowsTask, curVirmanRowsTask, ciftciAdTask);
 
         var excl = exclTask.Result;
-        var logo = await LogoToplamAsync(baslangic, bitis, excl, ct);
+        var logo = await LogoToplamAsync(baslangic, bitis, excl,
+            curAvansRowsTask.Result, curMakbuzRowsTask.Result, curVirmanRowsTask.Result, ct);
         var sabAvans = sabAvansTask.Result;
         var sabMakbuz = sabMakbuzTask.Result;
         var sabCari = sabCariTask.Result;
@@ -281,7 +286,76 @@ WHERE ISNULL(TcKimlikNo,'') <> ''
         return false;
     }
 
-    private async Task<Dictionary<string, LogoItem>> LogoToplamAsync(DateTime bas, DateTime bit, DigerYilExcl? excl, CancellationToken ct)
+    // Cari kampanyaya ait SabNet satır tutarları (TC bazında liste).
+    // Logo satırlarını önce BU listeye göre "tüketip" eşleştirmek için kullanılır.
+    private async Task<Dictionary<string, List<decimal>>> CurrentYearRowsAvansAsync(DateTime bas, DateTime bit, string kampanyaYili, CancellationToken ct)
+    {
+        int basSerial = (int)(bas.Date - new DateTime(1900, 1, 1)).TotalDays + 2;
+        int bitSerial = (int)(bit.Date - new DateTime(1900, 1, 1)).TotalDays + 2;
+        const string sql = @"
+SELECT TcKimlikNo = ISNULL(TcKimlikNo,''), Tutar = ISNULL(Tutar,0)
+FROM PMHS_AvansFormu WITH(NOLOCK)
+WHERE FormTarihi >= @bas AND FormTarihi <= @bit
+  AND ISNULL(TcKimlikNo,'') <> ''
+  AND ISNULL(SozlesmeYili,'') = @yil";
+        using var c = _db.CreatePmhsConnection();
+        var rows = await c.QueryAsync<(string TcKimlikNo, decimal Tutar)>(
+            new CommandDefinition(sql, new { bas = basSerial, bit = bitSerial, yil = kampanyaYili }, cancellationToken: ct));
+        var map = new Dictionary<string, List<decimal>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in rows)
+            (map.TryGetValue(r.TcKimlikNo, out var l) ? l : map[r.TcKimlikNo] = new()).Add(r.Tutar);
+        return map;
+    }
+
+    private async Task<Dictionary<string, List<decimal>>> CurrentYearRowsMakbuzAsync(DateTime bas, DateTime bit, string kampanyaYili, CancellationToken ct)
+    {
+        int basSerial = (int)(bas.Date - new DateTime(1900, 1, 1)).TotalDays + 2;
+        int bitSerial = (int)(bit.Date - new DateTime(1900, 1, 1)).TotalDays + 2;
+        const string sql = @"
+SELECT TcKimlikNo = ISNULL(TcKimlikNo,''), Tutar = ISNULL(NetHakedis,0)
+FROM PMHS_MustahsilMakbuzu WITH(NOLOCK)
+WHERE Tarih >= @bas AND Tarih <= @bit
+  AND ISNULL(TcKimlikNo,'') <> ''
+  AND ISNULL(KampanyaYili,'') = @yil";
+        using var c = _db.CreatePmhsConnection();
+        var rows = await c.QueryAsync<(string TcKimlikNo, decimal Tutar)>(
+            new CommandDefinition(sql, new { bas = basSerial, bit = bitSerial, yil = kampanyaYili }, cancellationToken: ct));
+        var map = new Dictionary<string, List<decimal>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in rows)
+            (map.TryGetValue(r.TcKimlikNo, out var l) ? l : map[r.TcKimlikNo] = new()).Add(r.Tutar);
+        return map;
+    }
+
+    private async Task<Dictionary<string, List<decimal>>> CurrentYearRowsVirmanAsync(DateTime bas, DateTime bit, string kampanyaYili, CancellationToken ct)
+    {
+        int basSerial = (int)(bas.Date - new DateTime(1900, 1, 1)).TotalDays + 2;
+        int bitSerial = (int)(bit.Date - new DateTime(1900, 1, 1)).TotalDays + 2;
+        const string sql = @"
+SELECT TcKimlikNo = ISNULL(TcKimlikNo,''),
+       BA = ISNULL(BA,''),
+       Tutar = ISNULL(Tutar,0)
+FROM PMHS_CariHareketler WITH(NOLOCK)
+WHERE Tarih >= @bas AND Tarih <= @bit
+  AND ISNULL(TcKimlikNo,'') <> ''
+  AND ISNULL(SozlesmeYili,'') = @yil";
+        using var c = _db.CreatePmhsConnection();
+        var rows = await c.QueryAsync<(string TcKimlikNo, string BA, decimal Tutar)>(
+            new CommandDefinition(sql, new { bas = basSerial, bit = bitSerial, yil = kampanyaYili }, cancellationToken: ct));
+        var map = new Dictionary<string, List<decimal>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in rows)
+        {
+            decimal imzali = string.Equals(r.BA, "ALACAK", StringComparison.OrdinalIgnoreCase) ? -r.Tutar : r.Tutar;
+            (map.TryGetValue(r.TcKimlikNo, out var l) ? l : map[r.TcKimlikNo] = new()).Add(imzali);
+        }
+        return map;
+    }
+
+    private async Task<Dictionary<string, LogoItem>> LogoToplamAsync(
+        DateTime bas, DateTime bit, DigerYilExcl? excl,
+        Dictionary<string, List<decimal>> curAvans,
+        Dictionary<string, List<decimal>> curMakbuz,
+        Dictionary<string, List<decimal>> curVirman,
+        CancellationToken ct)
     {
         const string sql = @"
 SELECT TcKimlikNo = LTRIM(RTRIM(SUBSTRING(CARI_HESAP_KODU, 2, 11))),
@@ -300,17 +374,34 @@ WHERE TARIH >= @bas AND TARIH < DATEADD(day, 1, @bit)
                 new { bas = bas.Date, bit = bit.Date, ht1 = HT_AVANS, ht2 = HT_MAKBUZ, ht3 = HT_VIRMAN },
                 cancellationToken: ct));
 
+        // Cari yıl listelerini bu metot içinde tüketeceğiz — orijinali bozmamak için derin kopyala
+        static Dictionary<string, List<decimal>> CopyMap(Dictionary<string, List<decimal>> src) =>
+            src.ToDictionary(kv => kv.Key, kv => new List<decimal>(kv.Value), StringComparer.OrdinalIgnoreCase);
+        var avCur = CopyMap(curAvans);
+        var mkCur = CopyMap(curMakbuz);
+        var vrCur = CopyMap(curVirman);
+
         var map = new Dictionary<string, (decimal tsf, decimal mm, decimal vb, decimal va, int adet, string ad)>(StringComparer.OrdinalIgnoreCase);
         foreach (var r in rows)
         {
             if (string.IsNullOrWhiteSpace(r.TcKimlikNo) || r.TcKimlikNo.Length < 10) continue;
 
-            // Diğer yıl kampanyasına ait (SabNet'te SozlesmeYili != @yil) satırları Logo'dan düş
-            if (excl != null)
+            bool isAvans = string.Equals(r.HAREKET_TURU, HT_AVANS, StringComparison.OrdinalIgnoreCase);
+            bool isMakbuz = string.Equals(r.HAREKET_TURU, HT_MAKBUZ, StringComparison.OrdinalIgnoreCase);
+            bool isVirman = string.Equals(r.HAREKET_TURU, HT_VIRMAN, StringComparison.OrdinalIgnoreCase);
+
+            // 1) Önce cari yıl SabNet satırıyla eşleş (varsa). Eşleştiyse Logo'da kalır.
+            bool currentMatched = false;
+            if (isAvans) currentMatched = TryExclude(avCur, r.TcKimlikNo, r.Tutar);
+            else if (isMakbuz) currentMatched = TryExclude(mkCur, r.TcKimlikNo, r.Tutar);
+            else if (isVirman) currentMatched = TryExclude(vrCur, r.TcKimlikNo, r.Tutar);
+
+            // 2) Cari yılla eşleşmediyse, diğer yıl SabNet satırına denk geliyor mu? — varsa Logo'dan düş
+            if (!currentMatched && excl != null)
             {
-                if (string.Equals(r.HAREKET_TURU, HT_AVANS, StringComparison.OrdinalIgnoreCase) && TryExclude(excl.Avans, r.TcKimlikNo, r.Tutar)) continue;
-                if (string.Equals(r.HAREKET_TURU, HT_MAKBUZ, StringComparison.OrdinalIgnoreCase) && TryExclude(excl.Makbuz, r.TcKimlikNo, r.Tutar)) continue;
-                if (string.Equals(r.HAREKET_TURU, HT_VIRMAN, StringComparison.OrdinalIgnoreCase) && TryExclude(excl.Virman, r.TcKimlikNo, r.Tutar)) continue;
+                if (isAvans && TryExclude(excl.Avans, r.TcKimlikNo, r.Tutar)) continue;
+                if (isMakbuz && TryExclude(excl.Makbuz, r.TcKimlikNo, r.Tutar)) continue;
+                if (isVirman && TryExclude(excl.Virman, r.TcKimlikNo, r.Tutar)) continue;
             }
 
             if (!map.TryGetValue(r.TcKimlikNo, out var v))
@@ -318,11 +409,9 @@ WHERE TARIH >= @bas AND TARIH < DATEADD(day, 1, @bit)
             else if (string.IsNullOrWhiteSpace(v.ad))
                 v.ad = r.Unvan;
 
-            if (string.Equals(r.HAREKET_TURU, HT_AVANS, StringComparison.OrdinalIgnoreCase))
-                v.tsf += r.Tutar;
-            else if (string.Equals(r.HAREKET_TURU, HT_MAKBUZ, StringComparison.OrdinalIgnoreCase))
-                v.mm += r.Tutar;
-            else if (string.Equals(r.HAREKET_TURU, HT_VIRMAN, StringComparison.OrdinalIgnoreCase))
+            if (isAvans) v.tsf += r.Tutar;
+            else if (isMakbuz) v.mm += r.Tutar;
+            else if (isVirman)
             {
                 if (r.Tutar >= 0) v.vb += r.Tutar;
                 else v.va += Math.Abs(r.Tutar);
@@ -364,22 +453,36 @@ WHERE TARIH >= @bas AND TARIH < DATEADD(day, 1, @bit)
         var logoByCat = await LogoSatirlarByCategoryAsync(tc, bas, bit, ct);
         var excl = exclTask.Result;
 
-        // Diğer yıl kampanyasına ait Logo satırlarını detay gösteriminden de düş
-        static List<LogoSatir> FilterExcl(List<LogoSatir> list, Dictionary<string, List<decimal>> set, string tc) =>
-            list.Where(l => !TryExclude(set, tc, l.Tutar)).ToList();
+        // Her kategori için TC'nin diğer yıl exclusion listesini (varsa) kopyala — Eslestir bunu tüketecek
+        static List<decimal>? TcList(Dictionary<string, List<decimal>> map, string tc) =>
+            map.TryGetValue(tc, out var l) ? new List<decimal>(l) : null;
 
-        detay.Avans = Eslestir(FilterExcl(logoByCat.Avans, excl.Avans, tc), avansTask.Result);
-        detay.Makbuz = Eslestir(FilterExcl(logoByCat.Makbuz, excl.Makbuz, tc), makbuzTask.Result);
-        detay.Virman = Eslestir(FilterExcl(logoByCat.Virman, excl.Virman, tc), cariTask.Result);
+        detay.Avans  = Eslestir(logoByCat.Avans,  avansTask.Result,  TcList(excl.Avans,  tc));
+        detay.Makbuz = Eslestir(logoByCat.Makbuz, makbuzTask.Result, TcList(excl.Makbuz, tc));
+        detay.Virman = Eslestir(logoByCat.Virman, cariTask.Result,   TcList(excl.Virman, tc));
         return detay;
     }
 
-    private List<MustahsilDetayEslesme> Eslestir(List<LogoSatir> logo, List<SabSatir> sab)
+    private static bool TryExcludeList(List<decimal>? list, decimal tutar)
+    {
+        if (list == null) return false;
+        for (int i = 0; i < list.Count; i++)
+        {
+            if (Math.Abs(list[i] - tutar) < EslesmeToleransi)
+            {
+                list.RemoveAt(i);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private List<MustahsilDetayEslesme> Eslestir(List<LogoSatir> logo, List<SabSatir> sab, List<decimal>? excl)
     {
         var sonuc = new List<MustahsilDetayEslesme>();
         var kullanilan = new bool[sab.Count];
 
-        // Logo'yu dolaş — her biri için SabNet'te eşleşen tutarı greedy bul
+        // Logo'yu dolaş — önce cari yıl SabNet satırına eşleşmeye çalış, değilse diğer yıl exclusion'a bak
         foreach (var l in logo)
         {
             int idx = -1;
@@ -407,18 +510,22 @@ WHERE TARIH >= @bas AND TARIH < DATEADD(day, 1, @bit)
                     SabNetAciklama = sab[idx].Aciklama,
                     Durum = "EŞLEŞTİ"
                 });
+                continue;
             }
-            else
+
+            // Cari yıl eşleşmedi — diğer yıl (excl) listesinde var mı? Varsa bu Logo satırı
+            // diğer kampanyaya ait kabul edilir ve gösterimden sessizce düşer.
+            if (TryExcludeList(excl, l.Tutar))
+                continue;
+
+            sonuc.Add(new MustahsilDetayEslesme
             {
-                sonuc.Add(new MustahsilDetayEslesme
-                {
-                    LogoTarihi = l.Tarih,
-                    LogoIslemNo = l.IslemNo,
-                    LogoBelgeNo = l.BelgeNo,
-                    LogoTutar = l.Tutar,
-                    Durum = "SABNET'TE YOK"
-                });
-            }
+                LogoTarihi = l.Tarih,
+                LogoIslemNo = l.IslemNo,
+                LogoBelgeNo = l.BelgeNo,
+                LogoTutar = l.Tutar,
+                Durum = "SABNET'TE YOK"
+            });
         }
 
         // Kullanılmamış SabNet satırları

@@ -40,6 +40,7 @@ public class LogoIslemleriService
         FisTuruMap.TryGetValue(trcode, out var v) ? v : $"Fiş Türü {trcode}";
 
     // Logo Tiger CLFLINE.TRCODE → insan okunabilir fiş türü (Cari Hesap Fiş Satırı)
+    // Tiger 3 standart eşleme — DOGUSNDB (Firma 211) gerçek kayıtlarıyla doğrulandı.
     private static readonly Dictionary<int, string> ClfFisTuruMap = new()
     {
         { 1,  "Nakit Tahsilat" },
@@ -47,30 +48,40 @@ public class LogoIslemleriService
         { 3,  "Borç Dekontu" },
         { 4,  "Alacak Dekontu" },
         { 5,  "Virman Fişi" },
-        { 6,  "Kur Farkı Fişi" },
+        { 6,  "Kur Farkı İşlem Fişi" },
         { 12, "Özel İşlem Fişi (Borç)" },
         { 13, "Özel İşlem Fişi (Alacak)" },
         { 14, "Açılış Fişi" },
         { 20, "Kredi Kartı İşlem Fişi" },
+        { 21, "Gönderilen Havaleler" },
+        { 22, "Gelen Havaleler" },
         { 24, "Krediden Ödeme" },
-        { 31, "Verilen Vade Farkı Fat." },
-        { 32, "Alınan Vade Farkı Fat." },
-        { 33, "Kur Farkı Fişi" },
-        { 34, "Yansıtma Fişi" },
+        { 31, "Satınalma Faturası" },
+        { 32, "Perakende Satış İade Faturası" },
+        { 33, "Toptan Satış İade Faturası" },
+        { 34, "Alınan Hizmet Faturası" },
+        { 35, "Alınan Proforma Fatura" },
         { 36, "Mahsup Fişi" },
-        { 37, "Satış Faturası" },
+        { 37, "Perakende Satış Faturası" },
         { 38, "Toptan Satış Faturası" },
         { 39, "Verilen Hizmet Faturası" },
-        { 41, "Müşteri Çek/Senet" },
-        { 42, "Kendi Çekimiz" },
-        { 43, "Müşteri Senedi" },
-        { 44, "Borç Senedi" },
-        { 45, "Müşteri Çeki İade" },
-        { 46, "Kendi Çekimiz İade" },
-        { 47, "Müşteri Senedi İade" },
-        { 48, "Borç Senedi İade" },
-        { 61, "Banka Fişi" },
+        { 40, "Verilen Proforma Fatura" },
+        { 41, "Verilen Vade Farkı Faturası" },
+        { 42, "Alınan Vade Farkı Faturası" },
+        { 43, "Alınan Fiyat Farkı Faturası" },
+        { 44, "Verilen Fiyat Farkı Faturası" },
+        { 45, "Müstahsil Makbuzu" },
+        { 50, "Müstahsil Makbuzu" },
+        { 56, "Kur Farkı Fişi" },
+        { 61, "Banka Alınan Fatura" },
+        { 62, "Banka Verilen Fatura" },
+        { 63, "Çek Çıkış (Cari Hesaba)" },
+        { 64, "Senet Çıkış (Cari Hesaba)" },
+        { 65, "Çek Giriş (Müşteriden)" },
+        { 66, "Senet Giriş (Müşteriden)" },
         { 70, "Kredi Kartı Fişi" },
+        { 71, "Kredi Kartı İade Fişi" },
+        { 72, "Yansıtma Fişi" },
     };
 
     public static string ClfFisTuruAdi(int trcode) =>
@@ -421,11 +432,11 @@ LEFT JOIN {invTbl} INV  WITH(NOLOCK) ON F.MODULENR = 4 AND F.SOURCEFREF = INV.LO
 LEFT JOIN {cfiTbl} CLFI WITH(NOLOCK) ON F.MODULENR = 5 AND F.SOURCEFREF = CLFI.LOGICALREF
 LEFT JOIN L_CURRENCYLIST CL WITH(NOLOCK) ON CL.FIRMNR = @firma AND CL.CURTYPE = F.TRCURR
 LEFT JOIN (
-    SELECT MODULENR, SOURCEFREF, CLIENTREF, MIN(DATE_) AS VADE
+    SELECT MODULENR, FICHEREF, CARDREF, MIN(DATE_) AS VADE
     FROM {ptTbl} WITH(NOLOCK)
     WHERE ISNULL(CANCELLED,0) = 0
-    GROUP BY MODULENR, SOURCEFREF, CLIENTREF
-) PT ON PT.MODULENR = F.MODULENR AND PT.SOURCEFREF = F.SOURCEFREF AND PT.CLIENTREF = F.CLIENTREF
+    GROUP BY MODULENR, FICHEREF, CARDREF
+) PT ON PT.MODULENR = F.MODULENR AND PT.FICHEREF = F.SOURCEFREF AND PT.CARDREF = F.CLIENTREF
 WHERE F.CANCELLED = 0
   AND F.CLIENTREF <> 0
   AND F.DATE_ BETWEEN @bas AND @bit
@@ -790,13 +801,16 @@ ORDER BY EDATE DESC";
             int guard = 0;
             while (t.KalanTl > 0.005m && guard++ < 1000)
             {
-                var fat = faturalar.FirstOrDefault(f => f.KalanTl > 0.005m);
+                // Sadece tahsilat ile AYNI döviz cinsindeki faturalar mahsup edilir
+                // (Logo'nun davranışı bu şekilde — farklı dövizler çapraz mahsuplaştırılmaz)
+                var fat = faturalar.FirstOrDefault(f =>
+                    f.KalanTl > 0.005m && f.TrCurr == t.Hareket.TrCurr);
                 if (fat == null) break;
 
                 decimal mahsupTl, mahsupFc = 0, kurFarki = 0, kullanilanKur = 0;
                 string tip, aciklama;
 
-                if (t.Hareket.TrCurr == 0 && fat.TrCurr == 0)
+                if (t.Hareket.TrCurr == 0)
                 {
                     // TL → TL
                     mahsupTl = Math.Min(t.KalanTl, fat.KalanTl);
@@ -805,24 +819,7 @@ ORDER BY EDATE DESC";
                     tip = "TL → TL";
                     aciklama = "Direkt mahsup (kur farkı yok)";
                 }
-                else if (t.Hareket.TrCurr == 0 && fat.TrCurr != 0)
-                {
-                    // TL tahsilat → Döviz fatura
-                    var tahsilatKuru = await KurAl(fat.TrCurr, t.Hareket.Tarih);
-                    if (tahsilatKuru <= 0) break;
-                    var mahsupEdilebilirFc = Math.Min(t.KalanTl / tahsilatKuru, fat.KalanFc);
-                    if (mahsupEdilebilirFc <= 0.005m) break;
-                    mahsupFc = Math.Round(mahsupEdilebilirFc, 4);
-                    mahsupTl = Math.Round(mahsupFc * tahsilatKuru, 2);
-                    t.KalanTl -= mahsupTl;
-                    fat.KalanFc -= mahsupFc;
-                    fat.KalanTl -= Math.Round(mahsupFc * fat.FaturaKuru, 2);
-                    kurFarki = Math.Round(mahsupFc * (tahsilatKuru - fat.FaturaKuru), 2);
-                    kullanilanKur = tahsilatKuru;
-                    tip = $"TL → {fat.DovizKodu}";
-                    aciklama = $"Fatura kuru {fat.FaturaKuru:N4}, tahsilat kuru {tahsilatKuru:N4}";
-                }
-                else if (t.Hareket.TrCurr != 0 && fat.TrCurr == t.Hareket.TrCurr)
+                else
                 {
                     // FC → FC (aynı döviz)
                     mahsupFc = Math.Min(t.KalanFc, fat.KalanFc);
@@ -837,25 +834,6 @@ ORDER BY EDATE DESC";
                     kullanilanKur = t.Hareket.DovizKur;
                     tip = $"{fat.DovizKodu} → {fat.DovizKodu}";
                     aciklama = $"Fatura kuru {fat.FaturaKuru:N4}, tahsilat kuru {t.Hareket.DovizKur:N4}";
-                }
-                else if (t.Hareket.TrCurr != 0 && fat.TrCurr == 0)
-                {
-                    // FC tahsilat → TL fatura (nadir)
-                    mahsupTl = Math.Min(t.KalanTl, fat.KalanTl);
-                    t.KalanTl -= mahsupTl;
-                    fat.KalanTl -= mahsupTl;
-                    if (t.Hareket.DovizKur > 0) t.KalanFc -= mahsupTl / t.Hareket.DovizKur;
-                    tip = $"{t.Hareket.DovizKodu} → TL";
-                    aciklama = "Döviz tahsilat TL faturaya mahsup";
-                }
-                else
-                {
-                    // Farklı dövizler — bu faturayı atla, sonraki mahsuplaştırma için fat.KalanTl>0 kalsın
-                    var atlananFatura = fat;
-                    // Bu faturayı bypass et: geçici olarak listeden çıkar ve tekrar ekle
-                    faturalar.Remove(atlananFatura);
-                    faturalar.Add(atlananFatura); // sona at
-                    continue;
                 }
 
                 sonuc.Eslesmeler.Add(new FifoEslesme

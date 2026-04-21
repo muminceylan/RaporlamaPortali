@@ -11,6 +11,11 @@ using Microsoft.AspNetCore.Authentication;
 DefaultTypeMap.MatchNamesWithUnderscores = true;
 
 var exeDir = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
+
+// Veritabanı, evrak arşivi, WhatsApp oturumu vb. kalıcı verileri publish klasörü
+// dışına taşı (ilk çalıştırmada otomatik migration)
+RaporlamaPortali.Services.AppDataPaths.EnsureAndMigrate();
+
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
     Args            = args,
@@ -86,6 +91,9 @@ builder.Services.AddScoped<KantarLogoKarsilastirmaService>();
 
 // Kontrol: SabNet - Logo (Müstahsil) karşılaştırması
 builder.Services.AddScoped<MustahsilKarsilastirmaService>();
+
+// Tarım Kredi Raporu (bölge eşleşmesi + yan ürün hareket)
+builder.Services.AddSingleton<TarimKrediService>();
 
 var app = builder.Build();
 
@@ -188,7 +196,7 @@ app.MapGet("/api/rapor", async (HttpContext context) =>
         }
 
         bool bulanik = context.Request.Query["bulanik"] == "true";
-        var html = htmlService.BirlesikRaporHtmlOlustur(sekerVerileri, yanUrunVerileri, baslangic, bitis, bulanik);
+        var html = htmlService.BirlesikRaporHtmlOlustur(sekerVerileri, yanUrunVerileri, baslangic, bitis, bulanik, kompakt: true);
         context.Response.ContentType = "text/html; charset=utf-8";
         await context.Response.WriteAsync(html);
     }
@@ -219,7 +227,7 @@ app.MapGet("/api/pancar-raporu", async (HttpContext context) =>
 
         bool bulanik = context.Request.Query["bulanik"] == "true";
         var html = htmlService.PancarRaporHtmlOlustur(
-            t1.Result, t2.Result, DateTime.Today, t3.Result, t4.Result, t5.Result, t6.Result, bulanik);
+            t1.Result, t2.Result, DateTime.Today, t3.Result, t4.Result, t5.Result, t6.Result, bulanik, kompakt: true);
         context.Response.ContentType = "text/html; charset=utf-8";
         await context.Response.WriteAsync(html);
     }
@@ -294,7 +302,7 @@ app.MapGet("/api/seker-analiz", async (HttpContext context) =>
 
         bool bulanik = context.Request.Query["bulanik"] == "true";
         var (analiz, _) = await sekerDairesiService.GetSadeSekerAnaliziAsync(baslangic, bitis);
-        var html = htmlService.SekerAnalizHtmlOlustur(analiz, baslangic, bitis, bulanik);
+        var html = htmlService.SekerAnalizHtmlOlustur(analiz, baslangic, bitis, bulanik, kompakt: true);
         context.Response.ContentType = "text/html; charset=utf-8";
         await context.Response.WriteAsync(html);
     }
@@ -326,7 +334,7 @@ app.MapGet("/api/seker-raporu", async (HttpContext context) =>
         var tBas = sekerDairesiService.GetBaskanlikDonemBasiAsync(baslangic);
         var tSon = sekerDairesiService.GetBaskanlikDonemBasiAsync(bitis.AddDays(1));
         await Task.WhenAll(tBas, tSon);
-        var html = htmlService.SekerRaporHtmlOlustur(analiz, dipnotlar, baslangic, bitis, tBas.Result, tSon.Result, bulanik);
+        var html = htmlService.SekerRaporHtmlOlustur(analiz, dipnotlar, baslangic, bitis, tBas.Result, tSon.Result, bulanik, kompakt: true);
         context.Response.ContentType = "text/html; charset=utf-8";
         await context.Response.WriteAsync(html);
     }
@@ -338,7 +346,7 @@ app.MapGet("/api/seker-raporu", async (HttpContext context) =>
 }).AllowAnonymous();
 
 // Evrak dosyası indirme / görüntüleme (auth zorunlu)
-// GET /evrak-dosya?kategori=tesis|mustahsil&id=123&inline=true
+// GET /evrak-dosya?kategori=tesis|mustahsil|genel&id=123&inline=true
 app.MapGet("/evrak-dosya", (HttpContext ctx, EvrakArsivService arsiv,
     string kategori, int id, bool inline) =>
 {
@@ -357,6 +365,14 @@ app.MapGet("/evrak-dosya", (HttpContext ctx, EvrakArsivService arsiv,
     else if (kategori.Equals("mustahsil", StringComparison.OrdinalIgnoreCase))
     {
         var e = arsiv.MustahsilEvrakGetir(id);
+        if (e == null) return Results.NotFound();
+        fullPath = arsiv.TamYolaCevir(e.DosyaYolu);
+        dosyaAdi = e.DosyaAdi;
+        mime     = e.MimeType ?? mime;
+    }
+    else if (kategori.Equals("genel", StringComparison.OrdinalIgnoreCase))
+    {
+        var e = arsiv.GenelEvrakGetir(id);
         if (e == null) return Results.NotFound();
         fullPath = arsiv.TamYolaCevir(e.DosyaYolu);
         dosyaAdi = e.DosyaAdi;

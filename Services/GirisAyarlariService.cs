@@ -20,7 +20,7 @@ public class GirisAyarlariService
 
     public GirisAyarlariService()
     {
-        _dosyaYolu = Path.Combine(AppContext.BaseDirectory, "giris_ayarlari.json");
+        _dosyaYolu = AppDataPaths.GirisAyarlariJson;
         _ayarlar = Yukle();
     }
 

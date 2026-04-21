@@ -154,11 +154,13 @@
 
     private static readonly System.Globalization.CultureInfo _tr = new("tr-TR");
 
-    private static bool Icerir(string? kaynak, string aranan)
-    {
-        if (string.IsNullOrEmpty(kaynak)) return false;
-        return kaynak.ToUpper(_tr).Contains(aranan.ToUpper(_tr));
-    }
+    private static readonly System.Globalization.CompareInfo _ci = System.Globalization.CultureInfo.InvariantCulture.CompareInfo;
+    private const System.Globalization.CompareOptions _cmp =
+        System.Globalization.CompareOptions.IgnoreCase |
+        System.Globalization.CompareOptions.IgnoreNonSpace;
+
+    private static bool Icerir(string? kaynak, string aranan) =>
+        !string.IsNullOrEmpty(kaynak) && _ci.IndexOf(kaynak, aranan, _cmp) >= 0;
 
     private List<CariBakiye> FiltreliKayit =>
         _bakiyeler.Where(b =>

@@ -63,16 +63,30 @@
                 </MudItem>
 
                 <MudItem xs="12">
-                    <InputFile OnChange="OnTesisFile" class="d-none" id="tesisFileInput" />
+                    <InputFile OnChange="OnTesisFile" class="d-none" id="tesisFileInput" multiple />
                     <MudButton HtmlTag="label" for="tesisFileInput" Variant="Variant.Filled" Color="Color.Info"
                                StartIcon="@Icons.Material.Filled.AttachFile">
-                        Dosya Seç
+                        Dosya Seç (çoklu)
                     </MudButton>
-                    @if (_t_Dosya != null)
+                    @if (_t_Dosyalar.Count > 0)
                     {
-                        <MudText Class="ml-2 d-inline" Typo="Typo.body2">
-                            @_t_Dosya.Name (@((_t_Dosya.Size / 1024.0).ToString("N0")) KB)
-                        </MudText>
+                        <MudText Class="ml-2 d-inline" Typo="Typo.body2"><b>@_t_Dosyalar.Count dosya seçildi</b></MudText>
+                        <MudList Dense="true" Class="mt-2">
+                            @for (int i = 0; i < _t_Dosyalar.Count; i++)
+                            {
+                                var idx = i;
+                                var f = _t_Dosyalar[idx];
+                                <MudListItem>
+                                    <div class="d-flex align-center">
+                                        <MudIcon Icon="@Icons.Material.Filled.Description" Class="mr-2" />
+                                        <MudText Typo="Typo.body2">@f.Name (@((f.Size / 1024.0).ToString("N0")) KB)</MudText>
+                                        <MudSpacer />
+                                        <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                                                       OnClick="@(() => _t_Dosyalar.RemoveAt(idx))" />
+                                    </div>
+                                </MudListItem>
+                            }
+                        </MudList>
                     }
                 </MudItem>
 
@@ -151,16 +165,30 @@
                 </MudItem>
 
                 <MudItem xs="12">
-                    <InputFile OnChange="OnMustahsilFile" class="d-none" id="mustFileInput" />
+                    <InputFile OnChange="OnMustahsilFile" class="d-none" id="mustFileInput" multiple />
                     <MudButton HtmlTag="label" for="mustFileInput" Variant="Variant.Filled" Color="Color.Info"
                                StartIcon="@Icons.Material.Filled.AttachFile">
-                        Dosya Seç
+                        Dosya Seç (çoklu)
                     </MudButton>
-                    @if (_m_Dosya != null)
+                    @if (_m_Dosyalar.Count > 0)
                     {
-                        <MudText Class="ml-2 d-inline" Typo="Typo.body2">
-                            @_m_Dosya.Name (@((_m_Dosya.Size / 1024.0).ToString("N0")) KB)
-                        </MudText>
+                        <MudText Class="ml-2 d-inline" Typo="Typo.body2"><b>@_m_Dosyalar.Count dosya seçildi</b></MudText>
+                        <MudList Dense="true" Class="mt-2">
+                            @for (int i = 0; i < _m_Dosyalar.Count; i++)
+                            {
+                                var idx = i;
+                                var f = _m_Dosyalar[idx];
+                                <MudListItem>
+                                    <div class="d-flex align-center">
+                                        <MudIcon Icon="@Icons.Material.Filled.Description" Class="mr-2" />
+                                        <MudText Typo="Typo.body2">@f.Name (@((f.Size / 1024.0).ToString("N0")) KB)</MudText>
+                                        <MudSpacer />
+                                        <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                                                       OnClick="@(() => _m_Dosyalar.RemoveAt(idx))" />
+                                    </div>
+                                </MudListItem>
+                            }
+                        </MudList>
                     }
                 </MudItem>
 
@@ -177,6 +205,104 @@
             </MudGrid>
         </MudPaper>
     </MudTabPanel>
+
+    <MudTabPanel Text="Genel Evrak" Icon="@Icons.Material.Filled.ReceiptLong">
+        <MudPaper Class="pa-4">
+            @if (_genelKategoriler.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info">
+                    "Genel" türünde kategori yok. Önce <b>Kategori ve Belge Tipleri</b> sayfasından
+                    "Genel" türünde bir kategori (ör. Tarım Kredi Faturaları) ekleyin.
+                </MudAlert>
+            }
+            else
+            {
+                <MudGrid>
+                    <MudItem xs="12" md="6">
+                        <MudSelect T="int" Value="_g_KategoriId" ValueChanged="OnGenelKategoriDegisti"
+                                   Label="Kategori *" Variant="Variant.Outlined" Required="true">
+                            @foreach (var k in _genelKategoriler)
+                            {
+                                <MudSelectItem Value="k.Id">@k.Ad</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudSelect T="int" @bind-Value="_g_BelgeTipiId" Label="Belge Tipi *" Variant="Variant.Outlined" Required="true">
+                            @foreach (var b in _genelBelgeTipleri)
+                            {
+                                <MudSelectItem Value="b.Id">@b.Ad</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+
+                    <MudItem xs="12" md="8">
+                        <MudTextField @bind-Value="_g_Cari" Label="Firma / Cari Ünvan *"
+                                      Placeholder="Örn: Tarım Kredi Kooperatifi" Variant="Variant.Outlined" Required="true" />
+                    </MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudTextField @bind-Value="_g_FaturaNo" Label="Fatura No" Variant="Variant.Outlined" />
+                    </MudItem>
+
+                    <MudItem xs="12" md="4">
+                        <MudDatePicker @bind-Date="_g_EvrakTarihi" Label="Evrak Tarihi"
+                                       Variant="Variant.Outlined" DateFormat="dd.MM.yyyy" />
+                    </MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudNumericField T="decimal?" @bind-Value="_g_Tutar" Label="Tutar (TL)"
+                                         Variant="Variant.Outlined" Format="N2" />
+                    </MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudDatePicker @bind-Date="_g_TebellugTarihi" Label="Tebellüğ Tarihi *"
+                                       Variant="Variant.Outlined" DateFormat="dd.MM.yyyy" Required="true" />
+                    </MudItem>
+
+                    <MudItem xs="12">
+                        <MudTextField @bind-Value="_g_Aciklama" Label="Açıklama" Variant="Variant.Outlined" Lines="2" />
+                    </MudItem>
+
+                    <MudItem xs="12">
+                        <InputFile OnChange="OnGenelFile" class="d-none" id="genelFileInput" multiple />
+                        <MudButton HtmlTag="label" for="genelFileInput" Variant="Variant.Filled" Color="Color.Info"
+                                   StartIcon="@Icons.Material.Filled.AttachFile">
+                            Dosya Seç (çoklu)
+                        </MudButton>
+                        @if (_g_Dosyalar.Count > 0)
+                        {
+                            <MudText Class="ml-2 d-inline" Typo="Typo.body2"><b>@_g_Dosyalar.Count dosya seçildi</b></MudText>
+                            <MudList Dense="true" Class="mt-2">
+                                @for (int i = 0; i < _g_Dosyalar.Count; i++)
+                                {
+                                    var idx = i;
+                                    var f = _g_Dosyalar[idx];
+                                    <MudListItem>
+                                        <div class="d-flex align-center">
+                                            <MudIcon Icon="@Icons.Material.Filled.Description" Class="mr-2" />
+                                            <MudText Typo="Typo.body2">@f.Name (@((f.Size / 1024.0).ToString("N0")) KB)</MudText>
+                                            <MudSpacer />
+                                            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                                                           OnClick="@(() => _g_Dosyalar.RemoveAt(idx))" />
+                                        </div>
+                                    </MudListItem>
+                                }
+                            </MudList>
+                        }
+                    </MudItem>
+
+                    <MudItem xs="12" Class="d-flex gap-2">
+                        <MudButton Variant="Variant.Filled" Color="Color.Success"
+                                   StartIcon="@Icons.Material.Filled.Save"
+                                   OnClick="GenelKaydet" Disabled="_kaydediyor">
+                            Kaydet
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" OnClick='() => Nav.NavigateTo("/evrak-arsivi")'>
+                            İptal
+                        </MudButton>
+                    </MudItem>
+                </MudGrid>
+            }
+        </MudPaper>
+    </MudTabPanel>
 </MudTabs>
 
 @code {
@@ -185,6 +311,8 @@
     private List<Tesis> _tesisler = new();
     private List<BelgeTipi> _tesisBelgeTipleri = new();
     private List<BelgeTipi> _mustahsilBelgeTipleri = new();
+    private List<BelgeKategori> _genelKategoriler = new();
+    private List<BelgeTipi> _genelBelgeTipleri = new();
     private List<int> _kampanyaYillari = new();
     private List<MustahsilOzet> _mustahsilListesi = new();
     private bool _kaydediyor = false;
@@ -198,7 +326,7 @@
     private DateTime? _t_GecBas;
     private DateTime? _t_GecBit;
     private string _t_Aciklama = "";
-    private IBrowserFile? _t_Dosya;
+    private List<IBrowserFile> _t_Dosyalar = new();
 
     // Müstahsil form
     private int _m_KampanyaYili;
@@ -208,13 +336,32 @@
     private string _m_EvrakNo = "";
     private DateTime? _m_TebellugTarihi = DateTime.Today;
     private string _m_Aciklama = "";
-    private IBrowserFile? _m_Dosya;
+    private List<IBrowserFile> _m_Dosyalar = new();
+
+    // Genel form
+    private int _g_KategoriId;
+    private int _g_BelgeTipiId;
+    private string _g_Cari = "";
+    private string _g_FaturaNo = "";
+    private DateTime? _g_EvrakTarihi;
+    private decimal? _g_Tutar;
+    private DateTime? _g_TebellugTarihi = DateTime.Today;
+    private string _g_Aciklama = "";
+    private List<IBrowserFile> _g_Dosyalar = new();
 
     protected override void OnInitialized()
     {
         _tesisler = Arsiv.TesisListesi(aktif: true);
-        _tesisBelgeTipleri = Arsiv.BelgeTipiListesi(BelgeKategorisi.Tesis, aktif: true);
-        _mustahsilBelgeTipleri = Arsiv.BelgeTipiListesi(BelgeKategorisi.Mustahsil, aktif: true);
+        _tesisBelgeTipleri     = Arsiv.BelgeTipiListesi(tur: BelgeKategorisi.Tesis, aktif: true);
+        _mustahsilBelgeTipleri = Arsiv.BelgeTipiListesi(tur: BelgeKategorisi.Mustahsil, aktif: true);
+        _genelKategoriler      = Arsiv.BelgeKategoriListesi(tur: BelgeKategorisi.Genel, aktif: true);
+        if (_genelKategoriler.Count > 0)
+        {
+            _g_KategoriId = _genelKategoriler[0].Id;
+            _genelBelgeTipleri = Arsiv.BelgeTipiListesi(kategoriId: _g_KategoriId, aktif: true);
+            if (_genelBelgeTipleri.Count > 0) _g_BelgeTipiId = _genelBelgeTipleri[0].Id;
+        }
+
         _kampanyaYillari = MustLookup.MevcutKampanyaYillari();
         if (_kampanyaYillari.Count > 0)
         {
@@ -225,45 +372,61 @@
 
     // ----- Tesis -----
 
-    private void OnTesisFile(InputFileChangeEventArgs e) => _t_Dosya = e.File;
+    private void OnTesisFile(InputFileChangeEventArgs e)
+        => _t_Dosyalar = e.GetMultipleFiles(maximumFileCount: 50).ToList();
 
     private async Task TesisKaydet()
     {
         if (_t_TesisId <= 0) { Snackbar.Add("Tesis seçin.", Severity.Warning); return; }
         if (_t_BelgeTipiId <= 0) { Snackbar.Add("Belge tipi seçin.", Severity.Warning); return; }
         if (_t_TebellugTarihi == null) { Snackbar.Add("Tebellüğ tarihi zorunludur.", Severity.Warning); return; }
-        if (_t_Dosya == null) { Snackbar.Add("Dosya seçin.", Severity.Warning); return; }
-        if (_t_Dosya.Size > MaxDosyaBoyutu) { Snackbar.Add("Dosya 50 MB'dan büyük olamaz.", Severity.Warning); return; }
+        if (_t_Dosyalar.Count == 0) { Snackbar.Add("En az bir dosya seçin.", Severity.Warning); return; }
+        var buyuk = _t_Dosyalar.FirstOrDefault(d => d.Size > MaxDosyaBoyutu);
+        if (buyuk != null) { Snackbar.Add($"'{buyuk.Name}' 50 MB'dan büyük.", Severity.Warning); return; }
 
         _kaydediyor = true;
+        int basarili = 0, hatali = 0;
         try
         {
             var tesis = _tesisler.First(x => x.Id == _t_TesisId);
             var bt = _tesisBelgeTipleri.First(x => x.Id == _t_BelgeTipiId);
 
-            using var stream = _t_Dosya.OpenReadStream(MaxDosyaBoyutu);
-            var (_, rel) = await Arsiv.DosyaKaydetTesisAsync(tesis.Ad, bt.Ad, _t_Dosya.Name, stream);
-
-            var kayit = new TesisEvraki
+            foreach (var dosya in _t_Dosyalar)
             {
-                TesisId = _t_TesisId,
-                BelgeTipiId = _t_BelgeTipiId,
-                DosyaAdi = _t_Dosya.Name,
-                DosyaYolu = rel,
-                MimeType = _t_Dosya.ContentType,
-                DosyaBoyutu = _t_Dosya.Size,
-                EvrakTarihi = _t_EvrakTarihi,
-                EvrakNo = string.IsNullOrWhiteSpace(_t_EvrakNo) ? null : _t_EvrakNo.Trim(),
-                TebellugTarihi = _t_TebellugTarihi!.Value,
-                GecerlilikBaslangic = _t_GecBas,
-                GecerlilikBitis = _t_GecBit,
-                Aciklama = string.IsNullOrWhiteSpace(_t_Aciklama) ? null : _t_Aciklama.Trim(),
-                YuklemeTarihi = DateTime.Now
-            };
+                try
+                {
+                    using var stream = dosya.OpenReadStream(MaxDosyaBoyutu);
+                    var (_, rel) = await Arsiv.DosyaKaydetTesisAsync(tesis.Ad, bt.Ad, dosya.Name, stream);
 
-            var id = Arsiv.TesisEvrakEkle(kayit);
-            Snackbar.Add($"Kaydedildi. Defter No: {kayit.DefterNo}", Severity.Success);
-            Nav.NavigateTo("/evrak-arsivi");
+                    var kayit = new TesisEvraki
+                    {
+                        TesisId = _t_TesisId,
+                        BelgeTipiId = _t_BelgeTipiId,
+                        DosyaAdi = dosya.Name,
+                        DosyaYolu = rel,
+                        MimeType = dosya.ContentType,
+                        DosyaBoyutu = dosya.Size,
+                        EvrakTarihi = _t_EvrakTarihi,
+                        EvrakNo = string.IsNullOrWhiteSpace(_t_EvrakNo) ? null : _t_EvrakNo.Trim(),
+                        TebellugTarihi = _t_TebellugTarihi!.Value,
+                        GecerlilikBaslangic = _t_GecBas,
+                        GecerlilikBitis = _t_GecBit,
+                        Aciklama = string.IsNullOrWhiteSpace(_t_Aciklama) ? null : _t_Aciklama.Trim(),
+                        YuklemeTarihi = DateTime.Now
+                    };
+                    Arsiv.TesisEvrakEkle(kayit);
+                    basarili++;
+                }
+                catch (Exception exIc)
+                {
+                    hatali++;
+                    Snackbar.Add($"'{dosya.Name}' kaydedilemedi: {exIc.Message}", Severity.Error);
+                }
+            }
+
+            if (basarili > 0)
+                Snackbar.Add($"{basarili} evrak kaydedildi" + (hatali > 0 ? $" ({hatali} hatalı)" : ""), Severity.Success);
+            if (basarili > 0) Nav.NavigateTo("/evrak-arsivi");
         }
         catch (Exception ex)
         {
@@ -310,7 +473,8 @@
         return string.Join("  •  ", parts);
     }
 
-    private void OnMustahsilFile(InputFileChangeEventArgs e) => _m_Dosya = e.File;
+    private void OnMustahsilFile(InputFileChangeEventArgs e)
+        => _m_Dosyalar = e.GetMultipleFiles(maximumFileCount: 50).ToList();
 
     private async Task MustahsilKaydet()
     {
@@ -318,40 +482,128 @@
         if (_m_Secilen == null) { Snackbar.Add("Müstahsil seçin.", Severity.Warning); return; }
         if (_m_BelgeTipiId <= 0) { Snackbar.Add("Belge tipi seçin.", Severity.Warning); return; }
         if (_m_TebellugTarihi == null) { Snackbar.Add("Tebellüğ tarihi zorunludur.", Severity.Warning); return; }
-        if (_m_Dosya == null) { Snackbar.Add("Dosya seçin.", Severity.Warning); return; }
-        if (_m_Dosya.Size > MaxDosyaBoyutu) { Snackbar.Add("Dosya 50 MB'dan büyük olamaz.", Severity.Warning); return; }
+        if (_m_Dosyalar.Count == 0) { Snackbar.Add("En az bir dosya seçin.", Severity.Warning); return; }
+        var buyuk = _m_Dosyalar.FirstOrDefault(d => d.Size > MaxDosyaBoyutu);
+        if (buyuk != null) { Snackbar.Add($"'{buyuk.Name}' 50 MB'dan büyük.", Severity.Warning); return; }
 
         _kaydediyor = true;
+        int basarili = 0, hatali = 0;
         try
         {
             var bt = _mustahsilBelgeTipleri.First(x => x.Id == _m_BelgeTipiId);
 
-            using var stream = _m_Dosya.OpenReadStream(MaxDosyaBoyutu);
-            var (_, rel) = await Arsiv.DosyaKaydetMustahsilAsync(
-                _m_KampanyaYili, _m_Secilen.AdSoyadi, bt.Ad, _m_Dosya.Name, stream);
-
-            var kayit = new MustahsilEvraki
+            foreach (var dosya in _m_Dosyalar)
             {
-                KampanyaYili = _m_KampanyaYili,
-                TcKimlikNo = _m_Secilen.TcKimlikNo,
-                MustahsilAdSoyadi = _m_Secilen.AdSoyadi,
-                MustahsilNo = _m_Secilen.MustahsilNo,
-                HesapNo = _m_Secilen.HesapNo,
-                BelgeTipiId = _m_BelgeTipiId,
-                DosyaAdi = _m_Dosya.Name,
-                DosyaYolu = rel,
-                MimeType = _m_Dosya.ContentType,
-                DosyaBoyutu = _m_Dosya.Size,
-                EvrakTarihi = _m_EvrakTarihi,
-                EvrakNo = string.IsNullOrWhiteSpace(_m_EvrakNo) ? null : _m_EvrakNo.Trim(),
-                TebellugTarihi = _m_TebellugTarihi!.Value,
-                Aciklama = string.IsNullOrWhiteSpace(_m_Aciklama) ? null : _m_Aciklama.Trim(),
-                YuklemeTarihi = DateTime.Now
-            };
+                try
+                {
+                    using var stream = dosya.OpenReadStream(MaxDosyaBoyutu);
+                    var (_, rel) = await Arsiv.DosyaKaydetMustahsilAsync(
+                        _m_KampanyaYili, _m_Secilen!.AdSoyadi, bt.Ad, dosya.Name, stream);
 
-            var id = Arsiv.MustahsilEvrakEkle(kayit);
-            Snackbar.Add($"Kaydedildi. Defter No: {kayit.DefterNo}", Severity.Success);
-            Nav.NavigateTo("/evrak-arsivi");
+                    var kayit = new MustahsilEvraki
+                    {
+                        KampanyaYili = _m_KampanyaYili,
+                        TcKimlikNo = _m_Secilen.TcKimlikNo,
+                        MustahsilAdSoyadi = _m_Secilen.AdSoyadi,
+                        MustahsilNo = _m_Secilen.MustahsilNo,
+                        HesapNo = _m_Secilen.HesapNo,
+                        BelgeTipiId = _m_BelgeTipiId,
+                        DosyaAdi = dosya.Name,
+                        DosyaYolu = rel,
+                        MimeType = dosya.ContentType,
+                        DosyaBoyutu = dosya.Size,
+                        EvrakTarihi = _m_EvrakTarihi,
+                        EvrakNo = string.IsNullOrWhiteSpace(_m_EvrakNo) ? null : _m_EvrakNo.Trim(),
+                        TebellugTarihi = _m_TebellugTarihi!.Value,
+                        Aciklama = string.IsNullOrWhiteSpace(_m_Aciklama) ? null : _m_Aciklama.Trim(),
+                        YuklemeTarihi = DateTime.Now
+                    };
+                    Arsiv.MustahsilEvrakEkle(kayit);
+                    basarili++;
+                }
+                catch (Exception exIc)
+                {
+                    hatali++;
+                    Snackbar.Add($"'{dosya.Name}' kaydedilemedi: {exIc.Message}", Severity.Error);
+                }
+            }
+
+            if (basarili > 0)
+                Snackbar.Add($"{basarili} evrak kaydedildi" + (hatali > 0 ? $" ({hatali} hatalı)" : ""), Severity.Success);
+            if (basarili > 0) Nav.NavigateTo("/evrak-arsivi");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Hata: " + ex.Message, Severity.Error);
+        }
+        finally { _kaydediyor = false; }
+    }
+
+    // ----- Genel -----
+
+    private void OnGenelKategoriDegisti(int kategoriId)
+    {
+        _g_KategoriId = kategoriId;
+        _genelBelgeTipleri = Arsiv.BelgeTipiListesi(kategoriId: kategoriId, aktif: true);
+        _g_BelgeTipiId = _genelBelgeTipleri.FirstOrDefault()?.Id ?? 0;
+    }
+
+    private void OnGenelFile(InputFileChangeEventArgs e)
+        => _g_Dosyalar = e.GetMultipleFiles(maximumFileCount: 50).ToList();
+
+    private async Task GenelKaydet()
+    {
+        if (_g_KategoriId <= 0) { Snackbar.Add("Kategori seçin.", Severity.Warning); return; }
+        if (_g_BelgeTipiId <= 0) { Snackbar.Add("Belge tipi seçin.", Severity.Warning); return; }
+        if (string.IsNullOrWhiteSpace(_g_Cari)) { Snackbar.Add("Firma/Cari ünvan zorunludur.", Severity.Warning); return; }
+        if (_g_TebellugTarihi == null) { Snackbar.Add("Tebellüğ tarihi zorunludur.", Severity.Warning); return; }
+        if (_g_Dosyalar.Count == 0) { Snackbar.Add("En az bir dosya seçin.", Severity.Warning); return; }
+        var buyuk = _g_Dosyalar.FirstOrDefault(d => d.Size > MaxDosyaBoyutu);
+        if (buyuk != null) { Snackbar.Add($"'{buyuk.Name}' 50 MB'dan büyük.", Severity.Warning); return; }
+
+        _kaydediyor = true;
+        int basarili = 0, hatali = 0;
+        try
+        {
+            var kategori = _genelKategoriler.First(x => x.Id == _g_KategoriId);
+            var bt = _genelBelgeTipleri.First(x => x.Id == _g_BelgeTipiId);
+
+            foreach (var dosya in _g_Dosyalar)
+            {
+                try
+                {
+                    using var stream = dosya.OpenReadStream(MaxDosyaBoyutu);
+                    var (_, rel) = await Arsiv.DosyaKaydetGenelAsync(kategori.Ad, bt.Ad, dosya.Name, stream);
+
+                    var kayit = new GenelEvraki
+                    {
+                        KategoriId = _g_KategoriId,
+                        BelgeTipiId = _g_BelgeTipiId,
+                        CariUnvani = _g_Cari.Trim(),
+                        FaturaNo = string.IsNullOrWhiteSpace(_g_FaturaNo) ? null : _g_FaturaNo.Trim(),
+                        EvrakTarihi = _g_EvrakTarihi,
+                        Tutar = _g_Tutar,
+                        DosyaAdi = dosya.Name,
+                        DosyaYolu = rel,
+                        MimeType = dosya.ContentType,
+                        DosyaBoyutu = dosya.Size,
+                        TebellugTarihi = _g_TebellugTarihi!.Value,
+                        Aciklama = string.IsNullOrWhiteSpace(_g_Aciklama) ? null : _g_Aciklama.Trim(),
+                        YuklemeTarihi = DateTime.Now
+                    };
+                    Arsiv.GenelEvrakEkle(kayit);
+                    basarili++;
+                }
+                catch (Exception exIc)
+                {
+                    hatali++;
+                    Snackbar.Add($"'{dosya.Name}' kaydedilemedi: {exIc.Message}", Severity.Error);
+                }
+            }
+
+            if (basarili > 0)
+                Snackbar.Add($"{basarili} evrak kaydedildi" + (hatali > 0 ? $" ({hatali} hatalı)" : ""), Severity.Success);
+            if (basarili > 0) Nav.NavigateTo("/evrak-arsivi");
         }
         catch (Exception ex)
         {

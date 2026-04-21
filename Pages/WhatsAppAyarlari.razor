@@ -22,6 +22,7 @@
                     var (renk, ikon, etiket) = _durum.Durum switch
                     {
                         "BAGLI"       => (Color.Success, Icons.Material.Filled.CheckCircle,    "Bağlı"),
+                        "BAGLANIYOR"  => (Color.Info,    Icons.Material.Filled.Sync,            "Bağlanıyor..."),
                         "QR_BEKLIYOR" => (Color.Warning, Icons.Material.Filled.QrCode2,        "QR Okutun"),
                         "HATA"        => (Color.Error,   Icons.Material.Filled.Error,           "Hata"),
                         _             => (Color.Default, Icons.Material.Filled.RadioButtonUnchecked, "Bağlı Değil")
@@ -231,13 +232,31 @@
         </CardHeaderActions>
     </MudCardHeader>
     <MudCardContent>
-        @if (_loglar.Count == 0)
+        <MudGrid Class="mb-2">
+            <MudItem xs="12" md="4">
+                <MudDatePicker @bind-Date="_logBaslangic" Label="Başlangıç (eskiler için)"
+                               DateFormat="dd.MM.yyyy" Editable="true" Mask="@(new DateMask("dd.MM.yyyy"))"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" />
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudDatePicker @bind-Date="_logBitis" Label="Bitiş (eskiler için)"
+                               DateFormat="dd.MM.yyyy" Editable="true" Mask="@(new DateMask("dd.MM.yyyy"))"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" />
+            </MudItem>
+            <MudItem xs="12" md="4" Class="d-flex align-center">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                    Son 10 kayıt her zaman gösterilir. Tarih aralığı 10. kayıttan öncesini filtreler.
+                </MudText>
+            </MudItem>
+        </MudGrid>
+
+        @if (FiltreliLoglar.Count == 0)
         {
             <MudText Typo="Typo.body2" Color="Color.Secondary">Henüz rapor talebi gelmedi.</MudText>
         }
         else
         {
-            <MudTable Items="_loglar" Dense="true" Striped="true" Hover="true">
+            <MudTable Items="FiltreliLoglar" Dense="true" Striped="true" Hover="true">
                 <HeaderContent>
                     <MudTh>Tarih / Saat</MudTh>
                     <MudTh>Numara</MudTh>
@@ -276,6 +295,30 @@
     private string  _yeniKelime  = "";
     private bool    _kaydedildi  = false;
     private System.Threading.Timer? _timer;
+
+    private DateTime? _logBaslangic;
+    private DateTime? _logBitis;
+
+    // _loglar en yeni → eskiye sıralı. Son 10 her zaman görünür.
+    // Tarih aralığı yoksa SADECE son 10; varsa 10 + aralığa düşen eskiler.
+    private List<WhatsAppLogKayit> FiltreliLoglar
+    {
+        get
+        {
+            if (_loglar.Count <= 10) return _loglar;
+            var sabit = _loglar.Take(10).ToList();
+            if (!_logBaslangic.HasValue && !_logBitis.HasValue)
+                return sabit;
+            var eskiler = _loglar.Skip(10).Where(l =>
+            {
+                var yerelTarih = l.Tarih.ToLocalTime().Date;
+                if (_logBaslangic.HasValue && yerelTarih < _logBaslangic.Value.Date) return false;
+                if (_logBitis.HasValue     && yerelTarih > _logBitis.Value.Date)     return false;
+                return true;
+            });
+            return sabit.Concat(eskiler).ToList();
+        }
+    }
 
     protected override void OnInitialized()
     {

@@ -10,35 +10,6 @@ namespace RaporlamaPortali.Services;
 public class HtmlRaporService
 {
     /// <summary>
-    /// Logo dosyasını base64 olarak okur. Dosya bulunamazsa boş string döner.
-    /// Logoyu publish/wwwroot/images/dogus-logo.png konumuna kaydedin.
-    /// </summary>
-    private static string LogoBase64Oku()
-    {
-        try
-        {
-            var klasor = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "wwwroot", "images");
-            if (Directory.Exists(klasor))
-            {
-                // Klasördeki ilk PNG dosyasını kullan (dosya adından bağımsız)
-                var png = Directory.GetFiles(klasor, "*.png").FirstOrDefault();
-                if (png != null)
-                    return Convert.ToBase64String(File.ReadAllBytes(png));
-            }
-        }
-        catch { }
-        return "";
-    }
-
-    private static string LogoImgHtml()
-    {
-        var b64 = LogoBase64Oku();
-        if (!string.IsNullOrEmpty(b64))
-            return $"<img src='data:image/png;base64,{b64}' alt='Dogus' style='height:36px;width:auto;vertical-align:middle;margin-right:8px;'>";
-        return "<span style='font-weight:900;color:#fff;vertical-align:middle;margin-right:8px;font-size:14px;'>DOĞUŞ</span>";
-    }
-
-    /// <summary>
     /// Yan Ürünler + Şeker raporlarını birleşik, mobil uyumlu HTML olarak oluşturur (mail için).
     /// Tüm Yan Ürünler TEK tabloda — sütunlar garantili hizalı.
     /// </summary>
@@ -47,10 +18,17 @@ public class HtmlRaporService
         List<YanUrunOzet> yanUrunVerileri,
         DateTime baslangic,
         DateTime bitis,
-        bool bulanik = false)
+        bool bulanik = false,
+        bool kompakt = false)
     {
         var sb = new StringBuilder();
-        var logo = LogoImgHtml();
+
+        // Kompakt modda (WhatsApp gönderimi) başlık daha dar ve otomasyon bilgi satırı yok
+        var basPad   = kompakt ? "6px 12px"  : "14px 18px";
+        var basFont  = kompakt ? "13px"      : "16px";
+        var subFont  = kompakt ? "10px"      : "13px";
+        var subMrgn  = kompakt ? "2px"       : "6px";
+        var bodyPad  = kompakt ? "2px"       : "8px";
 
         // Tablo CSS stilleri (sadece veri tabloları için - dış wrapper HTML table kullanır)
         sb.AppendLine($@"<!DOCTYPE html>
@@ -59,8 +37,8 @@ public class HtmlRaporService
   <meta charset='UTF-8'>
   <meta name='viewport' content='width=device-width,initial-scale=1'>
   <style>
-    body{{font-family:'Segoe UI',Arial,sans-serif;background:#fff;padding:8px;color:#222;margin:0}}
-    .dt{{border-collapse:collapse;font-size:11px;table-layout:fixed}}
+    body{{font-family:'Segoe UI',Arial,sans-serif;background:#fff;padding:{bodyPad};color:#222;margin:0}}
+    .dt{{border-collapse:collapse;font-size:11px;table-layout:fixed;width:100%}}
     .dt th{{background:#37474f;color:#fff;padding:4px 6px;text-align:right;border:1px solid #263238;font-size:10px;white-space:nowrap}}
     .dt th.L{{text-align:left}}
     .dt th.G{{background:#2e7d32}}
@@ -79,26 +57,24 @@ public class HtmlRaporService
   </style>
 </head>
 <body>
-<table cellpadding='0' cellspacing='0' border='0' style='border-radius:4px;overflow:hidden;background:#fff'>
+<table cellpadding='0' cellspacing='0' border='0' align='center' style='border-radius:4px;overflow:hidden;background:#fff;width:948px;margin:0 auto'>
   <tr>
-    <td style='background:#b71c1c;padding:10px 14px'>
-      <table cellpadding='0' cellspacing='0' border='0'>
-        <tr>
-          <td style='vertical-align:middle;padding-right:10px'>{logo}</td>
-          <td style='vertical-align:middle'>
-            <div style='color:#fff;font-size:13px;font-weight:700;line-height:1.4'>YAN ÜRÜNLER ve ŞEKER ÜRETİM–SATIŞ–STOK RAPORU</div>
-            <div style='color:rgba(255,255,255,0.82);font-size:10px;margin-top:2px'>Doğuş Çay – Afyon Şeker Fabrikası &nbsp;|&nbsp; {baslangic:dd.MM.yyyy} – {bitis:dd.MM.yyyy} &nbsp;|&nbsp; Oluşturma: {DateTime.Now:dd.MM.yyyy HH:mm}</div>
-          </td>
-        </tr>
-      </table>
+    <td style='background:#b71c1c;padding:{basPad};text-align:center'>
+      <div style='color:#fff;font-size:{basFont};font-weight:700;line-height:1.25;letter-spacing:0.3px'>YAN ÜRÜNLER ve ŞEKER ÜRETİM–SATIŞ–STOK RAPORU</div>
+      <div style='color:#fff8e1;font-size:{subFont};font-weight:600;margin-top:{subMrgn};text-shadow:0 1px 2px rgba(0,0,0,0.35)'>Doğuş Çay – Afyon Şeker Fabrikası &nbsp;|&nbsp; {baslangic:dd.MM.yyyy} – {bitis:dd.MM.yyyy} &nbsp;|&nbsp; Oluşturma: {DateTime.Now:dd.MM.yyyy HH:mm}</div>
     </td>
-  </tr>
-  <tr>
+  </tr>");
+
+        if (!kompakt)
+        {
+            sb.AppendLine(@"  <tr>
     <td style='background:#fff8e1;border-left:4px solid #f9a825;padding:6px 12px;font-size:11px;color:#666'>
       Bu mail <strong>Mümin CEYLAN</strong> tarafından geliştirilen otomasyon ile otomatik olarak gönderilmiştir.
     </td>
-  </tr>
-  <tr>
+  </tr>");
+        }
+
+        sb.AppendLine(@"  <tr>
     <td style='background:#1b5e20;padding:7px 0;text-align:center;color:#fff;font-size:13px;font-weight:700;letter-spacing:0.5px'>
       🌿 &nbsp; YAN ÜRÜNLER
     </td>
@@ -111,7 +87,7 @@ public class HtmlRaporService
   <colgroup>
     <col style='width:150px'><col style='width:72px'><col style='width:72px'><col style='width:72px'>
     <col style='width:72px'><col style='width:62px'><col style='width:62px'><col style='width:72px'>
-    <col style='width:118px'><col style='width:82px'><col style='width:72px'>
+    <col style='width:160px'><col style='width:82px'><col style='width:72px'>
   </colgroup>");
 
         var yanGruplar = new (string Baslik, string Renk, string Filtre)[]
@@ -359,10 +335,10 @@ public class HtmlRaporService
         PancarFinansOzet?        finans      = null,
         PancarIcmalDetay?        icmalDetay  = null,
         PancarOzetIstatistik?    ozet        = null,
-        bool                     bulanik     = false)
+        bool                     bulanik     = false,
+        bool                     kompakt     = false)
     {
         var tr   = new CultureInfo("tr-TR");
-        var logo = LogoImgHtml();
         var sb   = new StringBuilder();
 
         // ── Hesaplamalar ──────────────────────────────────────
@@ -422,11 +398,13 @@ public class HtmlRaporService
 </head>
 <body>");
 
-        // Başlık
-        sb.AppendLine($@"<div class='baslik-bar'>
-  {logo}
-  <span style='font-size:14px;font-weight:bold;'>PANCAR RAPORU — {tarih:dd.MM.yyyy}</span>
-  <span style='font-size:11px;margin-left:12px;opacity:.8;'>Afyon Şeker Fabrikası / Kampanya {PancarRaporService.KampanyaYili()}</span>
+        // Başlık (kompakt modda daha dar)
+        var pbFont = kompakt ? "13px" : "16px";
+        var pbSub  = kompakt ? "10px" : "11px";
+        var pbMt   = kompakt ? "2px"  : "4px";
+        sb.AppendLine($@"<div class='baslik-bar' style='text-align:center;padding:{(kompakt ? "5px 10px" : "8px 12px")};'>
+  <span style='font-size:{pbFont};font-weight:bold;letter-spacing:0.3px;'>PANCAR RAPORU — {tarih:dd.MM.yyyy}</span>
+  <div style='font-size:{pbSub};margin-top:{pbMt};opacity:.9;'>Afyon Şeker Fabrikası / Kampanya {PancarRaporService.KampanyaYili()}</div>
 </div>");
 
         // Özet kartlar
@@ -544,7 +522,8 @@ public class HtmlRaporService
         sb.AppendLine("</div>"); // sağ sutun bitti
         sb.AppendLine("</div>"); // iki-sutun bitti
 
-        sb.AppendLine($"<p class='info'>Bu mail <strong>Mümin CEYLAN</strong> tarafından geliştirilen otomasyon ile otomatik olarak gönderilmiştir. | {DateTime.Now:dd.MM.yyyy HH:mm}</p>");
+        if (!kompakt)
+            sb.AppendLine($"<p class='info'>Bu mail <strong>Mümin CEYLAN</strong> tarafından geliştirilen otomasyon ile otomatik olarak gönderilmiştir. | {DateTime.Now:dd.MM.yyyy HH:mm}</p>");
         sb.AppendLine("</body></html>");
 
         return UygulaBlur(sb.ToString(), bulanik);
@@ -557,14 +536,13 @@ public class HtmlRaporService
         List<SekerKategoriAnaliz> analiz,
         DateTime baslangic,
         DateTime bitis,
-        bool bulanik = false)
+        bool bulanik = false,
+        bool kompakt = false)
     {
         var tr = new CultureInfo("tr-TR");
         string N0(decimal v) => v.ToString("N0", tr);
         string N2(decimal v) => v.ToString("N2", tr);
         string Fiyat(decimal m, decimal t) => m > 0 ? (t / m).ToString("N2", tr) : "–";
-
-        var logo = LogoImgHtml();
 
         var sb = new StringBuilder();
         sb.AppendLine($@"<!DOCTYPE html>
@@ -601,14 +579,9 @@ public class HtmlRaporService
 </head>
 <body>
 <div class='wrap'>
-  <div class='hdr'>
-    <table cellpadding='0' cellspacing='0' border='0'><tr>
-      <td style='padding-right:10px;vertical-align:middle'>{logo}</td>
-      <td style='vertical-align:middle'>
-        <div class='hdr-title'>ŞEKER KATEGORİSİ BAZLI ANALİZ (Ham LOGO Verisi)</div>
-        <div class='hdr-sub'>Doğuş Çay – Afyon Şeker Fabrikası &nbsp;|&nbsp; {baslangic:dd.MM.yyyy} – {bitis:dd.MM.yyyy} &nbsp;|&nbsp; {DateTime.Now:dd.MM.yyyy HH:mm}</div>
-      </td>
-    </tr></table>
+  <div class='hdr' style='text-align:center;padding:{(kompakt ? "5px 10px" : "10px 14px")}'>
+    <div class='hdr-title' style='font-size:{(kompakt ? "12px" : "16px")};letter-spacing:0.3px'>ŞEKER KATEGORİSİ BAZLI ANALİZ (Ham LOGO Verisi)</div>
+    <div class='hdr-sub' style='font-size:{(kompakt ? "9px" : "10px")};margin-top:{(kompakt ? "1px" : "2px")}'>Doğuş Çay – Afyon Şeker Fabrikası &nbsp;|&nbsp; {baslangic:dd.MM.yyyy} – {bitis:dd.MM.yyyy} &nbsp;|&nbsp; {DateTime.Now:dd.MM.yyyy HH:mm}</div>
   </div>
   <table>
     <colgroup>
@@ -716,7 +689,8 @@ public class HtmlRaporService
         DateTime bitis,
         Dictionary<string, decimal>? baskanlikDonemBasi = null,
         Dictionary<string, decimal>? baskanlikDonemSonu = null,
-        bool bulanik = false)
+        bool bulanik = false,
+        bool kompakt = false)
     {
         var tr = new CultureInfo("tr-TR");
         string N0(decimal v) => v.ToString("N0", tr);
@@ -813,7 +787,6 @@ public class HtmlRaporService
         decimal tkFiyatT = (tkSatMiktar + tpakSatMiktar) > 0 ? (tkSatTutar + tpakSatTutar) / (tkSatMiktar + tpakSatMiktar) : 0m;
 
         var sb2 = new StringBuilder();
-        var logo = LogoImgHtml();
         var ayAdi = baslangic.ToString("MMMM yyyy", tr);
 
         sb2.AppendLine($@"<!DOCTYPE html>
@@ -843,14 +816,9 @@ public class HtmlRaporService
 </head>
 <body>
 <div class='wrap'>
-  <div class='hdr'>
-    <table cellpadding='0' cellspacing='0' border='0'><tr>
-      <td style='padding-right:10px;vertical-align:middle'>{logo}</td>
-      <td style='vertical-align:middle'>
-        <div class='hdr-title'>ŞEKER ÜRETİM, SATIŞ VE STOK BİLGİLERİ</div>
-        <div class='hdr-sub'>Doğuş Çay – Afyon Şeker Fabrikası &nbsp;|&nbsp; {baslangic:dd.MM.yyyy} – {bitis:dd.MM.yyyy} &nbsp;|&nbsp; {DateTime.Now:dd.MM.yyyy HH:mm}</div>
-      </td>
-    </tr></table>
+  <div class='hdr' style='text-align:center;padding:{(kompakt ? "5px 10px" : "10px 14px")}'>
+    <div class='hdr-title' style='font-size:{(kompakt ? "12px" : "16px")};letter-spacing:0.3px'>ŞEKER ÜRETİM, SATIŞ VE STOK BİLGİLERİ</div>
+    <div class='hdr-sub' style='font-size:{(kompakt ? "9px" : "10px")};margin-top:{(kompakt ? "1px" : "2px")}'>Doğuş Çay – Afyon Şeker Fabrikası &nbsp;|&nbsp; {baslangic:dd.MM.yyyy} – {bitis:dd.MM.yyyy} &nbsp;|&nbsp; {DateTime.Now:dd.MM.yyyy HH:mm}</div>
   </div>
   <table>
     <colgroup><col style='width:460px'><col style='width:140px'><col style='width:140px'><col style='width:140px'></colgroup>

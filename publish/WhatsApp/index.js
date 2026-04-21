@@ -74,8 +74,6 @@ if (!fs.existsSync(CIKTI_KLASORU)) {
     fs.mkdirSync(CIKTI_KLASORU, { recursive: true });
 }
 
-durumYaz('BAGLI_DEGIL', '');
-
 // =====================================================
 // ŞEKER RAPORU — KONUŞMA DURUMU
 // Anahtar: numara → { adim: 'BASLANGIC' | 'BITIS', baslangic: 'YYYY-MM-DD' }
@@ -170,12 +168,45 @@ client.on('qr', (qr) => {
     durumYaz('QR_BEKLIYOR', qr);
 });
 
+client.on('loading_screen', (percent, message) => {
+    console.log(`[WhatsApp] Yukleniyor: ${percent}% ${message || ''}`);
+    durumYaz('BAGLANIYOR', '');
+});
+
+client.on('authenticated', () => {
+    console.log('[WhatsApp] Kimlik dogrulandi, ready bekleniyor...');
+    durumYaz('BAGLANIYOR', '');
+});
+
+let _tumSistemHazir = false;
+
+async function sistemWarmupYap() {
+    try {
+        console.log('[Warmup] Puppeteer on-baslatma...');
+        await browserGetir();
+        console.log('[Warmup] API ping...');
+        const baseUrl = (config.raporApiUrl || 'http://localhost:5050/api/rapor').replace(/\/api\/.*$/, '');
+        await new Promise((resolve) => {
+            const req = http.get(baseUrl + '/', { timeout: 30000 }, (res) => {
+                res.on('data', () => {});
+                res.on('end', () => resolve());
+            });
+            req.on('error', () => resolve());
+            req.on('timeout', () => { req.destroy(); resolve(); });
+        });
+        _tumSistemHazir = true;
+        console.log('[Warmup] Sistem tamamen hazir.');
+    } catch (err) {
+        console.error('[Warmup] Hata:', err.message);
+        _tumSistemHazir = true; // yine de kabul et, yoksa kilit kalır
+    }
+}
+
 client.on('ready', () => {
     config = configOku();
     console.log('[WhatsApp] Baglandi!');
     durumYaz('BAGLI', '');
-    // Puppeteer browser'ı önceden başlat — ilk rapor talebinde gecikme olmasın
-    browserGetir().catch(err => console.error('[Puppeteer] On-hazirlik hatasi:', err.message));
+    sistemWarmupYap();
 });
 
 client.on('disconnected', (reason) => {
@@ -191,6 +222,29 @@ client.on('auth_failure', (msg) => {
 client.on('message', async (message) => {
     try {
         config = configOku(); // Her mesajda taze config oku
+
+        // Sistem warmup tamamlanmadıysa tetikleyicileri hazırla-kabul et-bekle
+        if (!_tumSistemHazir) {
+            const mesajKucuk = (message.body || '').toLowerCase().trim();
+            const herhangiTetikleyici =
+                ['pancar rapor','pancarrapor','seker rapor','şeker rapor','sekerrapor','şekerrapor']
+                    .some(k => mesajKucuk.includes(k)) ||
+                (config.tetikleyiciler || []).some(k => mesajKucuk.includes(k.toLowerCase()));
+            if (herhangiTetikleyici) {
+                console.log('[Warmup] Ilk mesaj geldi, sistem hazirlanana kadar bekleniyor...');
+                let bekleme = 0;
+                while (!_tumSistemHazir && bekleme < 60000) {
+                    await new Promise(r => setTimeout(r, 500));
+                    bekleme += 500;
+                }
+                if (!_tumSistemHazir) {
+                    await message.reply('Sistem baslatiliyor, lutfen 30 saniye sonra tekrar deneyin.');
+                    return;
+                }
+                // Hazır olunca ek 1sn buffer
+                await new Promise(r => setTimeout(r, 1000));
+            }
+        }
 
         // Bireysel mesaj: message.from = "905xxxxxxx@c.us" veya "905xxxxxxx@lid" (Meta LID)
         // Grup mesajı:    message.from = "12036xxx@g.us", message.author = "905xxxxxxx@c.us"
@@ -599,4 +653,5 @@ WScript.Quit 0
 // =====================================================
 
 console.log('[WhatsApp] Baslatiliyor...');
+durumYaz('BAGLANIYOR', '');
 client.initialize();

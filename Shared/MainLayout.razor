@@ -1,4 +1,5 @@
 @inherits LayoutComponentBase
+@implements IDisposable
 
 <MudLayout>
     <MudAppBar Elevation="4" Style="background:linear-gradient(90deg,#0d47a1 0%,#1976d2 40%,#1565c0 100%);">
@@ -34,7 +35,7 @@
                 Ana Sayfa
             </MudNavLink>
 
-            <MudNavGroup Title="Raporlar" Icon="@Icons.Material.Filled.Assessment" Expanded="true"
+            <MudNavGroup Title="Raporlar" Icon="@Icons.Material.Filled.Assessment" @bind-Expanded="_raporlarOpen"
                          IconColor="Color.Success">
                 <MudNavLink Href="/yan-urunler" Icon="@Icons.Material.Filled.Assessment" IconColor="Color.Success">
                     Özet Rapor (Ürünler)
@@ -48,9 +49,12 @@
                 <MudNavLink Href="/seker-dairesi-yan-urunler" Icon="@Icons.Material.Filled.Grass" IconColor="Color.Success">
                     Şeker Dairesi Yan Ürünler
                 </MudNavLink>
+                <MudNavLink Href="/tarim-kredi-raporu" Icon="@Icons.Material.Filled.Agriculture" IconColor="Color.Success">
+                    Tarım Kredi Raporu
+                </MudNavLink>
             </MudNavGroup>
 
-            <MudNavGroup Title="Logo İşlemleri" Icon="@Icons.Material.Filled.Business" Expanded="false"
+            <MudNavGroup Title="Logo İşlemleri" Icon="@Icons.Material.Filled.Business" @bind-Expanded="_logoOpen"
                          IconColor="Color.Primary">
                 <MudNavLink Href="/kasa-hareketleri" Icon="@Icons.Material.Filled.AccountBalanceWallet" IconColor="Color.Primary">
                     Kasa Hareketleri
@@ -72,7 +76,7 @@
                 </MudNavLink>
             </MudNavGroup>
 
-            <MudNavGroup Title="Kontrol Menüsü" Icon="@Icons.Material.Filled.Rule" Expanded="false"
+            <MudNavGroup Title="Kontrol Menüsü" Icon="@Icons.Material.Filled.Rule" @bind-Expanded="_kontrolOpen"
                          IconColor="Color.Warning">
                 <MudNavLink Href="/kantar-logo-karsilastirma" Icon="@Icons.Material.Filled.CompareArrows" IconColor="Color.Warning">
                     Kantar - Logo Karşılaştırması
@@ -82,7 +86,7 @@
                 </MudNavLink>
             </MudNavGroup>
 
-            <MudNavGroup Title="Evrak Arşivi" Icon="@Icons.Material.Filled.FolderOpen" Expanded="false"
+            <MudNavGroup Title="Evrak Arşivi" Icon="@Icons.Material.Filled.FolderOpen" @bind-Expanded="_evrakOpen"
                          IconColor="Color.Tertiary">
                 <MudNavLink Href="/evrak-arsivi" Icon="@Icons.Material.Filled.FolderOpen" IconColor="Color.Tertiary">
                     Evrak Arşivi
@@ -98,7 +102,7 @@
                 </MudNavLink>
             </MudNavGroup>
 
-            <MudNavGroup Title="Ayarlar" Icon="@Icons.Material.Filled.Settings" Expanded="false"
+            <MudNavGroup Title="Ayarlar" Icon="@Icons.Material.Filled.Settings" @bind-Expanded="_ayarlarOpen"
                          IconColor="Color.Info">
                 <MudNavLink Href="/mail-ayarlari" Icon="@Icons.Material.Filled.Email" IconColor="Color.Info">
                     Mail Ayarları
@@ -148,12 +152,49 @@
 
 @code {
     private bool _drawerOpen = true;
+    private bool _raporlarOpen = true;
+    private bool _logoOpen;
+    private bool _kontrolOpen;
+    private bool _evrakOpen;
+    private bool _ayarlarOpen;
 
     [Inject]
     private NavigationManager NavigationManager { get; set; } = default!;
 
+    protected override void OnInitialized()
+    {
+        SenkronizeEt(NavigationManager.Uri);
+        NavigationManager.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        SenkronizeEt(e.Location);
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void SenkronizeEt(string uri)
+    {
+        var path = new Uri(uri).AbsolutePath.ToLowerInvariant().TrimEnd('/');
+        if (path is "/yan-urunler" or "/pancar-raporu" or "/seker-dairesi" or "/seker-dairesi-yan-urunler" or "/tarim-kredi-raporu")
+            _raporlarOpen = true;
+        else if (path is "/kasa-hareketleri" or "/kur-bilgileri" or "/stok-durumu" or "/cari-bakiye" or "/cari-hareket" or "/kur-farki-calismasi")
+            _logoOpen = true;
+        else if (path is "/kantar-logo-karsilastirma" or "/mustahsil-karsilastirma")
+            _kontrolOpen = true;
+        else if (path is "/evrak-arsivi" or "/evrak-ekle" or "/tesisler" or "/belge-tipleri")
+            _evrakOpen = true;
+        else if (path is "/mail-ayarlari" or "/whatsapp-ayarlari" or "/ayarlar")
+            _ayarlarOpen = true;
+    }
+
     private void ToggleDrawer()
     {
         _drawerOpen = !_drawerOpen;
+    }
+
+    public void Dispose()
+    {
+        NavigationManager.LocationChanged -= OnLocationChanged;
     }
 }

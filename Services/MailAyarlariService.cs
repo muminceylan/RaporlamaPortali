@@ -16,7 +16,7 @@ public class MailAyarlariService
     public MailAyarlariService(ILogger<MailAyarlariService> logger)
     {
         _logger = logger;
-        _dosyaYolu = Path.Combine(AppContext.BaseDirectory, "mail_ayarlari.json");
+        _dosyaYolu = AppDataPaths.MailAyarlariJson;
         _ayarlar = YukleVeyaOlustur();
     }
 

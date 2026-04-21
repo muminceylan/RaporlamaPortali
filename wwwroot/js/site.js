@@ -16,6 +16,26 @@ function downloadFile(fileName, base64Content, mimeType) {
 }
 
 /**
+ * .NET 8 Blazor Server DotNetStreamReference'ten dosya indirir
+ * @param {string} fileName
+ * @param {object} contentStreamReference - Blazor DotNetStreamReference
+ */
+async function downloadFileFromStream(fileName, contentStreamReference) {
+    const arrayBuffer = await contentStreamReference.arrayBuffer();
+    const blob = new Blob([arrayBuffer]);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName ?? '';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+}
+window.downloadFileFromStream = downloadFileFromStream;
+window.downloadFile = downloadFile;
+
+/**
  * Tabloyu yazdırır
  * @param {string} elementId - Yazdırılacak element ID
  */

@@ -370,6 +370,13 @@ else if (_hesaplandi)
     private KurFarkiFifoSonuc? _fifo;
 
     private static readonly System.Globalization.CultureInfo _tr = new("tr-TR");
+    private static readonly System.Globalization.CompareInfo _ci = System.Globalization.CultureInfo.InvariantCulture.CompareInfo;
+    private const System.Globalization.CompareOptions _cmp =
+        System.Globalization.CompareOptions.IgnoreCase |
+        System.Globalization.CompareOptions.IgnoreNonSpace;
+
+    private static bool Icerir(string? kaynak, string aranan) =>
+        !string.IsNullOrEmpty(kaynak) && _ci.IndexOf(kaynak, aranan, _cmp) >= 0;
 
     protected override async Task OnInitializedAsync()
     {
@@ -388,12 +395,12 @@ else if (_hesaplandi)
         if (string.IsNullOrWhiteSpace(text))
             return Task.FromResult<IEnumerable<CariSecenek>>(_tumCariler.Take(50));
 
-        var q = text.ToUpper(_tr);
+        var q = text.Trim();
         var sonuc = _tumCariler.Where(c =>
-            (!string.IsNullOrEmpty(c.Kod) && c.Kod.ToUpper(_tr).Contains(q)) ||
-            (!string.IsNullOrEmpty(c.Unvan) && c.Unvan.ToUpper(_tr).Contains(q)) ||
-            (!string.IsNullOrEmpty(c.TcKimlikNo) && c.TcKimlikNo.Contains(q)) ||
-            (!string.IsNullOrEmpty(c.VergiNo) && c.VergiNo.Contains(q))
+            Icerir(c.Kod, q) ||
+            Icerir(c.Unvan, q) ||
+            Icerir(c.TcKimlikNo, q) ||
+            Icerir(c.VergiNo, q)
         ).Take(100);
 
         return Task.FromResult<IEnumerable<CariSecenek>>(sonuc);

@@ -156,12 +156,81 @@
             </NoRecordsContent>
         </MudTable>
     </MudTabPanel>
+
+    <MudTabPanel Text="Genel Evraklar" Icon="@Icons.Material.Filled.ReceiptLong">
+        <MudGrid>
+            <MudItem xs="12" md="4">
+                <MudSelect T="int?" @bind-Value="_gFiltreKategoriId" Label="Kategori" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    <MudSelectItem T="int?" Value="@((int?)null)">Hepsi</MudSelectItem>
+                    @foreach (var k in _genelKategoriler)
+                    {
+                        <MudSelectItem T="int?" Value="@((int?)k.Id)">@k.Ad</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudSelect T="int?" @bind-Value="_gFiltreBelgeTipiId" Label="Belge Tipi" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    <MudSelectItem T="int?" Value="@((int?)null)">Hepsi</MudSelectItem>
+                    @foreach (var b in _genelBelgeTipleri)
+                    {
+                        <MudSelectItem T="int?" Value="@((int?)b.Id)">@b.Ad</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="3">
+                <MudTextField @bind-Value="_gArama" Label="Arama" Placeholder="Firma, fatura no, dosya adı"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="12" md="1" Class="d-flex align-center">
+                <MudIconButton Icon="@Icons.Material.Filled.Search" Color="Color.Primary" OnClick="GenelYukle" />
+            </MudItem>
+        </MudGrid>
+
+        <MudTable Items="_genelEvraklari" Dense="true" Hover="true" Bordered="true" Striped="true" Class="mt-3">
+            <HeaderContent>
+                <MudTh>Defter No</MudTh>
+                <MudTh>Kategori</MudTh>
+                <MudTh>Belge Tipi</MudTh>
+                <MudTh>Firma/Cari</MudTh>
+                <MudTh>Fatura No</MudTh>
+                <MudTh>Evrak Tarihi</MudTh>
+                <MudTh>Tutar</MudTh>
+                <MudTh>Tebellüğ</MudTh>
+                <MudTh Style="width:170px">İşlemler</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.DefterNo</MudTd>
+                <MudTd>@context.KategoriAdi</MudTd>
+                <MudTd>@context.BelgeTipiAdi</MudTd>
+                <MudTd>@context.CariUnvani</MudTd>
+                <MudTd>@(context.FaturaNo ?? "-")</MudTd>
+                <MudTd>@(context.EvrakTarihi?.ToString("dd.MM.yyyy") ?? "-")</MudTd>
+                <MudTd>@(context.Tutar?.ToString("N2") ?? "-")</MudTd>
+                <MudTd>@context.TebellugTarihi.ToString("dd.MM.yyyy")</MudTd>
+                <MudTd>
+                    <MudIconButton Icon="@Icons.Material.Filled.Visibility" Color="Color.Info" Size="Size.Small"
+                                   Title="Görüntüle" Href="@($"/evrak-dosya?kategori=genel&id={context.Id}&inline=true")" Target="_blank" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Download" Color="Color.Primary" Size="Size.Small"
+                                   Title="İndir" Href="@($"/evrak-dosya?kategori=genel&id={context.Id}")" Target="_blank" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Info" Size="Size.Small"
+                                   Title="Detay" OnClick="@(() => Nav.NavigateTo($"/evrak-detay/genel/{context.Id}"))" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
+                                   Title="Sil" OnClick="() => GenelSil(context)" />
+                </MudTd>
+            </RowTemplate>
+            <NoRecordsContent>
+                <MudText>Kayıt bulunamadı.</MudText>
+            </NoRecordsContent>
+        </MudTable>
+    </MudTabPanel>
 </MudTabs>
 
 @code {
     private List<Tesis> _tesisler = new();
     private List<BelgeTipi> _tesisBelgeTipleri = new();
     private List<BelgeTipi> _mustahsilBelgeTipleri = new();
+    private List<BelgeKategori> _genelKategoriler = new();
+    private List<BelgeTipi> _genelBelgeTipleri = new();
     private List<int> _kampanyaYillari = new();
 
     private int? _tFiltreTesisId;
@@ -174,14 +243,22 @@
     private string _mArama = "";
     private List<MustahsilEvraki> _mustahsilEvraklari = new();
 
+    private int? _gFiltreKategoriId;
+    private int? _gFiltreBelgeTipiId;
+    private string _gArama = "";
+    private List<GenelEvraki> _genelEvraklari = new();
+
     protected override void OnInitialized()
     {
         _tesisler = Arsiv.TesisListesi(aktif: true);
-        _tesisBelgeTipleri = Arsiv.BelgeTipiListesi(BelgeKategorisi.Tesis, aktif: true);
-        _mustahsilBelgeTipleri = Arsiv.BelgeTipiListesi(BelgeKategorisi.Mustahsil, aktif: true);
+        _tesisBelgeTipleri     = Arsiv.BelgeTipiListesi(tur: BelgeKategorisi.Tesis, aktif: true);
+        _mustahsilBelgeTipleri = Arsiv.BelgeTipiListesi(tur: BelgeKategorisi.Mustahsil, aktif: true);
+        _genelKategoriler      = Arsiv.BelgeKategoriListesi(tur: BelgeKategorisi.Genel, aktif: true);
+        _genelBelgeTipleri     = Arsiv.BelgeTipiListesi(tur: BelgeKategorisi.Genel, aktif: true);
         _kampanyaYillari = MustLookup.MevcutKampanyaYillari();
         TesisYukle();
         MustahsilYukle();
+        GenelYukle();
     }
 
     private void TesisYukle()
@@ -192,6 +269,11 @@
     private void MustahsilYukle()
     {
         _mustahsilEvraklari = Arsiv.MustahsilEvrakListesi(_mFiltreYil, _mFiltreBelgeTipiId, null, _mArama);
+    }
+
+    private void GenelYukle()
+    {
+        _genelEvraklari = Arsiv.GenelEvrakListesi(_gFiltreKategoriId, _gFiltreBelgeTipiId, _gArama);
     }
 
     private async Task TesisSil(TesisEvraki e)
@@ -215,6 +297,18 @@
         if (onay != true) return;
         Arsiv.MustahsilEvrakSil(e.Id);
         MustahsilYukle();
+        Snackbar.Add("Silindi.", Severity.Success);
+    }
+
+    private async Task GenelSil(GenelEvraki e)
+    {
+        var onay = await Dialog.ShowMessageBox(
+            "Silme Onayı",
+            $"{e.DefterNo} - {e.DosyaAdi} silinsin mi?",
+            yesText: "Sil", cancelText: "İptal");
+        if (onay != true) return;
+        Arsiv.GenelEvrakSil(e.Id);
+        GenelYukle();
         Snackbar.Add("Silindi.", Severity.Success);
     }
 }

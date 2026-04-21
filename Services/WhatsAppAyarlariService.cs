@@ -20,18 +20,25 @@ public class WhatsAppAyarlariService
 
     public WhatsAppAyarlariService()
     {
-        var klasor   = WhatsAppKlasor();
+        var klasor   = WhatsAppVeriKlasor();
+        Directory.CreateDirectory(klasor);
         _configDosya = Path.Combine(klasor, "whatsapp-config.json");
         _durumDosya  = Path.Combine(klasor, "whatsapp-status.json");
     }
 
-    // Exe'nin yanındaki WhatsApp klasörü
-    public static string WhatsAppKlasor()
+    /// <summary>WhatsApp bot kodunun (index.js, node_modules) bulunduğu klasör — publish'le gelir.</summary>
+    public static string WhatsAppKodKlasor()
     {
         var exeDir = Path.GetDirectoryName(Environment.ProcessPath)
                      ?? AppContext.BaseDirectory;
         return Path.Combine(exeDir, "WhatsApp");
     }
+
+    /// <summary>WhatsApp oturumu, config ve log gibi kalıcı verilerin klasörü — publish'ten etkilenmez.</summary>
+    public static string WhatsAppVeriKlasor() => AppDataPaths.WhatsAppDataDir;
+
+    // Eski ad (geriye dönük) — veri klasörünü döndürür
+    public static string WhatsAppKlasor() => WhatsAppVeriKlasor();
 
     public WhatsAppAyarlariModel GetAyarlar()
     {
@@ -73,7 +80,7 @@ public class WhatsAppAyarlariService
     {
         try
         {
-            var logDosya = Path.Combine(WhatsAppKlasor(), "whatsapp-log.json");
+            var logDosya = Path.Combine(WhatsAppVeriKlasor(), "whatsapp-log.json");
             if (File.Exists(logDosya))
                 return JsonSerializer.Deserialize<List<WhatsAppLogKayit>>(File.ReadAllText(logDosya), _jsonRead) ?? new();
         }

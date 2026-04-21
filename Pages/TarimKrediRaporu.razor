@@ -1,0 +1,689 @@
+@page "/tarim-kredi-raporu"
+@using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
+@inject TarimKrediService Srv
+@inject ExcelExportService Excel
+@inject ISnackbar Snackbar
+@inject IDialogService Dialog
+@inject IJSRuntime JS
+
+<PageTitle>Tarım Kredi Raporu</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-3">
+    <MudIcon Icon="@Icons.Material.Filled.Agriculture" Class="mr-2" />
+    Tarım Kredi Raporu
+</MudText>
+
+<MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-4" @bind-ActivePanelIndex="_aktifTab">
+
+    <!-- ===================== RAPOR ===================== -->
+    <MudTabPanel Text="Rapor" Icon="@Icons.Material.Filled.Assessment">
+
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+            Logo'dan ünvanı <b>TARIM KREDİ</b> / <b>PANCAR EKİCİLERİ</b> geçen firmaların
+            yan ürün satış ve iade hareketleri otomatik çekilir. Eşleşmeyen firmalar
+            <b>EŞLEŞMEMİŞ</b> bölgesinde toplanır; "Bölge Eşleşmesi" sekmesinden ekleyebilirsiniz.
+        </MudAlert>
+
+        <MudPaper Class="pa-3 mb-3">
+            <MudGrid>
+                <MudItem xs="12" md="3">
+                    <MudDatePicker @bind-Date="_bas" Label="Başlangıç" DateFormat="dd.MM.yyyy"
+                                   Editable="true" Mask="@(new DateMask("dd.MM.yyyy"))"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" md="3">
+                    <MudDatePicker @bind-Date="_bit" Label="Bitiş" DateFormat="dd.MM.yyyy"
+                                   Editable="true" Mask="@(new DateMask("dd.MM.yyyy"))"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" md="3" Class="d-flex align-center">
+                    <MudSwitch T="bool" @bind-Value="_pekDahil" Color="Color.Primary"
+                               Label="Pancar Ekicileri dahil" />
+                </MudItem>
+                <MudItem xs="12" md="3" Class="d-flex align-center gap-2">
+                    <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                               StartIcon="@Icons.Material.Filled.Search"
+                               OnClick="VeriCek" Disabled="_yukleniyor">
+                        @(_yukleniyor ? "Yükleniyor..." : "Getir")
+                    </MudButton>
+                    <MudButton Color="Color.Success" Variant="Variant.Filled"
+                               StartIcon="@Icons.Material.Filled.FileDownload"
+                               OnClick="ExcelIndir" Disabled="_bolgeler.Count == 0">
+                        Excel
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        @if (_bolgeler.Count > 0)
+        {
+            <MudPaper Class="pa-3 mb-3">
+                <MudText Typo="Typo.body2">
+                    Toplam Bölge: <b>@_bolgeler.Count</b> |
+                    Firma: <b>@_bolgeler.Sum(b => b.FirmaSayisi)</b> |
+                    Hareket: <b>@_bolgeler.Sum(b => b.HareketSayisi)</b> |
+                    Net Miktar: <b>@Math.Abs(_bolgeler.Sum(b => b.ToplamMiktar)).ToString("N2") KG</b> |
+                    Net Tutar: <b>@Math.Abs(_bolgeler.Sum(b => b.ToplamTutar)).ToString("N2") TL</b>
+                </MudText>
+            </MudPaper>
+
+            var eslesmeyen = _bolgeler.FirstOrDefault(b => b.Bolge == "EŞLEŞMEMİŞ");
+            if (eslesmeyen != null)
+            {
+                <MudAlert Severity="Severity.Warning" Class="mb-3" Icon="@Icons.Material.Filled.Warning">
+                    <b>@eslesmeyen.FirmaSayisi firmanın bölgesi tanımlı değil.</b>
+                    Bu firmalar "EŞLEŞMEMİŞ" sekmesinde listelenir. Her satırın yanındaki alandan
+                    bölge seçip <b>Ekle</b> dediğinizde, rapor otomatik olarak güncellenir.
+                </MudAlert>
+            }
+
+            <MudTabs Elevation="1" Rounded="true" Border="true" ApplyEffectsToContainer="true"
+                     PanelClass="pa-3" Color="Color.Success">
+                @foreach (var r in _bolgeler)
+                {
+                    var iconBolge = r.Bolge == "EŞLEŞMEMİŞ" ? Icons.Material.Filled.Warning : Icons.Material.Filled.LocationOn;
+
+                    <MudTabPanel Text="@($"{r.Bolge} ({r.FirmaSayisi})")" Icon="@iconBolge">
+
+                        @if (r.Bolge == "EŞLEŞMEMİŞ")
+                        {
+                            <MudPaper Class="pa-3 mb-3" Style="background:#fff3e0; border-left:6px solid #e65100;">
+                                <MudText Typo="Typo.subtitle1" Style="color:#e65100">
+                                    <MudIcon Icon="@Icons.Material.Filled.Warning" Class="mr-1" />
+                                    <b>BÖLGESİ ATANMAMIŞ FİRMALAR (@r.FirmaSayisi)</b>
+                                </MudText>
+                                <MudText Typo="Typo.body2" Class="mt-1">
+                                    Aşağıdaki firmaların bölge eşleşmesi yok.
+                                    Her firma için bölge seçip <b>Ekle</b> butonuna basın; rapor anında yeniden gruplanır.
+                                </MudText>
+                            </MudPaper>
+
+                            <MudTable Items="r.Firmalar" Dense="true" Hover="true" Bordered="true"
+                                      Striped="true" Breakpoint="Breakpoint.None">
+                                <HeaderContent>
+                                    <MudTh>Firma Ünvanı</MudTh>
+                                    <MudTh>Cari Kodu</MudTh>
+                                    <MudTh Style="text-align:right">Hareket</MudTh>
+                                    <MudTh Style="text-align:right">Net Miktar</MudTh>
+                                    <MudTh Style="text-align:right">Net Tutar</MudTh>
+                                    <MudTh Style="width:320px">Bölge Ataması</MudTh>
+                                </HeaderContent>
+                                <RowTemplate>
+                                    <MudTd><b>@context.CariHesapUnvani</b></MudTd>
+                                    <MudTd>@context.CariHesapKodu</MudTd>
+                                    <MudTd Style="text-align:right">@context.Hareketler.Count</MudTd>
+                                    <MudTd Style="text-align:right">@Math.Abs(context.ToplamMiktar).ToString("N2")</MudTd>
+                                    <MudTd Style="text-align:right">@Math.Abs(context.ToplamTutar).ToString("N2")</MudTd>
+                                    <MudTd>
+                                        <div class="d-flex gap-2 align-center">
+                                            <MudAutocomplete T="string"
+                                                             Value="@(GetHizli(context.CariHesapUnvani))"
+                                                             ValueChanged="@(v => SetHizli(context.CariHesapUnvani, v))"
+                                                             SearchFunc="@BolgeAra" CoerceValue="true"
+                                                             Placeholder="Bölge..."
+                                                             Variant="Variant.Outlined" Margin="Margin.Dense"
+                                                             Dense="true" Clearable="true" />
+                                            <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                                                       Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
+                                                       OnClick="@(() => HizliBolgeEkle(context.CariHesapUnvani))">
+                                                Ekle
+                                            </MudButton>
+                                        </div>
+                                    </MudTd>
+                                </RowTemplate>
+                            </MudTable>
+                        }
+                        else
+                        {
+                            <MudPaper Class="pa-2 mb-3" Style="background:#e8f5e9">
+                                <MudText Typo="Typo.subtitle1">
+                                    <b>@r.Bolge BÖLGESİ</b>
+                                    — Firma: <b>@r.FirmaSayisi</b>
+                                    | Hareket: <b>@r.HareketSayisi</b>
+                                    | Net Miktar: <b>@Math.Abs(r.ToplamMiktar).ToString("N2") KG</b>
+                                    | Net Tutar: <b>@Math.Abs(r.ToplamTutar).ToString("N2") TL</b>
+                                </MudText>
+                            </MudPaper>
+
+                            <MudTable T="YanUrunHareket" Items="FirmalarDuz(r)" Dense="true" Hover="true"
+                                  Bordered="true" Striped="true" Breakpoint="Breakpoint.None"
+                                  GroupBy="@_grup" GroupHeaderStyle="background:#fff8e1; font-weight:600"
+                                  GroupFooterStyle="background:#fff3e0; font-weight:700">
+                            <HeaderContent>
+                                <MudTh>Tarih</MudTh>
+                                <MudTh>Fiş Türü</MudTh>
+                                <MudTh>Fatura No</MudTh>
+                                <MudTh>Cari Kodu</MudTh>
+                                <MudTh>Malzeme</MudTh>
+                                <MudTh Style="text-align:right">Miktar (KG)</MudTh>
+                                <MudTh Style="text-align:right">Fiyat</MudTh>
+                                <MudTh Style="text-align:right">Tutar (TL)</MudTh>
+                            </HeaderContent>
+                            <GroupHeaderTemplate>
+                                <MudTh Class="mud-table-cell-custom-group" colspan="8">
+                                    @context.Key
+                                </MudTh>
+                            </GroupHeaderTemplate>
+                            <RowTemplate>
+                                @{
+                                    var iade = context.Iade;
+                                    var style = iade ? "color:#c62828; font-weight:600;" : "";
+                                }
+                                <MudTd Style="@style">@context.Tarih.ToString("dd.MM.yyyy")</MudTd>
+                                <MudTd Style="@style">@context.FisTuruGorunen</MudTd>
+                                <MudTd Style="@style">@context.NumaraGorunen</MudTd>
+                                <MudTd Style="@style">@context.CariHesapKodu</MudTd>
+                                <MudTd Style="@style">@context.MalzemeAciklamasi</MudTd>
+                                <MudTd Style="@($"text-align:right; {style}")">@context.MiktarGorunen.ToString("N2")</MudTd>
+                                <MudTd Style="@($"text-align:right; {style}")">@context.Fiyat.ToString("N2")</MudTd>
+                                <MudTd Style="@($"text-align:right; {style}")">@context.TutarGorunen.ToString("N2")</MudTd>
+                            </RowTemplate>
+                            <GroupFooterTemplate>
+                                <MudTd colspan="5" Style="text-align:right">
+                                    <b>@context.Key — Alt Toplam</b>
+                                </MudTd>
+                                <MudTd Style="text-align:right">
+                                    <b>@Math.Abs(context.Items.Sum(i => i.NetMiktar)).ToString("N2")</b>
+                                </MudTd>
+                                <MudTd></MudTd>
+                                <MudTd Style="text-align:right">
+                                    <b>@Math.Abs(context.Items.Sum(i => i.NetTutar)).ToString("N2")</b>
+                                </MudTd>
+                            </GroupFooterTemplate>
+                        </MudTable>
+                        }
+                    </MudTabPanel>
+                }
+            </MudTabs>
+        }
+        else if (_ilkCekildi)
+        {
+            <MudAlert Severity="Severity.Warning">Belirtilen aralıkta hareket bulunamadı.</MudAlert>
+        }
+    </MudTabPanel>
+
+    <!-- ===================== BÖLGE YÖNETİMİ ===================== -->
+    <MudTabPanel Text="@($"Bölgeler ({_bolgeTanimlari.Count})")" Icon="@Icons.Material.Filled.LocationCity">
+
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+            Buradan yeni bölge tanımlayabilir, bölgenin <b>icmal mail adresi</b>,
+            <b>ilgili kişi adı</b> ve <b>telefon numarası</b> bilgilerini kaydedebilirsiniz.
+            Bir bölgede eşleşen firma varsa silinemez.
+        </MudAlert>
+
+        <MudPaper Class="pa-3 mb-3">
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Yeni Bölge Ekle</MudText>
+            <MudGrid>
+                <MudItem xs="12" md="3">
+                    <MudTextField @bind-Value="_yeniBolgeAd" Label="Bölge Adı"
+                                  Placeholder="Örn: İSTANBUL"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" md="3">
+                    <MudTextField @bind-Value="_yeniBolgeEmail" Label="E-posta"
+                                  Placeholder="ornek@dogus.com.tr"
+                                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Email"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" md="3">
+                    <MudTextField @bind-Value="_yeniBolgeKisi" Label="İlgili Kişi"
+                                  Placeholder="Ad Soyad"
+                                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Person"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" md="2">
+                    <MudTextField @bind-Value="_yeniBolgeTel" Label="Telefon"
+                                  Placeholder="05xx xxx xx xx"
+                                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Phone"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" md="1" Class="d-flex align-center">
+                    <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                               StartIcon="@Icons.Material.Filled.Add" OnClick="BolgeTanimiEkle">
+                        Ekle
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        <MudPaper Class="pa-3">
+            <MudTable Items="_bolgeTanimlari" Dense="true" Hover="true" Bordered="true" Striped="true"
+                      Breakpoint="Breakpoint.None">
+                <HeaderContent>
+                    <MudTh>Bölge</MudTh>
+                    <MudTh>E-posta</MudTh>
+                    <MudTh>İlgili Kişi</MudTh>
+                    <MudTh>Telefon</MudTh>
+                    <MudTh Style="width:200px">İşlemler</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    @if (_bolgeTanimDuzenId != 0 && _bolgeTanimDuzenId == context.Id)
+                    {
+                        <MudTd>
+                            <MudTextField @bind-Value="_bolgeTanimDuzenAd" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </MudTd>
+                        <MudTd>
+                            <MudTextField @bind-Value="_bolgeTanimDuzenEmail" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </MudTd>
+                        <MudTd>
+                            <MudTextField @bind-Value="_bolgeTanimDuzenKisi" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </MudTd>
+                        <MudTd>
+                            <MudTextField @bind-Value="_bolgeTanimDuzenTel" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </MudTd>
+                        <MudTd>
+                            <MudIconButton Icon="@Icons.Material.Filled.Save" Color="Color.Success"
+                                           Size="Size.Small" OnClick="() => BolgeTanimiKaydet(context)" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                                           OnClick="() => _bolgeTanimDuzenId = 0" />
+                        </MudTd>
+                    }
+                    else
+                    {
+                        <MudTd><b>@context.Ad</b></MudTd>
+                        <MudTd>
+                            @if (!string.IsNullOrWhiteSpace(context.Email))
+                            {
+                                <MudLink Href="@($"mailto:{context.Email}")">@context.Email</MudLink>
+                            }
+                        </MudTd>
+                        <MudTd>@context.IlgiliKisi</MudTd>
+                        <MudTd>
+                            @if (!string.IsNullOrWhiteSpace(context.Telefon))
+                            {
+                                <MudLink Href="@($"tel:{context.Telefon}")">@context.Telefon</MudLink>
+                            }
+                        </MudTd>
+                        <MudTd>
+                            @if (context.Id == 0)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Warning" Icon="@Icons.Material.Filled.Warning">
+                                    tanımsız
+                                </MudChip>
+                                <MudIconButton Icon="@Icons.Material.Filled.Save" Color="Color.Primary" Size="Size.Small"
+                                               Title="Bu bölgeyi kaydet"
+                                               OnClick="() => BolgeTanimiOlustur(context.Ad)" />
+                            }
+                            else
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Primary"
+                                               Size="Size.Small" OnClick="() => BolgeTanimiDuzenle(context)" />
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                               Size="Size.Small" OnClick="() => BolgeTanimiSil(context)" />
+                            }
+                        </MudTd>
+                    }
+                </RowTemplate>
+                <NoRecordsContent>
+                    <MudText>Tanımlı bölge yok.</MudText>
+                </NoRecordsContent>
+            </MudTable>
+        </MudPaper>
+    </MudTabPanel>
+
+    <!-- ===================== BÖLGE EŞLEŞMESİ ===================== -->
+    <MudTabPanel Text="@($"Bölge Eşleşmesi ({_eslesmeler.Count})")" Icon="@Icons.Material.Filled.Map">
+
+        <MudPaper Class="pa-3 mb-3">
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Yeni Eşleşme Ekle</MudText>
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_yeniFirma" Label="Firma Ünvanı"
+                                  Placeholder="Örn: 999 SAYILI XYZ TARIM KREDİ KOOPERATİFİ"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" md="3">
+                    <MudAutocomplete T="string" @bind-Value="_yeniBolge" Label="Bölge"
+                                     SearchFunc="@BolgeAra" CoerceValue="true"
+                                     Variant="Variant.Outlined" Margin="Margin.Dense"
+                                     HelperText="Mevcut bölge seçin veya yeni yazın" />
+                </MudItem>
+                <MudItem xs="12" md="3" Class="d-flex align-center">
+                    <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                               StartIcon="@Icons.Material.Filled.Add" OnClick="EslesmeEkle">
+                        Ekle
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        <MudPaper Class="pa-3">
+            <MudTextField @bind-Value="_arama" Placeholder="Firma veya bölge ara..."
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          Immediate="true" DebounceInterval="200"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+
+            <MudTable Items="EslesmeFiltreli" Dense="true" Hover="true" Bordered="true" Striped="true"
+                      Breakpoint="Breakpoint.None" FixedHeader="true" Height="calc(100vh - 430px)"
+                      GroupBy="@_eslesmeGrup" GroupHeaderStyle="background:#e3f2fd; font-weight:700">
+                <HeaderContent>
+                    <MudTh>Firma Ünvanı</MudTh>
+                    <MudTh>Bölge</MudTh>
+                    <MudTh Style="width:160px">İşlemler</MudTh>
+                </HeaderContent>
+                <GroupHeaderTemplate>
+                    <MudTh colspan="3">@context.Key (@context.Items.Count())</MudTh>
+                </GroupHeaderTemplate>
+                <RowTemplate>
+                    @if (_duzenId == context.Id)
+                    {
+                        <MudTd>
+                            <MudTextField @bind-Value="_duzenFirma" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </MudTd>
+                        <MudTd>
+                            <MudAutocomplete T="string" @bind-Value="_duzenBolge"
+                                             SearchFunc="@BolgeAra" CoerceValue="true"
+                                             Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </MudTd>
+                        <MudTd>
+                            <MudIconButton Icon="@Icons.Material.Filled.Save" Color="Color.Success"
+                                           Size="Size.Small" OnClick="() => EslesmeKaydet(context)" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                                           OnClick="() => _duzenId = 0" />
+                        </MudTd>
+                    }
+                    else
+                    {
+                        <MudTd>@context.FirmaAdi</MudTd>
+                        <MudTd>@context.Bolge</MudTd>
+                        <MudTd>
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Primary"
+                                           Size="Size.Small" OnClick="() => EslesmeDuzenle(context)" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                           Size="Size.Small" OnClick="() => EslesmeSil(context)" />
+                        </MudTd>
+                    }
+                </RowTemplate>
+                <NoRecordsContent>
+                    <MudText>Eşleşme bulunamadı.</MudText>
+                </NoRecordsContent>
+            </MudTable>
+        </MudPaper>
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    private int _aktifTab = 0;
+
+    // Rapor state
+    private DateTime? _bas = new DateTime(DateTime.Today.Year, 1, 1);
+    private DateTime? _bit = DateTime.Today;
+    private bool _pekDahil = true;
+    private bool _yukleniyor = false;
+    private bool _ilkCekildi = false;
+    private List<YanUrunHareket> _tumHareketler = new();
+    private List<TarimKrediBolgeRapor> _bolgeler = new();
+
+    private TableGroupDefinition<YanUrunHareket> _grup = new()
+    {
+        GroupName = "Firma",
+        Indentation = false,
+        Expandable = false,
+        Selector = h => h.CariHesapUnvani
+    };
+
+    // Eşleşme state
+    private List<TarimKrediBolgeEslesme> _eslesmeler = new();
+    private string _arama = "";
+    private string _yeniFirma = "";
+    private string _yeniBolge = "";
+    private int _duzenId = 0;
+    private string _duzenFirma = "";
+    private string _duzenBolge = "";
+
+    // Eşleşmeyen firmalar için hızlı bölge atama
+    private Dictionary<string, string> _hizliSecim = new(StringComparer.OrdinalIgnoreCase);
+    private string? GetHizli(string firma) => _hizliSecim.TryGetValue(firma, out var v) ? v : null;
+    private void SetHizli(string firma, string? v)
+    {
+        if (string.IsNullOrWhiteSpace(v)) _hizliSecim.Remove(firma);
+        else _hizliSecim[firma] = v!;
+    }
+
+    private TableGroupDefinition<TarimKrediBolgeEslesme> _eslesmeGrup = new()
+    {
+        GroupName = "Bölge",
+        Indentation = false,
+        Expandable = true,
+        IsInitiallyExpanded = false,
+        Selector = e => e.Bolge
+    };
+
+    // Bölge Yönetimi state
+    private List<TarimKrediBolgeTanim> _bolgeTanimlari = new();
+    private string _yeniBolgeAd = "";
+    private string _yeniBolgeEmail = "";
+    private string _yeniBolgeKisi = "";
+    private string _yeniBolgeTel = "";
+    private int _bolgeTanimDuzenId = 0;
+    private string _bolgeTanimDuzenAd = "";
+    private string _bolgeTanimDuzenEmail = "";
+    private string _bolgeTanimDuzenKisi = "";
+    private string _bolgeTanimDuzenTel = "";
+
+    protected override void OnInitialized()
+    {
+        EslesmeleriYukle();
+        BolgeTanimlariYukle();
+    }
+
+    private void BolgeTanimlariYukle()
+    {
+        _bolgeTanimlari = Srv.BolgeTanimListesi();
+    }
+
+    private void BolgeTanimiEkle()
+    {
+        if (string.IsNullOrWhiteSpace(_yeniBolgeAd))
+        {
+            Snackbar.Add("Bölge adı zorunlu.", Severity.Warning);
+            return;
+        }
+        try
+        {
+            Srv.BolgeTanimiEkle(_yeniBolgeAd, _yeniBolgeEmail, _yeniBolgeKisi, _yeniBolgeTel);
+            _yeniBolgeAd = ""; _yeniBolgeEmail = ""; _yeniBolgeKisi = ""; _yeniBolgeTel = "";
+            BolgeTanimlariYukle();
+            Snackbar.Add("Bölge eklendi.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add("Hata: " + ex.Message, Severity.Error); }
+    }
+
+    private void BolgeTanimiOlustur(string ad)
+    {
+        try
+        {
+            Srv.BolgeTanimiEkle(ad);
+            BolgeTanimlariYukle();
+            Snackbar.Add($"\"{ad}\" bölge listesine kaydedildi. Mail ve kişi bilgilerini düzenleyin.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add("Hata: " + ex.Message, Severity.Error); }
+    }
+
+    private void BolgeTanimiDuzenle(TarimKrediBolgeTanim t)
+    {
+        _bolgeTanimDuzenId = t.Id;
+        _bolgeTanimDuzenAd = t.Ad;
+        _bolgeTanimDuzenEmail = t.Email ?? "";
+        _bolgeTanimDuzenKisi = t.IlgiliKisi ?? "";
+        _bolgeTanimDuzenTel = t.Telefon ?? "";
+    }
+
+    private void BolgeTanimiKaydet(TarimKrediBolgeTanim t)
+    {
+        if (string.IsNullOrWhiteSpace(_bolgeTanimDuzenAd))
+        {
+            Snackbar.Add("Bölge adı zorunlu.", Severity.Warning);
+            return;
+        }
+        try
+        {
+            Srv.BolgeTanimiGuncelle(t.Id, _bolgeTanimDuzenAd, _bolgeTanimDuzenEmail,
+                                    _bolgeTanimDuzenKisi, _bolgeTanimDuzenTel);
+            _bolgeTanimDuzenId = 0;
+            BolgeTanimlariYukle();
+            EslesmeleriYukle();
+            if (_tumHareketler.Count > 0) _bolgeler = Srv.BolgeyeGore(_tumHareketler);
+            Snackbar.Add("Güncellendi.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add("Hata: " + ex.Message, Severity.Error); }
+    }
+
+    private async Task BolgeTanimiSil(TarimKrediBolgeTanim t)
+    {
+        var onay = await Dialog.ShowMessageBox("Silme Onayı",
+            $"\"{t.Ad}\" bölgesi silinsin mi?",
+            yesText: "Sil", cancelText: "İptal");
+        if (onay != true) return;
+        try
+        {
+            Srv.BolgeTanimiSil(t.Id);
+            BolgeTanimlariYukle();
+            Snackbar.Add("Silindi.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    // ============ Rapor ============
+
+    private async Task VeriCek()
+    {
+        if (_bas == null || _bit == null)
+        {
+            Snackbar.Add("Başlangıç ve bitiş tarihini seçin.", Severity.Warning);
+            return;
+        }
+        _yukleniyor = true;
+        try
+        {
+            _tumHareketler = await Srv.TarimKrediHareketleriAsync(_bas.Value, _bit.Value, _pekDahil);
+            _bolgeler = Srv.BolgeyeGore(_tumHareketler);
+            _ilkCekildi = true;
+            Snackbar.Add($"{_tumHareketler.Count} hareket, {_bolgeler.Count} bölge yüklendi.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Hata: " + ex.Message, Severity.Error);
+        }
+        finally { _yukleniyor = false; }
+    }
+
+    private IEnumerable<YanUrunHareket> FirmalarDuz(TarimKrediBolgeRapor r)
+        => r.Firmalar.SelectMany(f => f.Hareketler);
+
+    private void HizliBolgeEkle(string firma)
+    {
+        if (!_hizliSecim.TryGetValue(firma, out var bolge) || string.IsNullOrWhiteSpace(bolge))
+        {
+            Snackbar.Add("Bu firma için önce bir bölge seçin.", Severity.Warning);
+            return;
+        }
+        try
+        {
+            Srv.BolgeEkle(firma, bolge);
+            Srv.BolgeTanimiEkle(bolge); // yeni bölge ise tanım listesine de ekle
+            _hizliSecim.Remove(firma);
+            EslesmeleriYukle();
+            BolgeTanimlariYukle();
+            // Mevcut veriyi yeniden grupla
+            _bolgeler = Srv.BolgeyeGore(_tumHareketler);
+            Snackbar.Add($"\"{firma}\" → {bolge.ToUpper()} eklendi.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add("Hata: " + ex.Message, Severity.Error); }
+    }
+
+    private async Task ExcelIndir()
+    {
+        if (_bolgeler.Count == 0 || _bas == null || _bit == null) return;
+        try
+        {
+            var bytes = Excel.ExportTarimKrediRaporu(_bolgeler, _bas.Value, _bit.Value);
+            var ad = $"Tarim_Kredi_Raporu_{_bas:yyyyMMdd}_{_bit:yyyyMMdd}.xlsx";
+            using var ms = new MemoryStream(bytes);
+            using var sr = new DotNetStreamReference(ms);
+            await JS.InvokeVoidAsync("downloadFileFromStream", ad, sr);
+            Snackbar.Add("Excel indirildi.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add("Excel hatası: " + ex.Message, Severity.Error); }
+    }
+
+    // ============ Eşleşme CRUD ============
+
+    private void EslesmeleriYukle()
+    {
+        _eslesmeler = Srv.BolgeListesi();
+    }
+
+    private IEnumerable<TarimKrediBolgeEslesme> EslesmeFiltreli
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(_arama)) return _eslesmeler;
+            var q = _arama.Trim();
+            var ci = System.Globalization.CultureInfo.InvariantCulture.CompareInfo;
+            var opt = System.Globalization.CompareOptions.IgnoreCase | System.Globalization.CompareOptions.IgnoreNonSpace;
+            bool Ic(string s) => ci.IndexOf(s ?? "", q, opt) >= 0;
+            return _eslesmeler.Where(e => Ic(e.FirmaAdi) || Ic(e.Bolge));
+        }
+    }
+
+    private Task<IEnumerable<string>> BolgeAra(string? deger)
+    {
+        var list = Srv.BolgeAdlari();
+        if (string.IsNullOrWhiteSpace(deger))
+            return Task.FromResult<IEnumerable<string>>(list);
+        return Task.FromResult<IEnumerable<string>>(
+            list.Where(b => b.Contains(deger, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private void EslesmeEkle()
+    {
+        if (string.IsNullOrWhiteSpace(_yeniFirma) || string.IsNullOrWhiteSpace(_yeniBolge))
+        {
+            Snackbar.Add("Firma ve bölge zorunlu.", Severity.Warning);
+            return;
+        }
+        try
+        {
+            Srv.BolgeEkle(_yeniFirma, _yeniBolge);
+            Srv.BolgeTanimiEkle(_yeniBolge); // yeni bölge ise tanım listesine de ekle
+            _yeniFirma = ""; _yeniBolge = "";
+            EslesmeleriYukle();
+            BolgeTanimlariYukle();
+            Snackbar.Add("Eşleşme eklendi.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add("Hata: " + ex.Message, Severity.Error); }
+    }
+
+    private void EslesmeDuzenle(TarimKrediBolgeEslesme e)
+    {
+        _duzenId = e.Id;
+        _duzenFirma = e.FirmaAdi;
+        _duzenBolge = e.Bolge;
+    }
+
+    private void EslesmeKaydet(TarimKrediBolgeEslesme e)
+    {
+        if (string.IsNullOrWhiteSpace(_duzenFirma) || string.IsNullOrWhiteSpace(_duzenBolge))
+        {
+            Snackbar.Add("Firma ve bölge zorunlu.", Severity.Warning);
+            return;
+        }
+        Srv.BolgeGuncelle(e.Id, _duzenFirma, _duzenBolge, e.CariKodu);
+        _duzenId = 0;
+        EslesmeleriYukle();
+        Snackbar.Add("Güncellendi.", Severity.Success);
+    }
+
+    private async Task EslesmeSil(TarimKrediBolgeEslesme e)
+    {
+        var onay = await Dialog.ShowMessageBox("Silme Onayı",
+            $"\"{e.FirmaAdi}\" — {e.Bolge} eşleşmesi silinsin mi?",
+            yesText: "Sil", cancelText: "İptal");
+        if (onay != true) return;
+        Srv.BolgeSil(e.Id);
+        EslesmeleriYukle();
+        Snackbar.Add("Silindi.", Severity.Success);
+    }
+}
