@@ -220,7 +220,6 @@ ORDER BY DX.EDATE DESC, DX.CRTYPE";
     {
         var gntView = _db.GetViewName("GNTOTST");
         var itTbl = _db.GetTableName("ITEMS");
-
         var sql = $@"
 SELECT
     GNT.INVENNO            AS AmbarNo,
@@ -241,7 +240,7 @@ ORDER BY GNT.INVENNO, ITM.CODE";
             firma = _db.FirmaNo,
             ambar = ambarNo,
             sifirGizle = sifirlariGizle ? 1 : 0
-        }, commandTimeout: 120, cancellationToken: ct))).ToList();
+        }, commandTimeout: 180, cancellationToken: ct))).ToList();
 
         var list = new List<StokSatiri>(rows.Count);
         foreach (var r in rows)

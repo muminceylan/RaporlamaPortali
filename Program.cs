@@ -6,6 +6,9 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication;
 
+// Başlatma şifresi sor. Yanlış/iptal → process kapanır.
+RaporlamaPortali.Services.LaunchAuthService.Require();
+
 // Alt çizgili SQL kolon adlarını PascalCase property'lere otomatik eşleştir
 // Örn: MALZEME_KODU → MalzemeKodu, AMBAR_NO → AmbarNo
 DefaultTypeMap.MatchNamesWithUnderscores = true;

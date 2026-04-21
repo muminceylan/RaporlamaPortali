@@ -15,6 +15,7 @@ public static class AppDataPaths
     public static string EvrakArsivDizini  => Path.Combine(DataRoot, "EvrakArsiv");
     public static string GirisAyarlariJson => Path.Combine(DataRoot, "giris_ayarlari.json");
     public static string MailAyarlariJson  => Path.Combine(DataRoot, "mail_ayarlari.json");
+    public static string LaunchAuthJson    => Path.Combine(DataRoot, "launch_auth.json");
     public static string WhatsAppDataDir   => Path.Combine(DataRoot, "WhatsApp");
 
     /// <summary>
