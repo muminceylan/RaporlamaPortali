@@ -52,6 +52,12 @@
                 <MudNavLink Href="/tarim-kredi-raporu" Icon="@Icons.Material.Filled.Agriculture" IconColor="Color.Success">
                     Tarım Kredi Raporu
                 </MudNavLink>
+                <MudNavLink Href="/malzeme-hareket-listesi" Icon="@Icons.Material.Filled.ListAlt" IconColor="Color.Success">
+                    Malzeme Hareket Listesi
+                </MudNavLink>
+                <MudNavLink Href="/finans-raporu" Icon="@Icons.Material.Filled.Savings" IconColor="Color.Success">
+                    Finans Raporu
+                </MudNavLink>
             </MudNavGroup>
 
             <MudNavGroup Title="Logo İşlemleri" Icon="@Icons.Material.Filled.Business" @bind-Expanded="_logoOpen"
@@ -176,7 +182,7 @@
     private void SenkronizeEt(string uri)
     {
         var path = new Uri(uri).AbsolutePath.ToLowerInvariant().TrimEnd('/');
-        if (path is "/yan-urunler" or "/pancar-raporu" or "/seker-dairesi" or "/seker-dairesi-yan-urunler" or "/tarim-kredi-raporu")
+        if (path is "/yan-urunler" or "/pancar-raporu" or "/seker-dairesi" or "/seker-dairesi-yan-urunler" or "/tarim-kredi-raporu" or "/malzeme-hareket-listesi" or "/finans-raporu")
             _raporlarOpen = true;
         else if (path is "/kasa-hareketleri" or "/kur-bilgileri" or "/stok-durumu" or "/cari-bakiye" or "/cari-hareket" or "/kur-farki-calismasi")
             _logoOpen = true;

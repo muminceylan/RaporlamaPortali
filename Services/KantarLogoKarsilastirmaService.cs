@@ -36,6 +36,7 @@ public class KantarLogoKarsilastirmaService
 
     public async Task<List<KantarHamSatir>> KantarHamAsync(DateTime baslangic, DateTime bitis, CancellationToken ct = default)
     {
+        bitis = SistemTarihi.Clamp(bitis);
         // Kantar DB'de Tarih int olarak Excel date serial biçiminde saklanır (1900 leap year bug dahil).
         // Doğru dönüşüm: DATEADD(day, Tarih - 2, '1900-01-01'). CAST(Tarih AS datetime) 2 gün kaydırır.
         var sql = $@"
@@ -60,6 +61,7 @@ ORDER BY Tarih, FisNo";
 
     public async Task<List<LogoHamSatir>> LogoHamAsync(DateTime baslangic, DateTime bitis, CancellationToken ct = default)
     {
+        bitis = SistemTarihi.Clamp(bitis);
         var sql = $@"
 SELECT
     Tarih        = TARIH,
@@ -225,6 +227,7 @@ ORDER BY FIS_NUMARASI";
 
     public async Task<KarsilastirmaSonuc> KarsilastirmaYapAsync(DateTime baslangic, DateTime bitis, CancellationToken ct = default)
     {
+        bitis = SistemTarihi.Clamp(bitis);
         var kantar = await KantarHamAsync(baslangic, bitis, ct);
         var logo = await LogoHamAsync(baslangic, bitis, ct);
 

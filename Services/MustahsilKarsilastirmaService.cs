@@ -28,6 +28,7 @@ public class MustahsilKarsilastirmaService
 
     public async Task<MustahsilKarsilastirmaSonuc> KarsilastirAsync(DateTime baslangic, DateTime bitis, string kampanyaYili, CancellationToken ct = default)
     {
+        bitis = SistemTarihi.Clamp(bitis);
         var sonuc = new MustahsilKarsilastirmaSonuc
         {
             BaslangicTarihi = baslangic,

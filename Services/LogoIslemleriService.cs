@@ -92,6 +92,7 @@ public class LogoIslemleriService
         bool iptalDahilEt = false,
         CancellationToken ct = default)
     {
+        bitis = SistemTarihi.Clamp(bitis) ?? SistemTarihi.SonDahilGun;
         var ksTbl = _db.GetPeriodTableName("KSLINES");  // LG_211_01_KSLINES
         var clTbl = _db.GetTableName("CLCARD");         // LG_211_CLCARD
         var kcTbl = _db.GetTableName("KSCARD");         // LG_211_KSCARD
@@ -181,6 +182,7 @@ ORDER BY KS.DATE_ DESC, KS.LOGICALREF DESC";
         int? crType = null,
         CancellationToken ct = default)
     {
+        bitis = SistemTarihi.Clamp(bitis) ?? SistemTarihi.SonDahilGun;
         var exTbl = $"LG_EXCHANGE_{_db.FirmaNo}";
         var sql = $@"
 SELECT
@@ -283,6 +285,7 @@ ORDER BY CW.NR";
         bool sadeceBakiyeOlanlar = true,
         CancellationToken ct = default)
     {
+        bitis = SistemTarihi.Clamp(bitis);
         var clfTbl = _db.GetPeriodTableName("CLFLINE");   // LG_211_01_CLFLINE
         var clcTbl = _db.GetTableName("CLCARD");          // LG_211_CLCARD
 
@@ -395,6 +398,7 @@ ORDER BY CODE";
             string? cariUnvan = null,
             CancellationToken ct = default)
     {
+        bitis = SistemTarihi.Clamp(bitis);
         var clfTbl = _db.GetPeriodTableName("CLFLINE");  // LG_211_01_CLFLINE
         var clcTbl = _db.GetTableName("CLCARD");         // LG_211_CLCARD
         var invTbl = _db.GetPeriodTableName("INVOICE");  // LG_211_01_INVOICE
@@ -525,6 +529,8 @@ ORDER BY C.CODE, F.DATE_, F.LOGICALREF";
             bool krediKartiSentetikle = true,
             CancellationToken ct = default)
     {
+        bitis = SistemTarihi.Clamp(bitis);
+        hesaplamaTarihi = SistemTarihi.Clamp(hesaplamaTarihi);
         var (hareketler, _, _, _) = await CariHareketListesiAsync(
             baslangic, bitis, cariKodu, cariUnvan, ct);
 
@@ -723,6 +729,8 @@ ORDER BY EDATE DESC";
         int rateKolonu = 2,
         CancellationToken ct = default)
     {
+        bitis = SistemTarihi.Clamp(bitis);
+        hesaplamaTarihi = SistemTarihi.Clamp(hesaplamaTarihi);
         var (hareketler, _, _, _) = await CariHareketListesiAsync(
             baslangic, bitis, cariKodu, cariUnvan, ct);
 

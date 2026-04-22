@@ -96,7 +96,7 @@ public class ZamanliMailService : BackgroundService
             var ayarlar = ayarlarService.GetAyarlar();
 
             var baslangic = new DateTime(2025, 9, 1);
-            var bitis = DateTime.Today;
+            var bitis = SistemTarihi.Bugun();
 
             _logger.LogInformation("Seker verileri cekiliyor...");
             var sekerVerileri = await sekerService.GetSekerSatisOzetAsync(baslangic, bitis);

@@ -1,0 +1,533 @@
+@page "/malzeme-hareket-listesi"
+@using RaporlamaPortali.Models
+@inject MalzemeHareketService HareketService
+@inject MalzemeListeService ListeService
+@inject ExcelExportService ExcelService
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+
+<PageTitle>Malzeme Hareket Listesi</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.ListAlt" Class="mr-2" />
+    Malzeme Hareket Listesi
+</MudText>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid>
+        <MudItem xs="12" md="6">
+            <MudText Typo="Typo.subtitle2" Class="mb-1">Kayıtlı Liste</MudText>
+            <MudSelect T="string" Value="@_secilenListeAdi" ValueChanged="ListeSec"
+                       Placeholder="— Kayıtlı listeden seç —" Dense="true" Clearable="true">
+                @foreach (var l in _listeler)
+                {
+                    <MudSelectItem Value="@l.Ad">@l.Ad (@l.MalzemeKodlari.Count kalem)</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudDatePicker Label="Başlangıç Tarihi" @bind-Date="_baslangic"
+                           DateFormat="dd.MM.yyyy" Editable="true" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudDatePicker Label="Bitiş Tarihi" @bind-Date="_bitis"
+                           DateFormat="dd.MM.yyyy" Editable="true" />
+        </MudItem>
+
+        <MudItem xs="12">
+            <MudText Typo="Typo.subtitle2" Class="mb-1">Malzeme Kodları</MudText>
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_eklenecekKod" Label="Kod ekle"
+                                  Placeholder="örn. S.706.04.0001"
+                                  Adornment="Adornment.End"
+                                  AdornmentIcon="@Icons.Material.Filled.Add"
+                                  OnAdornmentClick="KodEkle"
+                                  OnKeyDown="@KodEkleKey" Immediate="true" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_topluGiris" Label="Toplu ekle (virgül/yeni satır)"
+                                  Lines="2" HelperText="Birden fazla kod ekle" />
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="TopluEkle">
+                        Toplu Ekle
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+
+            @if (_kodlar.Count > 0)
+            {
+                <MudPaper Class="pa-3 mt-2" Elevation="0" Style="background:#f5f7fa;">
+                    <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                        @foreach (var k in _kodlar.ToList())
+                        {
+                            var kod = k;
+                            <MudChip Color="Color.Primary" Size="Size.Small" OnClose="@(() => KodCikar(kod))">@kod</MudChip>
+                        }
+                    </div>
+                    <MudText Typo="Typo.caption" Class="mt-1">
+                        @_kodlar.Count kalem — üstüne tıklayarak çıkarabilirsiniz
+                    </MudText>
+                </MudPaper>
+            }
+        </MudItem>
+
+        <MudItem xs="12" Class="d-flex gap-2 flex-wrap">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Search"
+                       Disabled="@_yukleniyor" OnClick="RaporGetir">
+                @if (_yukleniyor) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+                Rapor Getir
+            </MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Success"
+                       StartIcon="@Icons.Material.Filled.Download"
+                       Disabled="@(_satirlar == null)" OnClick="ExcelIndir">
+                Excel İndir
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Info"
+                       StartIcon="@Icons.Material.Filled.Save"
+                       OnClick="ListeKaydetPaneliAc">
+                Listeyi Kaydet
+            </MudButton>
+            @if (!string.IsNullOrEmpty(_secilenListeAdi))
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Error"
+                           StartIcon="@Icons.Material.Filled.Delete"
+                           OnClick="ListeSil">
+                    "@_secilenListeAdi" listesini sil
+                </MudButton>
+            }
+        </MudItem>
+
+        @* Inline kayıt paneli (MudDialog yerine) *@
+        @if (_kayitPaneliAcik)
+        {
+            <MudItem xs="12">
+                <MudPaper Class="pa-3" Style="background:#E3F2FD; border:1px solid #1976d2;">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">
+                        <MudIcon Icon="@Icons.Material.Filled.Save" Size="Size.Small" Class="mr-1" />
+                        Listeyi Kaydet (@_kodlar.Count kalem)
+                    </MudText>
+                    <MudGrid>
+                        <MudItem xs="12" md="6">
+                            <MudTextField @bind-Value="_yeniListeAdi" Label="Liste Adı"
+                                          HelperText="Aynı isim varsa üzerine yazılır"
+                                          Immediate="true" AutoFocus="true"
+                                          OnKeyDown="@ListeKaydetKey" />
+                        </MudItem>
+                        <MudItem xs="12" md="6" Class="d-flex align-end gap-2">
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Filled.Check"
+                                       OnClick="ListeKaydet">Kaydet</MudButton>
+                            <MudButton Variant="Variant.Outlined"
+                                       OnClick="@(() => _kayitPaneliAcik = false)">İptal</MudButton>
+                        </MudItem>
+                    </MudGrid>
+                </MudPaper>
+            </MudItem>
+        }
+    </MudGrid>
+</MudPaper>
+
+@* Excel'den yenileme ipucu *@
+<MudPaper Class="pa-3 mb-4" Elevation="0" Style="background:#fff8e1; border-left:4px solid #f9a825;">
+    <MudText Typo="Typo.subtitle2">
+        <MudIcon Icon="@Icons.Material.Filled.TipsAndUpdates" Class="mr-1" Size="Size.Small" />
+        Excel'den Yenilemek İçin
+    </MudText>
+    <MudText Typo="Typo.body2">
+        Excel'den "Veri → Sorguyu Yenile" ile çalışması için aşağıdaki Power Query / Web Query URL'sini kullanın:
+    </MudText>
+    <MudText Typo="Typo.body2" Style="font-family:monospace; background:#fff; padding:4px 8px; border-radius:4px;">
+        @_apiUrl
+    </MudText>
+    <MudButton Size="Size.Small" StartIcon="@Icons.Material.Filled.ContentCopy"
+               OnClick="UrlKopyala">URL'yi Kopyala</MudButton>
+</MudPaper>
+
+@if (_hata != null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">@_hata</MudAlert>
+}
+
+@if (_satirlar != null)
+{
+    var filtreli = UygulanmisFiltre(_satirlar);
+
+    <MudPaper Class="pa-4 mb-4">
+        <MudGrid Class="mb-2">
+            <MudItem xs="12" md="3">
+                <MudSelect T="string" Label="Hareket Türü" @bind-Value="_fHareketTuru" Dense="true" Clearable="true">
+                    <MudSelectItem Value="@("")">— Tümü —</MudSelectItem>
+                    <MudSelectItem Value="@("GIRIS")">Giriş (Satınalma / İade / Üretim)</MudSelectItem>
+                    <MudSelectItem Value="@("CIKIS")">Çıkış (Satış)</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="9" Class="d-flex align-center">
+                <MudText Typo="Typo.body2">
+                    <strong>@filtreli.Count</strong> satır gösteriliyor (toplam @_satirlar.Count)
+                    &nbsp;•&nbsp; Giriş: <strong>@filtreli.Sum(s => s.GirisMiktari).ToString("N2")</strong>
+                    &nbsp;•&nbsp; Çıkış: <strong>@filtreli.Sum(s => s.CikisMiktari).ToString("N2")</strong>
+                    &nbsp;•&nbsp; Giriş Tutar: <strong>@filtreli.Sum(s => s.GirisTutari).ToString("N2")</strong>
+                    &nbsp;•&nbsp; Çıkış Tutar: <strong>@filtreli.Sum(s => s.CikisTutari).ToString("N2")</strong>
+                </MudText>
+                <MudSpacer />
+                <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                           StartIcon="@Icons.Material.Filled.FilterAltOff"
+                           OnClick="FiltreleriTemizle">Filtreleri Temizle</MudButton>
+            </MudItem>
+        </MudGrid>
+
+        <div style="overflow:auto; max-height:620px; border:1px solid #ddd;">
+            <table class="malzeme-table">
+                <thead>
+                    <tr class="baslik-row">
+                        <th>Tarih</th>
+                        <th>Fiş Türü</th>
+                        <th>Fiş No</th>
+                        <th>Cari Kodu</th>
+                        <th>Cari Ünvanı</th>
+                        <th>Malzeme Kodu</th>
+                        <th>Malzeme Adı</th>
+                        <th class="num">Giriş Mik.</th>
+                        <th class="num">Giriş Fiyat</th>
+                        <th class="num">Giriş Tutar</th>
+                        <th class="num">Çıkış Mik.</th>
+                        <th class="num">Çıkış Fiyat</th>
+                        <th class="num">Çıkış Tutar</th>
+                    </tr>
+                    <tr class="filtre-row">
+                        <th><input type="text" @bind="_fTarih" @bind:event="oninput" placeholder="örn. 2026-03" /></th>
+                        <th><input type="text" @bind="_fFisTuru" @bind:event="oninput" placeholder="filtre..." /></th>
+                        <th><input type="text" @bind="_fFisNo" @bind:event="oninput" placeholder="filtre..." /></th>
+                        <th><input type="text" @bind="_fCariKod" @bind:event="oninput" placeholder="filtre..." /></th>
+                        <th><input type="text" @bind="_fCariUnvan" @bind:event="oninput" placeholder="filtre..." /></th>
+                        <th><input type="text" @bind="_fMalzemeKod" @bind:event="oninput" placeholder="filtre..." /></th>
+                        <th><input type="text" @bind="_fMalzemeAd" @bind:event="oninput" placeholder="filtre..." /></th>
+                        <th><input type="text" @bind="_fGirisMik" @bind:event="oninput" placeholder=">=100 &lt;=500" /></th>
+                        <th><input type="text" @bind="_fGirisFiyat" @bind:event="oninput" placeholder=">=..." /></th>
+                        <th><input type="text" @bind="_fGirisTutar" @bind:event="oninput" placeholder=">=..." /></th>
+                        <th><input type="text" @bind="_fCikisMik" @bind:event="oninput" placeholder=">=..." /></th>
+                        <th><input type="text" @bind="_fCikisFiyat" @bind:event="oninput" placeholder=">=..." /></th>
+                        <th><input type="text" @bind="_fCikisTutar" @bind:event="oninput" placeholder=">=..." /></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var s in filtreli)
+                    {
+                        <tr>
+                            <td>@s.Tarih.ToString("dd.MM.yyyy")</td>
+                            <td>@s.FisTuru</td>
+                            <td>@s.FisNumarasi</td>
+                            <td>@s.CariHesapKodu</td>
+                            <td>@s.CariHesapUnvani</td>
+                            <td>@s.MalzemeKodu</td>
+                            <td>@s.MalzemeAciklamasi</td>
+                            <td class="num">@(s.GirisMiktari != 0 ? s.GirisMiktari.ToString("N2") : "")</td>
+                            <td class="num">@(s.GirisFiyati  != 0 ? s.GirisFiyati.ToString("N2")  : "")</td>
+                            <td class="num">@(s.GirisTutari  != 0 ? s.GirisTutari.ToString("N2")  : "")</td>
+                            <td class="num">@(s.CikisMiktari != 0 ? s.CikisMiktari.ToString("N2") : "")</td>
+                            <td class="num">@(s.CikisFiyati  != 0 ? s.CikisFiyati.ToString("N2")  : "")</td>
+                            <td class="num">@(s.CikisTutari  != 0 ? s.CikisTutari.ToString("N2")  : "")</td>
+                        </tr>
+                    }
+                    @if (filtreli.Count == 0)
+                    {
+                        <tr><td colspan="13" style="text-align:center; padding:24px; color:#888;">
+                            Filtrelerle eşleşen satır yok.
+                        </td></tr>
+                    }
+                </tbody>
+                <tfoot>
+                    <tr class="toplam-row">
+                        <td colspan="7">TOPLAM</td>
+                        <td class="num">@filtreli.Sum(s => s.GirisMiktari).ToString("N2")</td>
+                        <td></td>
+                        <td class="num">@filtreli.Sum(s => s.GirisTutari).ToString("N2")</td>
+                        <td class="num">@filtreli.Sum(s => s.CikisMiktari).ToString("N2")</td>
+                        <td></td>
+                        <td class="num">@filtreli.Sum(s => s.CikisTutari).ToString("N2")</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </MudPaper>
+}
+else if (!_yukleniyor)
+{
+    <MudAlert Severity="Severity.Info">
+        Malzeme kodu ekleyip tarih aralığı seçtikten sonra "Rapor Getir" tuşuna basın.
+        İsterseniz listeyi kaydedip daha sonra tekrar kullanabilirsiniz.
+    </MudAlert>
+}
+
+<style>
+    .malzeme-table {
+        width:100%; border-collapse:collapse; font-size:0.82rem;
+    }
+    .malzeme-table thead th {
+        position:sticky; background:#FFF9C4; font-weight:bold;
+        padding:6px 8px; border:1px solid #ccc; text-align:left;
+    }
+    .malzeme-table thead tr.baslik-row th { top:0; z-index:3; }
+    .malzeme-table thead tr.filtre-row th { top:33px; background:#FFFDE7; z-index:2; padding:2px; }
+    .malzeme-table thead tr.filtre-row input {
+        width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:3px;
+        padding:3px 6px; font-size:0.78rem; background:#fff;
+    }
+    .malzeme-table thead tr.filtre-row input:focus { outline:2px solid #1976d2; border-color:#1976d2; }
+    .malzeme-table tbody td { padding:4px 8px; border:1px solid #eee; }
+    .malzeme-table tbody tr:nth-child(odd) { background:#fafafa; }
+    .malzeme-table tbody tr:hover { background:#e3f2fd; }
+    .malzeme-table .num { text-align:right; }
+    .malzeme-table tfoot .toplam-row td {
+        background:#E3F2FD; font-weight:bold; padding:6px 8px; border-top:2px solid #1976d2;
+    }
+</style>
+
+@code {
+    private DateTime? _baslangic = new DateTime(DateTime.Now.Year, 1, 1);
+    private DateTime? _bitis     = DateTime.Today;
+    private readonly List<string> _kodlar = new();
+    private string _eklenecekKod = "";
+    private string _topluGiris   = "";
+    private string _secilenListeAdi = "";
+    private string _yeniListeAdi    = "";
+    private bool   _kayitPaneliAcik = false;
+    private bool   _yukleniyor      = false;
+    private string? _hata;
+    private List<MalzemeHareketSatiri>? _satirlar;
+    private List<KayitliMalzemeListesi> _listeler = new();
+    private string _apiUrl = "";
+
+    // Tablo filtreleri
+    private string _fHareketTuru = "";
+    private string _fTarih       = "";
+    private string _fFisTuru     = "";
+    private string _fFisNo       = "";
+    private string _fCariKod     = "";
+    private string _fCariUnvan   = "";
+    private string _fMalzemeKod  = "";
+    private string _fMalzemeAd   = "";
+    private string _fGirisMik    = "";
+    private string _fGirisFiyat  = "";
+    private string _fGirisTutar  = "";
+    private string _fCikisMik    = "";
+    private string _fCikisFiyat  = "";
+    private string _fCikisTutar  = "";
+
+    protected override void OnInitialized()
+    {
+        _listeler = ListeService.Listele().ToList();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                var origin = await JS.InvokeAsync<string>("eval", "window.location.origin");
+                _apiUrl = $"{origin}/api/malzeme-hareket";
+                StateHasChanged();
+            }
+            catch { _apiUrl = "http://localhost:5050/api/malzeme-hareket"; }
+        }
+    }
+
+    private void KodEkle()
+    {
+        var k = (_eklenecekKod ?? "").Trim();
+        if (string.IsNullOrEmpty(k)) return;
+        if (!_kodlar.Any(x => string.Equals(x, k, StringComparison.OrdinalIgnoreCase)))
+            _kodlar.Add(k);
+        _eklenecekKod = "";
+    }
+
+    private void KodEkleKey(KeyboardEventArgs e) { if (e.Key == "Enter") KodEkle(); }
+
+    private void KodCikar(string k) => _kodlar.RemoveAll(x => string.Equals(x, k, StringComparison.OrdinalIgnoreCase));
+
+    private void TopluEkle()
+    {
+        if (string.IsNullOrWhiteSpace(_topluGiris)) return;
+        var parcalar = _topluGiris.Split(new[] { ',', ';', '\n', '\r', '\t' },
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var p in parcalar)
+            if (!_kodlar.Any(x => string.Equals(x, p, StringComparison.OrdinalIgnoreCase)))
+                _kodlar.Add(p);
+        _topluGiris = "";
+    }
+
+    private void ListeSec(string? ad)
+    {
+        _secilenListeAdi = ad ?? "";
+        _kodlar.Clear();
+        if (!string.IsNullOrEmpty(ad))
+        {
+            var l = ListeService.Getir(ad);
+            if (l != null) _kodlar.AddRange(l.MalzemeKodlari);
+        }
+    }
+
+    private async Task RaporGetir()
+    {
+        if (_kodlar.Count == 0)    { Snackbar.Add("En az bir malzeme kodu girin.", Severity.Warning); return; }
+        if (_baslangic == null || _bitis == null) { Snackbar.Add("Tarih aralığı seçin.", Severity.Warning); return; }
+
+        _yukleniyor = true; _hata = null;
+        try
+        {
+            _satirlar = await HareketService.GetHareketlerAsync(_kodlar, _baslangic.Value, _bitis.Value);
+            Snackbar.Add($"{_satirlar.Count} satır yüklendi.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _hata = ex.Message;
+            Snackbar.Add("Hata: " + ex.Message, Severity.Error);
+        }
+        finally { _yukleniyor = false; }
+    }
+
+    private async Task ExcelIndir()
+    {
+        if (_satirlar == null) return;
+        try
+        {
+            var filtreli = UygulanmisFiltre(_satirlar);
+            var bytes = ExcelService.ExportMalzemeHareketleri(
+                filtreli, _kodlar, _baslangic!.Value, _bitis!.Value,
+                string.IsNullOrEmpty(_secilenListeAdi) ? null : _secilenListeAdi);
+            var dosyaAdi = $"MalzemeHareket_{_baslangic:yyyyMMdd}_{_bitis:yyyyMMdd}.xlsx";
+            await JS.InvokeVoidAsync("downloadFile", dosyaAdi, Convert.ToBase64String(bytes),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            Snackbar.Add("Excel indirildi.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add("Hata: " + ex.Message, Severity.Error); }
+    }
+
+    private void ListeKaydetPaneliAc()
+    {
+        if (_kodlar.Count == 0) { Snackbar.Add("Önce kod ekleyin.", Severity.Warning); return; }
+        _yeniListeAdi   = _secilenListeAdi;
+        _kayitPaneliAcik = true;
+    }
+
+    private async Task ListeKaydetKey(KeyboardEventArgs e) { if (e.Key == "Enter") await ListeKaydet(); }
+
+    private async Task ListeKaydet()
+    {
+        if (string.IsNullOrWhiteSpace(_yeniListeAdi))
+        { Snackbar.Add("İsim girin.", Severity.Warning); return; }
+
+        try
+        {
+            var ok = await ListeService.KaydetAsync(_yeniListeAdi, _kodlar);
+            if (ok)
+            {
+                _listeler        = ListeService.Listele().ToList();
+                _secilenListeAdi = _yeniListeAdi;
+                _kayitPaneliAcik = false;
+                Snackbar.Add($"'{_yeniListeAdi}' kaydedildi ({_kodlar.Count} kalem).", Severity.Success);
+            }
+            else Snackbar.Add("Kaydedilemedi.", Severity.Error);
+        }
+        catch (Exception ex) { Snackbar.Add("Hata: " + ex.Message, Severity.Error); }
+    }
+
+    private async Task ListeSil()
+    {
+        if (string.IsNullOrEmpty(_secilenListeAdi)) return;
+        var ok = await ListeService.SilAsync(_secilenListeAdi);
+        if (ok)
+        {
+            Snackbar.Add($"'{_secilenListeAdi}' silindi.", Severity.Success);
+            _secilenListeAdi = "";
+            _kodlar.Clear();
+            _listeler = ListeService.Listele().ToList();
+        }
+    }
+
+    private async Task UrlKopyala()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", _apiUrl);
+            Snackbar.Add("URL kopyalandı.", Severity.Success);
+        }
+        catch { Snackbar.Add("Kopyalama başarısız.", Severity.Warning); }
+    }
+
+    private void FiltreleriTemizle()
+    {
+        _fHareketTuru = _fTarih = _fFisTuru = _fFisNo = _fCariKod = _fCariUnvan
+            = _fMalzemeKod = _fMalzemeAd = _fGirisMik = _fGirisFiyat = _fGirisTutar
+            = _fCikisMik = _fCikisFiyat = _fCikisTutar = "";
+    }
+
+    // Basit metin filtresi — büyük/küçük harfe duyarsız "contains"
+    private static bool MetinEslesir(string? hucre, string filtre)
+        => string.IsNullOrWhiteSpace(filtre) ||
+           (hucre ?? "").Contains(filtre.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    // Sayısal filtre — ">=100", "<=500", ">0", "=0", "100", "100-500" gibi basit ifadeler
+    private static bool SayiEslesir(decimal deger, string filtre)
+    {
+        if (string.IsNullOrWhiteSpace(filtre)) return true;
+        var f = filtre.Trim().Replace(',', '.');
+
+        // aralık: "100-500"
+        if (f.Contains('-') && !f.StartsWith("-"))
+        {
+            var p = f.Split('-', 2);
+            if (decimal.TryParse(p[0], System.Globalization.NumberStyles.Any,
+                    System.Globalization.CultureInfo.InvariantCulture, out var a) &&
+                decimal.TryParse(p[1], System.Globalization.NumberStyles.Any,
+                    System.Globalization.CultureInfo.InvariantCulture, out var b))
+                return deger >= a && deger <= b;
+        }
+
+        string op = "="; string sayi = f;
+        foreach (var pre in new[] { ">=", "<=", ">", "<", "=" })
+        {
+            if (f.StartsWith(pre)) { op = pre; sayi = f[pre.Length..].Trim(); break; }
+        }
+        if (!decimal.TryParse(sayi, System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var v)) return true;
+        return op switch
+        {
+            ">=" => deger >= v,
+            "<=" => deger <= v,
+            ">"  => deger >  v,
+            "<"  => deger <  v,
+            _    => deger == v,
+        };
+    }
+
+    private List<MalzemeHareketSatiri> UygulanmisFiltre(List<MalzemeHareketSatiri> kaynak)
+    {
+        IEnumerable<MalzemeHareketSatiri> q = kaynak;
+
+        if (_fHareketTuru == "GIRIS")
+            q = q.Where(s => s.GirisMiktari != 0);
+        else if (_fHareketTuru == "CIKIS")
+            q = q.Where(s => s.CikisMiktari != 0);
+
+        if (!string.IsNullOrWhiteSpace(_fTarih))
+            q = q.Where(s => s.Tarih.ToString("yyyy-MM-dd").Contains(_fTarih.Trim()) ||
+                             s.Tarih.ToString("dd.MM.yyyy").Contains(_fTarih.Trim()));
+        q = q.Where(s => MetinEslesir(s.FisTuru,           _fFisTuru));
+        q = q.Where(s => MetinEslesir(s.FisNumarasi,       _fFisNo));
+        q = q.Where(s => MetinEslesir(s.CariHesapKodu,     _fCariKod));
+        q = q.Where(s => MetinEslesir(s.CariHesapUnvani,   _fCariUnvan));
+        q = q.Where(s => MetinEslesir(s.MalzemeKodu,       _fMalzemeKod));
+        q = q.Where(s => MetinEslesir(s.MalzemeAciklamasi, _fMalzemeAd));
+        q = q.Where(s => SayiEslesir(s.GirisMiktari, _fGirisMik));
+        q = q.Where(s => SayiEslesir(s.GirisFiyati,  _fGirisFiyat));
+        q = q.Where(s => SayiEslesir(s.GirisTutari,  _fGirisTutar));
+        q = q.Where(s => SayiEslesir(s.CikisMiktari, _fCikisMik));
+        q = q.Where(s => SayiEslesir(s.CikisFiyati,  _fCikisFiyat));
+        q = q.Where(s => SayiEslesir(s.CikisTutari,  _fCikisTutar));
+
+        return q.ToList();
+    }
+}

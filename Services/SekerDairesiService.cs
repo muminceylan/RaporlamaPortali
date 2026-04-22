@@ -124,6 +124,7 @@ public class SekerDairesiService
         DateTime baslangic,
         DateTime bitis)
     {
+        bitis = SistemTarihi.Clamp(bitis);
         // Dönem başı stoklarını belirle:
         // – Eğer seçilen başlangıç kampanya başıysa → sabit değerler kullan
         // – Değilse → 01.09.2025'ten (baslangic-1) arası çalıştır, dönem sonunu al

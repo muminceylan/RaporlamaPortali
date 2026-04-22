@@ -235,6 +235,7 @@ FROM TarimKrediBolgeTanimi").ToList();
     public async Task<List<YanUrunHareket>> TarimKrediHareketleriAsync(
         DateTime baslangic, DateTime bitis, bool pancarEkicileriDahil = true)
     {
+        bitis = SistemTarihi.Clamp(bitis);
         var unvanFiltre = pancarEkicileriDahil
             ? "(v.CARI_HESAP_UNVANI LIKE N'%TARIM KRED%' OR v.CARI_HESAP_UNVANI LIKE N'%PANCAR EK%')"
             : "v.CARI_HESAP_UNVANI LIKE N'%TARIM KRED%'";

@@ -1,0 +1,456 @@
+@page "/finans-raporu"
+@using RaporlamaPortali.Models
+@inject FinansRaporService FinansService
+@inject ISnackbar Snackbar
+
+<PageTitle>Finans Raporu</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.Savings" Class="mr-2" />
+    Finans Raporu
+</MudText>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid>
+        <MudItem xs="12" md="3">
+            <MudDatePicker Label="Başlangıç Tarihi" @bind-Date="_baslangic"
+                           DateFormat="dd.MM.yyyy" Editable="true"
+                           PickerVariant="PickerVariant.Dialog" OpenTo="OpenTo.Year" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudDatePicker Label="Bitiş Tarihi" @bind-Date="_bitis"
+                           DateFormat="dd.MM.yyyy" Editable="true"
+                           PickerVariant="PickerVariant.Dialog" OpenTo="OpenTo.Year" />
+        </MudItem>
+        <MudItem xs="12" md="6" Class="d-flex align-end flex-wrap gap-1">
+            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
+                @foreach (var y in _hizliYillar)
+                {
+                    var yil = y;
+                    <MudButton OnClick="@(() => YilSec(yil))">@yil</MudButton>
+                }
+            </MudButtonGroup>
+            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small" Class="ml-2">
+                <MudButton OnClick="@(() => HizliSec("bu-ay"))">Bu Ay</MudButton>
+                <MudButton OnClick="@(() => HizliSec("gecen-ay"))">Geçen Ay</MudButton>
+                <MudButton OnClick="@(() => HizliSec("yil-basindan"))">Yıl Başından</MudButton>
+                <MudButton OnClick="@(() => HizliSec("tumu"))">2025'ten</MudButton>
+            </MudButtonGroup>
+        </MudItem>
+
+        <MudItem xs="12" md="4">
+            <MudSelect T="string" Label="Hareket Türü" @bind-Value="_filtreHareketTuru"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                       Placeholder="Tümü">
+                <MudSelectItem T="string" Value="@("TAHSİLAT")">TAHSİLAT</MudSelectItem>
+                <MudSelectItem T="string" Value="@("ÖDEME")">ÖDEME</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudSelect T="string" Label="Modül" @bind-Value="_filtreModul"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                       Placeholder="Tümü">
+                @foreach (var m in _mevcutModuller)
+                {
+                    <MudSelectItem T="string" Value="@m">@m</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudTextField T="string" Label="Serbest Arama (Cari / Açıklama / Proje)"
+                          @bind-Value="_arama" Immediate="true"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search" />
+        </MudItem>
+
+        <MudItem xs="12" Class="d-flex gap-2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Refresh"
+                       OnClick="RaporGetir" Disabled="@_yukleniyor">
+                @if (_yukleniyor) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+                Rapor Getir
+            </MudButton>
+            @if (_ham != null)
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Secondary"
+                           StartIcon="@Icons.Material.Filled.FilterAltOff"
+                           OnClick="FiltreleriTemizle">
+                    Filtreleri Temizle
+                </MudButton>
+            }
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@if (_hata != null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">@_hata</MudAlert>
+}
+
+@if (_ham != null)
+{
+    var filtreli = UygulanmisFiltre(_ham);
+    var tHavale = filtreli.Sum(x => x.Havale);
+    var tCek    = filtreli.Sum(x => x.Cek);
+    var tDevir  = filtreli.Sum(x => x.Devir);
+    var tDiger  = filtreli.Sum(x => x.Diger);
+    var tTahs   = filtreli.Where(x => x.HareketTuru == "TAHSİLAT").Sum(x => x.Havale + x.Cek + x.Devir + x.Diger);
+    var tOdeme  = filtreli.Where(x => x.HareketTuru == "ÖDEME"   ).Sum(x => x.Havale + x.Cek + x.Devir + x.Diger);
+
+    <MudGrid Class="mb-3">
+        <MudItem xs="6" md="3">
+            <MudPaper Class="pa-3" Style="background:#E8F5E9;">
+                <MudText Typo="Typo.caption">TAHSİLAT TOPLAM</MudText>
+                <MudText Typo="Typo.h6">@tTahs.ToString("N2")</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudPaper Class="pa-3" Style="background:#FFEBEE;">
+                <MudText Typo="Typo.caption">ÖDEME TOPLAM</MudText>
+                <MudText Typo="Typo.h6">@tOdeme.ToString("N2")</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudPaper Class="pa-3" Style="background:#E3F2FD;">
+                <MudText Typo="Typo.caption">NET (TAHSİLAT - ÖDEME)</MudText>
+                <MudText Typo="Typo.h6">@((tTahs - tOdeme).ToString("N2"))</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudPaper Class="pa-3" Style="background:#FFF9C4;">
+                <MudText Typo="Typo.caption">SATIR SAYISI</MudText>
+                <MudText Typo="Typo.h6">@filtreli.Count.ToString("N0") / @_ham.Count.ToString("N0")</MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <MudPaper Class="pa-2">
+        <div style="overflow:auto; max-height:620px;">
+            <table class="finans-table">
+                <thead>
+                    <tr class="baslik-row">
+                        <th>Tarih</th>
+                        <th>Yıl</th>
+                        <th>Ay</th>
+                        <th>Gün</th>
+                        <th>Hareket</th>
+                        <th>Modül</th>
+                        <th>Fiş Türü</th>
+                        <th>CH Kodu</th>
+                        <th>CH Ünvanı</th>
+                        <th>Banka Kodu</th>
+                        <th>Banka Açıklaması</th>
+                        <th>Proje Kodu</th>
+                        <th>Proje Adı</th>
+                        <th>Özel Kod</th>
+                        <th>İşlem No</th>
+                        <th class="num">Havale</th>
+                        <th class="num">Çek</th>
+                        <th class="num">Devir</th>
+                        <th class="num">Diğer</th>
+                        <th>Sign</th>
+                        <th>SpecOde</th>
+                    </tr>
+                    <tr class="filtre-row">
+                        <th><input type="text" @bind="_fTarih" @bind:event="oninput" placeholder="örn. 2026-03" /></th>
+                        <th><input type="text" @bind="_fYil" @bind:event="oninput" placeholder="..." /></th>
+                        <th><input type="text" @bind="_fAy" @bind:event="oninput" placeholder="..." /></th>
+                        <th><input type="text" @bind="_fGun" @bind:event="oninput" placeholder="..." /></th>
+                        <th><input type="text" @bind="_fHareket" @bind:event="oninput" placeholder="TAHSİLAT..." /></th>
+                        <th><input type="text" @bind="_fModul" @bind:event="oninput" placeholder="BANKA..." /></th>
+                        <th><input type="text" @bind="_fFisTuru" @bind:event="oninput" placeholder="filtre..." /></th>
+                        <th><input type="text" @bind="_fChKod" @bind:event="oninput" placeholder="filtre..." /></th>
+                        <th><input type="text" @bind="_fChUnvan" @bind:event="oninput" placeholder="filtre..." /></th>
+                        <th><input type="text" @bind="_fBankaKod" @bind:event="oninput" placeholder="filtre..." /></th>
+                        <th><input type="text" @bind="_fBankaAcik" @bind:event="oninput" placeholder="filtre..." /></th>
+                        <th><input type="text" @bind="_fProjeKod" @bind:event="oninput" placeholder="filtre..." /></th>
+                        <th><input type="text" @bind="_fProjeAd" @bind:event="oninput" placeholder="filtre..." /></th>
+                        <th><input type="text" @bind="_fOzelKod" @bind:event="oninput" placeholder="filtre..." /></th>
+                        <th><input type="text" @bind="_fIslemNo" @bind:event="oninput" placeholder="filtre..." /></th>
+                        <th><input type="text" @bind="_fHavale" @bind:event="oninput" placeholder=">=100 &lt;=500" /></th>
+                        <th><input type="text" @bind="_fCek" @bind:event="oninput" placeholder=">=..." /></th>
+                        <th><input type="text" @bind="_fDevir" @bind:event="oninput" placeholder=">=..." /></th>
+                        <th><input type="text" @bind="_fDiger" @bind:event="oninput" placeholder=">=..." /></th>
+                        <th><input type="text" @bind="_fSign" @bind:event="oninput" placeholder="..." /></th>
+                        <th><input type="text" @bind="_fSpecOde" @bind:event="oninput" placeholder="..." /></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var x in filtreli)
+                    {
+                        <tr>
+                            <td>@x.Tarih.ToString("dd.MM.yyyy")</td>
+                            <td>@x.Yil</td>
+                            <td>@x.Ay</td>
+                            <td>@x.Gun</td>
+                            <td>
+                                @if (x.HareketTuru == "TAHSİLAT")
+                                {
+                                    <span class="chip chip-tahsilat">TAHSİLAT</span>
+                                }
+                                else if (x.HareketTuru == "ÖDEME")
+                                {
+                                    <span class="chip chip-odeme">ÖDEME</span>
+                                }
+                                else
+                                {
+                                    @x.HareketTuru
+                                }
+                            </td>
+                            <td>@x.Modul</td>
+                            <td>@x.FisTuru</td>
+                            <td>@x.ChKod</td>
+                            <td>@x.ChUnvani</td>
+                            <td>@x.BankaHesapKodu</td>
+                            <td>@x.BankaHesapAciklamasi</td>
+                            <td>@x.ProjeKodu</td>
+                            <td>@x.ProjeAdi</td>
+                            <td>@x.HaraketOzelKodu</td>
+                            <td>@x.IslemNo</td>
+                            <td class="num">@(x.Havale != 0 ? x.Havale.ToString("N2") : "")</td>
+                            <td class="num">@(x.Cek    != 0 ? x.Cek.ToString("N2")    : "")</td>
+                            <td class="num">@(x.Devir  != 0 ? x.Devir.ToString("N2")  : "")</td>
+                            <td class="num">@(x.Diger  != 0 ? x.Diger.ToString("N2")  : "")</td>
+                            <td>@x.Sign</td>
+                            <td>@x.SpecOde</td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot>
+                    <tr class="toplam-row">
+                        <td colspan="15">TOPLAM (@filtreli.Count satır)</td>
+                        <td class="num">@tHavale.ToString("N2")</td>
+                        <td class="num">@tCek.ToString("N2")</td>
+                        <td class="num">@tDevir.ToString("N2")</td>
+                        <td class="num">@tDiger.ToString("N2")</td>
+                        <td colspan="2"></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </MudPaper>
+}
+else if (!_yukleniyor)
+{
+    <MudAlert Severity="Severity.Info">
+        Tarih aralığı seçip <b>Rapor Getir</b> butonuna basın. 2025'ten itibaren tüm yıllar
+        otomatik birleştirilir; Logo'da yeni yıl view'i açıldığında ek yapılandırma gerekmez.
+    </MudAlert>
+}
+
+<style>
+    .finans-table {
+        width:100%; border-collapse:collapse; font-size:0.82rem;
+    }
+    .finans-table thead th {
+        position:sticky; background:#BBDEFB; font-weight:bold;
+        padding:6px 8px; border:1px solid #90caf9; text-align:left;
+    }
+    .finans-table thead tr.baslik-row th { top:0; z-index:3; }
+    .finans-table thead tr.filtre-row th { top:33px; background:#E3F2FD; z-index:2; padding:2px; }
+    .finans-table thead tr.filtre-row input {
+        width:100%; box-sizing:border-box; border:1px solid #90caf9; border-radius:3px;
+        padding:3px 6px; font-size:0.78rem; background:#fff;
+    }
+    .finans-table thead tr.filtre-row input:focus { outline:2px solid #1976d2; border-color:#1976d2; }
+    .finans-table tbody td { padding:4px 8px; border:1px solid #eee; }
+    .finans-table tbody tr:nth-child(odd) { background:#fafafa; }
+    .finans-table tbody tr:hover { background:#e3f2fd; }
+    .finans-table .num { text-align:right; }
+    .finans-table tfoot .toplam-row td {
+        background:#FFFDE7; font-weight:bold; padding:6px 8px; border-top:2px solid #1976d2;
+    }
+    .chip { padding:2px 8px; border-radius:12px; font-size:0.72rem; font-weight:600; color:#fff; }
+    .chip-tahsilat { background:#2e7d32; }
+    .chip-odeme    { background:#c62828; }
+</style>
+
+@code {
+    private DateTime? _baslangic = new DateTime(DateTime.Now.Year, 1, 1);
+    private DateTime? _bitis     = DateTime.Today;
+
+    private string? _filtreHareketTuru;
+    private string? _filtreModul;
+    private string _arama = "";
+
+    // Sütun başı filtreleri
+    private string _fTarih = "", _fYil = "", _fAy = "", _fGun = "";
+    private string _fHareket = "", _fModul = "", _fFisTuru = "";
+    private string _fChKod = "", _fChUnvan = "";
+    private string _fBankaKod = "", _fBankaAcik = "";
+    private string _fProjeKod = "", _fProjeAd = "";
+    private string _fOzelKod = "", _fIslemNo = "";
+    private string _fHavale = "", _fCek = "", _fDevir = "", _fDiger = "";
+    private string _fSign = "", _fSpecOde = "";
+
+    private bool _yukleniyor;
+    private string? _hata;
+    private List<FinansRaporSatiri>? _ham;
+    private List<int> _hizliYillar = new();
+    private List<string> _mevcutModuller = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var yillar = await FinansService.MevcutYillarAsync();
+            _hizliYillar = yillar.Where(y => y >= 2025).OrderBy(y => y).ToList();
+        }
+        catch { /* bağlantı hatası olsa bile sayfa açılsın */ }
+    }
+
+    private void YilSec(int yil)
+    {
+        _baslangic = new DateTime(yil, 1, 1);
+        _bitis     = new DateTime(yil, 12, 31);
+    }
+
+    private void HizliSec(string tip)
+    {
+        var bugun = DateTime.Today;
+        switch (tip)
+        {
+            case "bu-ay":
+                _baslangic = new DateTime(bugun.Year, bugun.Month, 1);
+                _bitis     = bugun;
+                break;
+            case "gecen-ay":
+                var ga = bugun.AddMonths(-1);
+                _baslangic = new DateTime(ga.Year, ga.Month, 1);
+                _bitis     = new DateTime(ga.Year, ga.Month, DateTime.DaysInMonth(ga.Year, ga.Month));
+                break;
+            case "yil-basindan":
+                _baslangic = new DateTime(bugun.Year, 1, 1);
+                _bitis     = bugun;
+                break;
+            case "tumu":
+                _baslangic = new DateTime(2025, 1, 1);
+                _bitis     = bugun;
+                break;
+        }
+    }
+
+    private async Task RaporGetir()
+    {
+        if (_baslangic == null || _bitis == null)
+        { Snackbar.Add("Tarih aralığı seçin.", Severity.Warning); return; }
+        if (_bitis < _baslangic)
+        { Snackbar.Add("Bitiş tarihi başlangıçtan küçük olamaz.", Severity.Warning); return; }
+
+        _yukleniyor = true; _hata = null;
+        try
+        {
+            _ham = await FinansService.GetHareketlerAsync(_baslangic.Value, _bitis.Value);
+            _mevcutModuller = _ham.Select(x => x.Modul).Where(x => !string.IsNullOrEmpty(x))
+                                  .Distinct().OrderBy(x => x).ToList();
+            Snackbar.Add($"{_ham.Count} satır yüklendi.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _hata = ex.Message;
+            Snackbar.Add("Hata: " + ex.Message, Severity.Error);
+        }
+        finally { _yukleniyor = false; }
+    }
+
+    private void FiltreleriTemizle()
+    {
+        _filtreHareketTuru = null;
+        _filtreModul = null;
+        _arama = "";
+        _fTarih = _fYil = _fAy = _fGun = "";
+        _fHareket = _fModul = _fFisTuru = "";
+        _fChKod = _fChUnvan = "";
+        _fBankaKod = _fBankaAcik = "";
+        _fProjeKod = _fProjeAd = "";
+        _fOzelKod = _fIslemNo = "";
+        _fHavale = _fCek = _fDevir = _fDiger = "";
+        _fSign = _fSpecOde = "";
+    }
+
+    private static bool MetinEslesir(string? hucre, string filtre)
+        => string.IsNullOrWhiteSpace(filtre) ||
+           (hucre ?? "").Contains(filtre.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private static bool SayiEslesir(decimal deger, string filtre)
+    {
+        if (string.IsNullOrWhiteSpace(filtre)) return true;
+        var f = filtre.Trim().Replace(',', '.');
+
+        if (f.Contains('-') && !f.StartsWith("-"))
+        {
+            var p = f.Split('-', 2);
+            if (decimal.TryParse(p[0], System.Globalization.NumberStyles.Any,
+                    System.Globalization.CultureInfo.InvariantCulture, out var a) &&
+                decimal.TryParse(p[1], System.Globalization.NumberStyles.Any,
+                    System.Globalization.CultureInfo.InvariantCulture, out var b))
+                return deger >= a && deger <= b;
+        }
+
+        string op = "="; string sayi = f;
+        foreach (var pre in new[] { ">=", "<=", ">", "<", "=" })
+        {
+            if (f.StartsWith(pre)) { op = pre; sayi = f[pre.Length..].Trim(); break; }
+        }
+        if (!decimal.TryParse(sayi, System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var v)) return true;
+        return op switch
+        {
+            ">=" => deger >= v,
+            "<=" => deger <= v,
+            ">"  => deger >  v,
+            "<"  => deger <  v,
+            _    => deger == v,
+        };
+    }
+
+    private List<FinansRaporSatiri> UygulanmisFiltre(List<FinansRaporSatiri> kaynak)
+    {
+        IEnumerable<FinansRaporSatiri> q = kaynak;
+
+        if (!string.IsNullOrEmpty(_filtreHareketTuru))
+            q = q.Where(x => x.HareketTuru == _filtreHareketTuru);
+        if (!string.IsNullOrEmpty(_filtreModul))
+            q = q.Where(x => x.Modul == _filtreModul);
+        if (!string.IsNullOrWhiteSpace(_arama))
+        {
+            var s = _arama.Trim();
+            q = q.Where(x =>
+                (x.ChUnvani            ?? "").Contains(s, StringComparison.OrdinalIgnoreCase) ||
+                (x.ChKod               ?? "").Contains(s, StringComparison.OrdinalIgnoreCase) ||
+                (x.BankaHesapAciklamasi?? "").Contains(s, StringComparison.OrdinalIgnoreCase) ||
+                (x.BankaHesapKodu      ?? "").Contains(s, StringComparison.OrdinalIgnoreCase) ||
+                (x.ProjeKodu           ?? "").Contains(s, StringComparison.OrdinalIgnoreCase) ||
+                (x.ProjeAdi            ?? "").Contains(s, StringComparison.OrdinalIgnoreCase) ||
+                (x.FisTuru             ?? "").Contains(s, StringComparison.OrdinalIgnoreCase));
+        }
+
+        // Sütun filtreleri
+        if (!string.IsNullOrWhiteSpace(_fTarih))
+            q = q.Where(x => x.Tarih.ToString("yyyy-MM-dd").Contains(_fTarih.Trim()) ||
+                             x.Tarih.ToString("dd.MM.yyyy").Contains(_fTarih.Trim()));
+        q = q.Where(x => MetinEslesir(x.Yil.ToString(), _fYil));
+        q = q.Where(x => MetinEslesir(x.Ay.ToString(), _fAy));
+        q = q.Where(x => MetinEslesir(x.Gun.ToString(), _fGun));
+        q = q.Where(x => MetinEslesir(x.HareketTuru,          _fHareket));
+        q = q.Where(x => MetinEslesir(x.Modul,                _fModul));
+        q = q.Where(x => MetinEslesir(x.FisTuru,              _fFisTuru));
+        q = q.Where(x => MetinEslesir(x.ChKod,                _fChKod));
+        q = q.Where(x => MetinEslesir(x.ChUnvani,             _fChUnvan));
+        q = q.Where(x => MetinEslesir(x.BankaHesapKodu,       _fBankaKod));
+        q = q.Where(x => MetinEslesir(x.BankaHesapAciklamasi, _fBankaAcik));
+        q = q.Where(x => MetinEslesir(x.ProjeKodu,            _fProjeKod));
+        q = q.Where(x => MetinEslesir(x.ProjeAdi,             _fProjeAd));
+        q = q.Where(x => MetinEslesir(x.HaraketOzelKodu,      _fOzelKod));
+        q = q.Where(x => MetinEslesir(x.IslemNo,              _fIslemNo));
+        q = q.Where(x => SayiEslesir(x.Havale, _fHavale));
+        q = q.Where(x => SayiEslesir(x.Cek,    _fCek));
+        q = q.Where(x => SayiEslesir(x.Devir,  _fDevir));
+        q = q.Where(x => SayiEslesir(x.Diger,  _fDiger));
+        q = q.Where(x => MetinEslesir(x.Sign.ToString(), _fSign));
+        q = q.Where(x => MetinEslesir(x.SpecOde,          _fSpecOde));
+
+        return q.ToList();
+    }
+}

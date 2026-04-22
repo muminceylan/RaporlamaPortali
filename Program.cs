@@ -98,6 +98,13 @@ builder.Services.AddScoped<MustahsilKarsilastirmaService>();
 // Tarım Kredi Raporu (bölge eşleşmesi + yan ürün hareket)
 builder.Services.AddSingleton<TarimKrediService>();
 
+// Malzeme Hareket Listesi — kullanıcı tarafından tanımlanan kodlar için STLINE hareket raporu
+builder.Services.AddScoped<MalzemeHareketService>();
+builder.Services.AddSingleton<MalzemeListeService>();
+
+// Finans Raporu — yıllık INF_MD_FINANS_PROJE_RAPORU_211_YYYY view'lerini birleştirir
+builder.Services.AddScoped<FinansRaporService>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -175,7 +182,7 @@ app.MapGet("/api/rapor", async (HttpContext context) =>
         var htmlService       = scope.ServiceProvider.GetRequiredService<HtmlRaporService>();
 
         var baslangic = new DateTime(2025, 9, 1);
-        var bitis     = DateTime.Today;
+        var bitis     = RaporlamaPortali.Services.SistemTarihi.Bugun();
 
         var sekerVerileri    = await sekerService.GetSekerSatisOzetAsync(baslangic, bitis);
         var yanUrunVerileri  = await yanUrunlerService.GetYanUrunlerOzetAsync(baslangic, bitis);
@@ -345,6 +352,68 @@ app.MapGet("/api/seker-raporu", async (HttpContext context) =>
     {
         context.Response.StatusCode = 500;
         await context.Response.WriteAsync("Hata: " + ex.Message);
+    }
+}).AllowAnonymous();
+
+// Malzeme Hareket Listesi — Excel'den Web Query / Power Query ile yenilenebilsin diye CSV döndürür.
+// GET /api/malzeme-hareket?liste=AfyonYanUrun&baslangic=2024-09-30&bitis=2026-08-31
+//   veya
+// GET /api/malzeme-hareket?kodlar=S.706.04.0001,S.706.04.0002&baslangic=2024-09-30
+// Parametre verilmezse tüm kayıtlı listeleri birleştirir, tarih aralığı 2023-09-18'den bugüne.
+app.MapGet("/api/malzeme-hareket", async (HttpContext ctx,
+    MalzemeHareketService hareket, MalzemeListeService liste) =>
+{
+    try
+    {
+        var kodSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var listeAdi = ctx.Request.Query["liste"].ToString();
+        if (!string.IsNullOrWhiteSpace(listeAdi))
+        {
+            var l = liste.Getir(listeAdi);
+            if (l != null) foreach (var k in l.MalzemeKodlari) kodSet.Add(k);
+        }
+
+        var kodlarQs = ctx.Request.Query["kodlar"].ToString();
+        if (!string.IsNullOrWhiteSpace(kodlarQs))
+            foreach (var k in kodlarQs.Split(new[] { ',', ';', '|' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                kodSet.Add(k);
+
+        // Parametre yoksa tüm kayıtlı listeleri birleştir
+        if (kodSet.Count == 0)
+            foreach (var l in liste.Listele())
+                foreach (var k in l.MalzemeKodlari) kodSet.Add(k);
+
+        if (!DateTime.TryParse(ctx.Request.Query["baslangic"], out var bas))
+            bas = new DateTime(2023, 9, 18);
+        if (!DateTime.TryParse(ctx.Request.Query["bitis"], out var bit))
+            bit = RaporlamaPortali.Services.SistemTarihi.Bugun();
+
+        var satirlar = await hareket.GetHareketlerAsync(kodSet, bas, bit);
+
+        // CSV (UTF-8 BOM + ; ayırıcı — Excel Türkçe yerelinde direkt açılır)
+        var sb = new System.Text.StringBuilder();
+        sb.Append('﻿'); // BOM
+        sb.AppendLine("YIL;AY;TARIH;FIS_TURU;FIS_NUMARASI;CARI_HESAP_KODU;CARI_HESAP_UNVANI;MALZEME_KODU;MALZEME_ACIKLAMASI;GIRIS_MIKTARI;GIRIS_FIYATI;GIRIS_TUTARI;CIKIS_MIKTARI;CIKIS_FIYATI;CIKIS_TUTARI");
+        string E(string? s) => (s ?? "").Replace(";", ",").Replace("\r", " ").Replace("\n", " ");
+        string N(decimal d) => d.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        foreach (var s in satirlar)
+            sb.AppendLine(string.Join(';',
+                s.Yil, s.Ay, s.Tarih.ToString("yyyy-MM-dd"),
+                E(s.FisTuru), E(s.FisNumarasi),
+                E(s.CariHesapKodu), E(s.CariHesapUnvani),
+                E(s.MalzemeKodu), E(s.MalzemeAciklamasi),
+                N(s.GirisMiktari), N(s.GirisFiyati), N(s.GirisTutari),
+                N(s.CikisMiktari), N(s.CikisFiyati), N(s.CikisTutari)));
+
+        ctx.Response.ContentType = "text/csv; charset=utf-8";
+        ctx.Response.Headers["Content-Disposition"] = "inline; filename=\"malzeme-hareket.csv\"";
+        await ctx.Response.WriteAsync(sb.ToString());
+    }
+    catch (Exception ex)
+    {
+        ctx.Response.StatusCode = 500;
+        await ctx.Response.WriteAsync("Hata: " + ex.Message);
     }
 }).AllowAnonymous();
 

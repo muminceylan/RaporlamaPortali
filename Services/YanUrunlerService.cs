@@ -29,6 +29,7 @@ public class YanUrunlerService
     /// </summary>
     public async Task<List<YanUrunOzet>> GetYanUrunlerOzetAsync(DateTime baslangic, DateTime bitis)
     {
+        bitis = SistemTarihi.Clamp(bitis);
         var sonuclar = new List<YanUrunOzet>();
 
         // Tüm tanımlı yan ürünler için veri çek
@@ -70,6 +71,7 @@ public class YanUrunlerService
     /// </summary>
     public async Task<List<AlkolOzet>> GetAlkolOzetAsync(DateTime baslangic, DateTime bitis)
     {
+        bitis = SistemTarihi.Clamp(bitis);
         var sonuclar = new List<AlkolOzet>();
 
         foreach (var (malzemeKodu, (malzemeAdi, alkolTuru)) in MalzemeTanimlari.AlkolUrunleri)
@@ -329,6 +331,7 @@ public class YanUrunlerService
     /// </summary>
     public async Task<decimal> GetAlkolIcinTuketilenMelasAsync(DateTime baslangic, DateTime bitis)
     {
+        bitis = SistemTarihi.Clamp(bitis);
         // Melas sarfı - "Proms. ve Teknik Malzeme" fiş türü
         var sql = @"
             SELECT ISNULL(SUM(ABS(CIKIS_MIKTARI)), 0)
@@ -351,11 +354,12 @@ public class YanUrunlerService
     /// Detaylı stok hareketlerini getirir
     /// </summary>
     public async Task<List<StokHareket>> GetStokHareketleriAsync(
-        string malzemeKodu, 
-        DateTime baslangic, 
+        string malzemeKodu,
+        DateTime baslangic,
         DateTime bitis,
         int? fisturuFiltre = null)
     {
+        bitis = SistemTarihi.Clamp(bitis);
         var sql = @"
             SELECT 
                 Tarih = TARIH,

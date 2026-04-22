@@ -130,6 +130,7 @@ public class SekerSatisService
     /// </summary>
     public async Task<List<SekerSatisOzet>> GetSekerSatisOzetAsync(DateTime baslangic, DateTime bitis)
     {
+        bitis = SistemTarihi.Clamp(bitis);
         // Sonuç dizisi: 6 kategori x 10 değer (9 miktar + 1 tutar)
         var sonuc = new decimal[6, 10];
         var stoklar = new decimal[6]; // Anlık stok takibi
