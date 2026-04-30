@@ -105,6 +105,14 @@ builder.Services.AddSingleton<MalzemeListeService>();
 // Finans Raporu — yıllık INF_MD_FINANS_PROJE_RAPORU_211_YYYY view'lerini birleştirir
 builder.Services.AddScoped<FinansRaporService>();
 
+// SabNet Kantar — SabNetKANTAR SQL Server'dan SabNet.db SQLite'a aktarım + listeleme
+builder.Services.AddSingleton<SabNetDbService>();
+builder.Services.AddSingleton<SabNetBaglantiService>();
+builder.Services.AddScoped<SabNetImportService>();
+builder.Services.AddScoped<SabNetSorguService>();
+builder.Services.AddSingleton<SabNetSyncDurum>();
+builder.Services.AddHostedService<SabNetSyncBackgroundService>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.

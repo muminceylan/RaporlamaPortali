@@ -1,0 +1,571 @@
+@page "/sabnet-kantar-hareketleri"
+@implements IDisposable
+@using RaporlamaPortali.Models
+@inject SabNetSorguService Sorgu
+
+<PageTitle>SabNet Kantar Hareketleri</PageTitle>
+
+<div class="page-container">
+    <div class="page-header">
+        <h2>⚖️ SabNet Kantar Hareketleri</h2>
+        <p class="muted">SabNet.db'ye aktarılmış SabNetKANTAR verileri. Sözleşme yılına göre filtrelenir.</p>
+    </div>
+
+    <div class="toolbar">
+        <div class="filter-group">
+            <label>Sözleşme Yılı:</label>
+            <select @bind="secilenYil" @bind:after="YilDegisti" class="form-select">
+                <option value="">— Tümü —</option>
+                @foreach (var y in mevcutYillar)
+                {
+                    <option value="@y">@y</option>
+                }
+            </select>
+        </div>
+
+        <div class="filter-group">
+            <label>Kantar:</label>
+            <select @bind="secilenKantar" @bind:after="KantarDegisti" class="form-select">
+                <option value="">— Tümü —</option>
+                <option value="M2">🍬 Şeker Kantarı (M2)</option>
+                <option value="M1">🌾 Yan Ürün Kantarı (M1)</option>
+                <option value="K1">👨‍🌾 Çiftçi Kantarı (K1)</option>
+                <option value="DIGER">📦 Diğer (Beton vb.)</option>
+            </select>
+        </div>
+
+        <div class="filter-group">
+            <label>Görünüm:</label>
+            <div class="tab-group">
+                <button class="tab @(aktifTab == "hareket" ? "active" : "")" @onclick='() => TabDegistir("hareket")'>
+                    Hareketler (@hareketSayisi.ToString("N0"))
+                </button>
+                <button class="tab @(aktifTab == "log" ? "active" : "")" @onclick='() => TabDegistir("log")'>
+                    Log Kayıtları (@logSayisi.ToString("N0"))
+                </button>
+            </div>
+        </div>
+
+        <div class="filter-group flex-grow">
+            <label>Arama:</label>
+            <input type="text" @bind="aramaMetni" @bind:event="oninput" @bind:after="AramaDegisti"
+                   placeholder="Fiş No, TC, Plaka, Hesap Kodu..." class="form-input" />
+        </div>
+
+        <div class="filter-group">
+            <label>Sayfa Boyutu:</label>
+            <select @bind="sayfaBoyutu" @bind:after="SayfaBoyutuDegisti" class="form-select">
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="250">250</option>
+            </select>
+        </div>
+
+        <button class="btn-primary" @onclick="Yenile">🔄 Yenile</button>
+
+        <div class="filter-group">
+            <label>Otomatik Yenileme:</label>
+            <div class="auto-refresh">
+                <label class="switch">
+                    <input type="checkbox" @bind="otoYenileAcik" @bind:after="OtoYenileDegisti" />
+                    <span class="slider"></span>
+                </label>
+                <span class="auto-status">
+                    @if (otoYenileAcik)
+                    {
+                        <span class="badge-on">● 60 sn (kalan: @geriSayim sn)</span>
+                    }
+                    else
+                    {
+                        <span class="badge-off">○ Kapalı</span>
+                    }
+                </span>
+            </div>
+        </div>
+    </div>
+
+    @if (sonYenilemeZamani != null)
+    {
+        <div class="last-refresh">Son yenileme: @sonYenilemeZamani.Value.ToString("HH:mm:ss")</div>
+    }
+
+    @if (yukleniyor)
+    {
+        <div class="info-box">⏳ Veriler yükleniyor...</div>
+    }
+    else if (aktifTab == "hareket")
+    {
+        @if (!hareketler.Any())
+        {
+            <div class="info-box">Bu kriterlere uygun kayıt bulunamadı.</div>
+        }
+        else
+        {
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Tarih</th>
+                            <th>Fiş No</th>
+                            <th>İşlem Tipi</th>
+                            <th>Sözleşme Yılı</th>
+                            <th>TC Kimlik</th>
+                            <th>Hesap Kodu</th>
+                            <th>Firma Adı</th>
+                            <th>Ürün Kodu</th>
+                            <th>Ürün Adı</th>
+                            <th>Plaka</th>
+                            <th>Şoför Adı</th>
+                            <th>DOLU/BOŞ</th>
+                            <th class="num">Birim Fiyat</th>
+                            <th class="num">Brüt</th>
+                            <th class="num">Dara</th>
+                            <th class="num">Net</th>
+                            <th class="num">Sevk</th>
+                            <th class="num">Fark</th>
+                            <th class="num">Fire %</th>
+                            <th class="num">Polar %</th>
+                            <th class="num">Nakit</th>
+                            <th class="num">Kredi Kartı</th>
+                            <th class="num">Cari</th>
+                            <th class="num">Havale</th>
+                            <th>Giriş Tarihi</th>
+                            <th>Giriş Saati</th>
+                            <th>Çıkış Tarihi</th>
+                            <th>Çıkış Saati</th>
+                            <th>Boşaltma Yeri</th>
+                            <th>Açıklama</th>
+                            <th>Kantar</th>
+                            <th>Row_ID</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var h in hareketler)
+                        {
+                            <tr>
+                                <td>@FormatDelphiTarih(h.Tarih)</td>
+                                <td>@h.FisNo</td>
+                                <td>@h.IslemTipi</td>
+                                <td>@h.SozlesmeYili</td>
+                                <td>@h.TcKimlikNo</td>
+                                <td>@h.HesapKodu</td>
+                                <td>@FirmaAdi(h.HesapKodu)</td>
+                                <td>@h.UrunKodu</td>
+                                <td>@UrunAdi(h.UrunKodu)</td>
+                                <td>@h.PlakaNo</td>
+                                <td>@h.SoforAdiSoyadi</td>
+                                <td>@h.Kod5</td>
+                                <td class="num">@(h.BirimFiyat?.ToString("N4"))</td>
+                                <td class="num">@(h.Brut?.ToString("N2"))</td>
+                                <td class="num">@(h.Dara?.ToString("N2"))</td>
+                                <td class="num">@(h.Net?.ToString("N2"))</td>
+                                <td class="num">@(h.Sevk?.ToString("N2"))</td>
+                                <td class="num">@(h.Fark?.ToString("N2"))</td>
+                                <td class="num">@(h.FireOrani?.ToString("N2"))</td>
+                                <td class="num">@(h.PolarOrani?.ToString("N2"))</td>
+                                <td class="num">@(h.Nakit?.ToString("N2"))</td>
+                                <td class="num">@(h.KrediKarti?.ToString("N2"))</td>
+                                <td class="num">@(h.Cari?.ToString("N2"))</td>
+                                <td class="num">@(h.Havale?.ToString("N2"))</td>
+                                <td>@FormatDelphiTarih(h.KayitTarihi)</td>
+                                <td>@FormatDelphiSaat(h.KayitSaati)</td>
+                                <td>@FormatDelphiTarih(h.CikisTarihi)</td>
+                                <td>@FormatDelphiSaat(h.CikisSaati)</td>
+                                <td>@h.BosaltmaYeri</td>
+                                <td>@h.Aciklama</td>
+                                <td>@h.KantarKodu</td>
+                                <td>@h.RowId</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+    else
+    {
+        @if (!loglar.Any())
+        {
+            <div class="info-box">Bu kriterlere uygun log kaydı bulunamadı.</div>
+        }
+        else
+        {
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Log İşlem</th>
+                            <th>Log Kaydeden</th>
+                            <th>Log Tarih</th>
+                            <th>Log Saat</th>
+                            <th>Tarih</th>
+                            <th>Fiş No</th>
+                            <th>Sözleşme Yılı</th>
+                            <th>TC Kimlik</th>
+                            <th>Hesap Kodu</th>
+                            <th>Firma Adı</th>
+                            <th>Ürün Kodu</th>
+                            <th>Ürün Adı</th>
+                            <th>Plaka</th>
+                            <th>Şoför Adı</th>
+                            <th>DOLU/BOŞ</th>
+                            <th class="num">Birim Fiyat</th>
+                            <th class="num">Brüt</th>
+                            <th class="num">Net</th>
+                            <th class="num">Sevk</th>
+                            <th class="num">Fark</th>
+                            <th class="num">Nakit</th>
+                            <th class="num">Kredi Kartı</th>
+                            <th class="num">Cari</th>
+                            <th class="num">Havale</th>
+                            <th>Giriş Tarihi</th>
+                            <th>Giriş Saati</th>
+                            <th>Çıkış Tarihi</th>
+                            <th>Çıkış Saati</th>
+                            <th>Boşaltma Yeri</th>
+                            <th>Açıklama</th>
+                            <th>Log Açıklama</th>
+                            <th>Kantar</th>
+                            <th>Row_ID</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var l in loglar)
+                        {
+                            <tr>
+                                <td>@l.LogIslemTipi</td>
+                                <td>@l.LogKaydeden</td>
+                                <td>@FormatDelphiTarih(l.LogKayitTarihi)</td>
+                                <td>@FormatDelphiSaat(l.LogKayitSaati)</td>
+                                <td>@FormatDelphiTarih(l.Tarih)</td>
+                                <td>@l.FisNo</td>
+                                <td>@l.SozlesmeYili</td>
+                                <td>@l.TcKimlikNo</td>
+                                <td>@l.HesapKodu</td>
+                                <td>@FirmaAdi(l.HesapKodu)</td>
+                                <td>@l.UrunKodu</td>
+                                <td>@UrunAdi(l.UrunKodu)</td>
+                                <td>@l.PlakaNo</td>
+                                <td>@l.SoforAdiSoyadi</td>
+                                <td>@l.Kod5</td>
+                                <td class="num">@(l.BirimFiyat?.ToString("N4"))</td>
+                                <td class="num">@(l.Brut?.ToString("N2"))</td>
+                                <td class="num">@(l.Net?.ToString("N2"))</td>
+                                <td class="num">@(l.Sevk?.ToString("N2"))</td>
+                                <td class="num">@(l.Fark?.ToString("N2"))</td>
+                                <td class="num">@(l.Nakit?.ToString("N2"))</td>
+                                <td class="num">@(l.KrediKarti?.ToString("N2"))</td>
+                                <td class="num">@(l.Cari?.ToString("N2"))</td>
+                                <td class="num">@(l.Havale?.ToString("N2"))</td>
+                                <td>@FormatDelphiTarih(l.KayitTarihi)</td>
+                                <td>@FormatDelphiSaat(l.KayitSaati)</td>
+                                <td>@FormatDelphiTarih(l.CikisTarihi)</td>
+                                <td>@FormatDelphiSaat(l.CikisSaati)</td>
+                                <td>@l.BosaltmaYeri</td>
+                                <td>@l.Aciklama</td>
+                                <td>@l.LogAciklama</td>
+                                <td>@l.KantarKodu</td>
+                                <td>@l.RowId</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+
+    <div class="pagination">
+        <button class="btn-page" @onclick="() => SayfaDegistir(1)" disabled="@(suankiSayfa == 1 || yukleniyor)">« İlk</button>
+        <button class="btn-page" @onclick="() => SayfaDegistir(suankiSayfa - 1)" disabled="@(suankiSayfa == 1 || yukleniyor)">‹ Önceki</button>
+        <span class="page-info">
+            Sayfa <strong>@suankiSayfa</strong> / @toplamSayfa
+            (Toplam @toplamKayit.ToString("N0") kayıt)
+        </span>
+        <button class="btn-page" @onclick="() => SayfaDegistir(suankiSayfa + 1)" disabled="@(suankiSayfa >= toplamSayfa || yukleniyor)">Sonraki ›</button>
+        <button class="btn-page" @onclick="() => SayfaDegistir(toplamSayfa)" disabled="@(suankiSayfa >= toplamSayfa || yukleniyor)">Son »</button>
+    </div>
+</div>
+
+<style>
+    .page-container { padding: 20px; max-width: 100%; }
+    .page-header h2 { margin: 0 0 5px 0; color: #333; }
+    .page-header .muted { color: #666; font-size: 13px; margin: 0 0 15px 0; }
+    .toolbar {
+        display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap;
+        background: #f8f9fa; padding: 12px; border-radius: 6px;
+        margin-bottom: 15px; border: 1px solid #e9ecef;
+    }
+    .filter-group { display: flex; flex-direction: column; gap: 4px; }
+    .filter-group.flex-grow { flex: 1; min-width: 200px; }
+    .filter-group label { font-size: 12px; font-weight: 600; color: #555; }
+    .form-select, .form-input {
+        padding: 6px 10px; border: 1px solid #ced4da; border-radius: 4px;
+        font-size: 13px; min-width: 120px;
+    }
+    .form-input { width: 100%; }
+    .tab-group { display: flex; gap: 0; }
+    .tab {
+        padding: 6px 14px; border: 1px solid #ced4da; background: #fff;
+        cursor: pointer; font-size: 13px;
+    }
+    .tab:first-child { border-radius: 4px 0 0 4px; }
+    .tab:last-child { border-radius: 0 4px 4px 0; border-left: none; }
+    .tab.active { background: #0d6efd; color: #fff; border-color: #0d6efd; }
+    .btn-primary {
+        padding: 6px 14px; background: #0d6efd; color: #fff; border: none;
+        border-radius: 4px; cursor: pointer; font-size: 13px;
+    }
+    .btn-primary:hover { background: #0b5ed7; }
+    .info-box {
+        background: #e7f3ff; border: 1px solid #b6dffd; color: #084298;
+        padding: 12px 16px; border-radius: 6px; text-align: center;
+    }
+    .table-wrapper {
+        overflow-x: auto; border: 1px solid #dee2e6; border-radius: 6px;
+        max-height: calc(100vh - 320px);
+    }
+    .data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .data-table thead th {
+        position: sticky; top: 0; background: #343a40; color: #fff;
+        padding: 8px 10px; text-align: left; font-weight: 600;
+        white-space: nowrap; z-index: 1;
+    }
+    .data-table thead th.num { text-align: right; }
+    .data-table tbody td {
+        padding: 6px 10px; border-bottom: 1px solid #f1f3f5; white-space: nowrap;
+    }
+    .data-table tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .data-table tbody tr:hover { background: #f8f9fa; }
+    .pagination {
+        display: flex; gap: 6px; align-items: center; justify-content: center;
+        margin-top: 15px;
+    }
+    .btn-page {
+        padding: 6px 12px; border: 1px solid #ced4da; background: #fff;
+        cursor: pointer; font-size: 13px; border-radius: 4px;
+    }
+    .btn-page:hover:not(:disabled) { background: #e9ecef; }
+    .btn-page:disabled { opacity: 0.5; cursor: not-allowed; }
+    .page-info { margin: 0 12px; font-size: 13px; color: #495057; }
+    .auto-refresh { display: flex; align-items: center; gap: 8px; height: 30px; }
+    .switch { position: relative; display: inline-block; width: 40px; height: 20px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+        position: absolute; cursor: pointer;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background-color: #ced4da; border-radius: 20px; transition: .2s;
+    }
+    .slider:before {
+        position: absolute; content: "";
+        height: 14px; width: 14px;
+        left: 3px; bottom: 3px;
+        background-color: white; border-radius: 50%; transition: .2s;
+    }
+    .switch input:checked + .slider { background-color: #198754; }
+    .switch input:checked + .slider:before { transform: translateX(20px); }
+    .auto-status { font-size: 12px; font-weight: 600; }
+    .badge-on { color: #198754; }
+    .badge-off { color: #6c757d; }
+    .last-refresh { font-size: 11px; color: #6c757d; text-align: right; margin-bottom: 6px; }
+</style>
+
+@code {
+    private List<string> mevcutYillar = new();
+    private string secilenYil = "";
+    private string secilenKantar = "";
+    private string aktifTab = "hareket";
+    private string aramaMetni = "";
+    private int sayfaBoyutu = 50;
+    private int suankiSayfa = 1;
+    private int toplamKayit = 0;
+    private int toplamSayfa = 1;
+    private long hareketSayisi = 0;
+    private long logSayisi = 0;
+    private bool yukleniyor = false;
+
+    private List<SabNetKantarHareketi> hareketler = new();
+    private List<SabNetKantarHareketiLog> loglar = new();
+
+    private Dictionary<string, string> firmaAdlari = new();
+    private Dictionary<string, string> urunAdlari = new();
+
+    private CancellationTokenSource? aramaCts;
+
+    // Otomatik yenileme — sayfa içi UI re-query timer'ı.
+    private bool otoYenileAcik = true;
+    private const int YenilemeAraligiSn = 60;
+    private int geriSayim = YenilemeAraligiSn;
+    private System.Timers.Timer? otoYenileTimer;
+    private DateTime? sonYenilemeZamani;
+
+    protected override async Task OnInitializedAsync()
+    {
+        mevcutYillar = await Sorgu.SozlesmeYillariniGetirAsync();
+        firmaAdlari  = await Sorgu.FirmaAdiLookupAsync();
+        urunAdlari   = await Sorgu.UrunAdiLookupAsync();
+        await Yenile();
+        OtoYenileBaslat(); // Varsayılan açık
+    }
+
+    private void OtoYenileDegisti()
+    {
+        if (otoYenileAcik) OtoYenileBaslat();
+        else OtoYenileDurdur();
+    }
+
+    private void OtoYenileBaslat()
+    {
+        OtoYenileDurdur();
+        geriSayim = YenilemeAraligiSn;
+        otoYenileTimer = new System.Timers.Timer(1000);
+        otoYenileTimer.Elapsed += async (s, e) =>
+        {
+            try { await OtoTickAsync(); }
+            catch (Exception ex) { Console.WriteLine($"[OtoTick] {ex.Message}"); }
+        };
+        otoYenileTimer.AutoReset = true;
+        otoYenileTimer.Start();
+    }
+
+    private void OtoYenileDurdur()
+    {
+        if (otoYenileTimer != null)
+        {
+            otoYenileTimer.Stop();
+            otoYenileTimer.Dispose();
+            otoYenileTimer = null;
+        }
+    }
+
+    private async Task OtoTickAsync()
+    {
+        geriSayim--;
+        if (geriSayim <= 0)
+        {
+            geriSayim = YenilemeAraligiSn;
+            if (!yukleniyor)
+            {
+                await InvokeAsync(Yenile);
+            }
+        }
+        else
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    public void Dispose()
+    {
+        OtoYenileDurdur();
+        aramaCts?.Cancel();
+        aramaCts?.Dispose();
+    }
+
+    private string FirmaAdi(string? hesapKodu) =>
+        !string.IsNullOrEmpty(hesapKodu) && firmaAdlari.TryGetValue(hesapKodu, out var ad) ? ad : "";
+
+    private string UrunAdi(string? urunKodu) =>
+        !string.IsNullOrEmpty(urunKodu) && urunAdlari.TryGetValue(urunKodu, out var ad) ? ad : "";
+
+    private async Task Yenile()
+    {
+        yukleniyor = true;
+        StateHasChanged();
+        try
+        {
+            var (h, l) = await Sorgu.SayilarAsync(NullIfBos(secilenYil), NullIfBos(secilenKantar));
+            hareketSayisi = h;
+            logSayisi = l;
+
+            if (aktifTab == "hareket")
+            {
+                var (rows, toplam) = await Sorgu.HareketleriGetirAsync(
+                    NullIfBos(secilenYil), NullIfBos(secilenKantar), NullIfBos(aramaMetni),
+                    suankiSayfa, sayfaBoyutu);
+                toplamKayit = toplam;
+                toplamSayfa = Math.Max(1, (int)Math.Ceiling(toplam / (double)sayfaBoyutu));
+                if (suankiSayfa > toplamSayfa) suankiSayfa = toplamSayfa;
+                hareketler = rows;
+                loglar = new();
+            }
+            else
+            {
+                var (rows, toplam) = await Sorgu.LoglariGetirAsync(
+                    NullIfBos(secilenYil), NullIfBos(secilenKantar), NullIfBos(aramaMetni),
+                    suankiSayfa, sayfaBoyutu);
+                toplamKayit = toplam;
+                toplamSayfa = Math.Max(1, (int)Math.Ceiling(toplam / (double)sayfaBoyutu));
+                if (suankiSayfa > toplamSayfa) suankiSayfa = toplamSayfa;
+                loglar = rows;
+                hareketler = new();
+            }
+
+            sonYenilemeZamani = DateTime.Now;
+            geriSayim = YenilemeAraligiSn;
+        }
+        finally
+        {
+            yukleniyor = false;
+            StateHasChanged();
+        }
+    }
+
+    private static string? NullIfBos(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
+
+    private async Task YilDegisti()      { suankiSayfa = 1; await Yenile(); }
+    private async Task KantarDegisti()   { suankiSayfa = 1; await Yenile(); }
+    private async Task SayfaBoyutuDegisti(){ suankiSayfa = 1; await Yenile(); }
+
+    private async Task TabDegistir(string tab)
+    {
+        if (aktifTab == tab) return;
+        aktifTab = tab;
+        suankiSayfa = 1;
+        await Yenile();
+    }
+
+    private async Task AramaDegisti()
+    {
+        aramaCts?.Cancel();
+        aramaCts = new CancellationTokenSource();
+        var token = aramaCts.Token;
+        try
+        {
+            await Task.Delay(350, token);
+            if (token.IsCancellationRequested) return;
+            suankiSayfa = 1;
+            await Yenile();
+        }
+        catch (TaskCanceledException) { }
+    }
+
+    private async Task SayfaDegistir(int yeniSayfa)
+    {
+        if (yeniSayfa < 1 || yeniSayfa > toplamSayfa) return;
+        suankiSayfa = yeniSayfa;
+        await Yenile();
+    }
+
+    private static string FormatDelphiTarih(int? serial)
+    {
+        if (serial == null || serial == 0) return "";
+        try
+        {
+            var dt = new DateTime(1899, 12, 30).AddDays(serial.Value);
+            return dt.ToString("dd.MM.yyyy");
+        }
+        catch { return serial.ToString() ?? ""; }
+    }
+
+    private static string FormatDelphiSaat(int? saniye)
+    {
+        if (saniye == null || saniye == 0) return "";
+        try
+        {
+            var ts = TimeSpan.FromSeconds(saniye.Value);
+            return ts.ToString(@"hh\:mm\:ss");
+        }
+        catch { return saniye.ToString() ?? ""; }
+    }
+}

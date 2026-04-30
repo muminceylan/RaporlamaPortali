@@ -92,6 +92,16 @@
                 </MudNavLink>
             </MudNavGroup>
 
+            <MudNavGroup Title="SabNet Kantar" Icon="@Icons.Material.Filled.Scale" @bind-Expanded="_sabnetOpen"
+                         IconColor="Color.Secondary">
+                <MudNavLink Href="/sabnet-kantar-hareketleri" Icon="@Icons.Material.Filled.ViewList" IconColor="Color.Secondary">
+                    Kantar Hareketleri
+                </MudNavLink>
+                <MudNavLink Href="/sabnet-kantar-aktar" Icon="@Icons.Material.Filled.CloudDownload" IconColor="Color.Secondary">
+                    Kantar Aktarımı
+                </MudNavLink>
+            </MudNavGroup>
+
             <MudNavGroup Title="Evrak Arşivi" Icon="@Icons.Material.Filled.FolderOpen" @bind-Expanded="_evrakOpen"
                          IconColor="Color.Tertiary">
                 <MudNavLink Href="/evrak-arsivi" Icon="@Icons.Material.Filled.FolderOpen" IconColor="Color.Tertiary">
@@ -161,6 +171,7 @@
     private bool _raporlarOpen = true;
     private bool _logoOpen;
     private bool _kontrolOpen;
+    private bool _sabnetOpen;
     private bool _evrakOpen;
     private bool _ayarlarOpen;
 
@@ -188,6 +199,8 @@
             _logoOpen = true;
         else if (path is "/kantar-logo-karsilastirma" or "/mustahsil-karsilastirma")
             _kontrolOpen = true;
+        else if (path is "/sabnet-kantar-hareketleri" or "/sabnet-kantar-aktar")
+            _sabnetOpen = true;
         else if (path is "/evrak-arsivi" or "/evrak-ekle" or "/tesisler" or "/belge-tipleri")
             _evrakOpen = true;
         else if (path is "/mail-ayarlari" or "/whatsapp-ayarlari" or "/ayarlar")

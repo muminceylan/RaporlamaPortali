@@ -1,0 +1,565 @@
+@page "/sabnet-kantar-aktar"
+@using RaporlamaPortali.Models
+@implements IDisposable
+@inject SabNetDbService Db
+@inject SabNetImportService Import
+@inject SabNetBaglantiService Baglanti
+@inject SabNetSyncDurum SyncDurum
+@inject ISnackbar Snackbar
+
+<PageTitle>SabNet Kantar Aktarımı</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.CloudDownload" Class="mr-2" />
+    SabNet KantarHareketleri Aktarımı
+</MudText>
+
+<MudGrid>
+    <MudItem xs="12" md="8">
+
+        <MudPaper Class="pa-4 mb-3" Elevation="3" Style="border-left:4px solid #1B5E20;">
+            <div class="d-flex justify-space-between align-center mb-2">
+                <MudText Typo="Typo.h6" Style="color:#1B5E20;">
+                    🔄 Otomatik Senkronizasyon (60 sn)
+                </MudText>
+                <MudSwitch T="bool" @bind-Value="SyncDurum.OtomatikSyncAcik" Color="Color.Success"
+                           Label="@(SyncDurum.OtomatikSyncAcik ? "Açık" : "Kapalı")" />
+            </div>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">
+                Bugünkü ve henüz çıkış yapmamış (açık) kayıtlar 60 saniyede bir SabNetKANTAR'dan tekrar çekilir.
+                Eski kayıtlara dokunulmaz. Log tablosu için yalnızca yeni satırlar (Row_ID artışı) eklenir.
+            </MudText>
+            <MudGrid>
+                <MudItem xs="6" md="3">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Son Sync</MudText>
+                    <MudText Typo="Typo.body2"><strong>@(SyncDurum.SonSyncZamani?.ToString("dd.MM.yyyy HH:mm:ss") ?? "—")</strong></MudText>
+                </MudItem>
+                <MudItem xs="6" md="3">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Hareket (silindi → eklendi)</MudText>
+                    <MudText Typo="Typo.body2"><strong>@SyncDurum.SonSyncEklenenHareket kayıt</strong></MudText>
+                </MudItem>
+                <MudItem xs="6" md="3">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Log (yeni)</MudText>
+                    <MudText Typo="Typo.body2"><strong>@SyncDurum.SonSyncEklenenLog kayıt</strong></MudText>
+                </MudItem>
+                <MudItem xs="6" md="3">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Süre</MudText>
+                    <MudText Typo="Typo.body2"><strong>@SyncDurum.SonSyncSureSn.ToString("F1") sn</strong></MudText>
+                </MudItem>
+            </MudGrid>
+            @if (!string.IsNullOrEmpty(SyncDurum.SonHata))
+            {
+                <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">
+                    @SyncDurum.SonHataZamani?.ToString("HH:mm:ss") — @SyncDurum.SonHata
+                </MudAlert>
+            }
+            <div class="mt-2">
+                <MudButton Variant="Variant.Outlined" Color="Color.Success" Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.Sync"
+                           Disabled="@islemDevamEdiyor" OnClick="ManuelSync">
+                    Şimdi Senkronize Et
+                </MudButton>
+            </div>
+        </MudPaper>
+
+        <MudPaper Class="pa-4 mb-3" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-2" Style="color:#0d47a1;">
+                1. SQL Server Bağlantı Bilgileri
+            </MudText>
+            <MudGrid>
+                <MudItem xs="12" md="3">
+                    <MudTextField @bind-Value="ayar.Server" Label="Server" Variant="Variant.Outlined" Dense="true" />
+                </MudItem>
+                <MudItem xs="12" md="3">
+                    <MudTextField @bind-Value="ayar.Database" Label="Database" Variant="Variant.Outlined" Dense="true" />
+                </MudItem>
+                <MudItem xs="6" md="2">
+                    <MudTextField @bind-Value="ayar.Username" Label="User" Variant="Variant.Outlined" Dense="true" />
+                </MudItem>
+                <MudItem xs="6" md="2">
+                    <MudTextField @bind-Value="ayar.Password" Label="Password" Variant="Variant.Outlined"
+                                  InputType="InputType.Password" Dense="true" />
+                </MudItem>
+                <MudItem xs="12" md="2" Class="d-flex align-end">
+                    <MudButton Variant="Variant.Filled" Color="Color.Info" FullWidth="true"
+                               StartIcon="@Icons.Material.Filled.Wifi" Disabled="@islemDevamEdiyor"
+                               OnClick="BaglantiTest">
+                        Test
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+            <div class="d-flex" style="gap:8px; margin-top:8px;">
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Save" Size="Size.Small"
+                           Disabled="@islemDevamEdiyor" OnClick="AyariKaydet">
+                    Bağlantı Bilgilerini Kaydet
+                </MudButton>
+            </div>
+            @if (!string.IsNullOrEmpty(testSonuc))
+            {
+                <MudAlert Severity="@(testBasarili ? Severity.Success : Severity.Error)" Dense="true" Class="mt-2">
+                    @testSonuc
+                </MudAlert>
+            }
+        </MudPaper>
+
+        <MudPaper Class="pa-4 mb-3" Elevation="2">
+            <div class="d-flex justify-space-between align-center mb-2">
+                <MudText Typo="Typo.h6" Style="color:#1B5E20;">
+                    2. PMHS_KantarHareketleri (Ana Tablo)
+                </MudText>
+                <div>
+                    <MudChip T="string" Color="Color.Info" Size="Size.Small">@hareketSayisi.ToString("N0") kayıt</MudChip>
+                    @if (hareketSayisi > 0)
+                    {
+                        <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.Delete"
+                                   Disabled="@islemDevamEdiyor" OnClick="HareketleriSil">
+                            Verileri Sil
+                        </MudButton>
+                    }
+                    <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.CloudDownload"
+                               Disabled="@(islemDevamEdiyor || hareketSayisi > 0)"
+                               OnClick="HareketleriAktar">
+                        SQL'den Çek ve Aktar
+                    </MudButton>
+                </div>
+            </div>
+            @if (islemDevamEdiyor && aktifTablo == "Hareket")
+            {
+                <MudProgressLinear Color="Color.Success" Value="@hareketIlerleme" Class="my-2" Striped="true">
+                    <MudText Typo="Typo.caption">@hareketIlerleme%</MudText>
+                </MudProgressLinear>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">@hareketDurum</MudText>
+            }
+            @if (!string.IsNullOrEmpty(hareketSonuc))
+            {
+                <MudAlert Severity="@(hareketBasarili ? Severity.Success : Severity.Error)" Dense="true" Class="mt-2">
+                    @hareketSonuc
+                </MudAlert>
+            }
+        </MudPaper>
+
+        <MudPaper Class="pa-4 mb-3" Elevation="2">
+            <div class="d-flex justify-space-between align-center mb-2">
+                <MudText Typo="Typo.h6" Style="color:#E65100;">
+                    3. PMHS_KantarHareketleri_Log (Log Tablosu)
+                </MudText>
+                <div>
+                    <MudChip T="string" Color="Color.Info" Size="Size.Small">@logSayisi.ToString("N0") kayıt</MudChip>
+                    @if (logSayisi > 0)
+                    {
+                        <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.Delete"
+                                   Disabled="@islemDevamEdiyor" OnClick="LoglariSil">
+                            Verileri Sil
+                        </MudButton>
+                    }
+                    <MudButton Variant="Variant.Filled" Color="Color.Warning" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.CloudDownload"
+                               Disabled="@(islemDevamEdiyor || logSayisi > 0)"
+                               OnClick="LoglariAktar">
+                        SQL'den Çek ve Aktar
+                    </MudButton>
+                </div>
+            </div>
+            @if (islemDevamEdiyor && aktifTablo == "Log")
+            {
+                <MudProgressLinear Color="Color.Warning" Value="@logIlerleme" Class="my-2" Striped="true">
+                    <MudText Typo="Typo.caption">@logIlerleme%</MudText>
+                </MudProgressLinear>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">@logDurum</MudText>
+            }
+            @if (!string.IsNullOrEmpty(logSonuc))
+            {
+                <MudAlert Severity="@(logBasarili ? Severity.Success : Severity.Error)" Dense="true" Class="mt-2">
+                    @logSonuc
+                </MudAlert>
+            }
+        </MudPaper>
+
+        <MudPaper Class="pa-4 mb-3" Elevation="2">
+            <div class="d-flex justify-space-between align-center mb-2">
+                <MudText Typo="Typo.h6" Style="color:#01579B;">
+                    4. PMHS_CariHesapKarti (Firma/Cari Bilgileri)
+                </MudText>
+                <div>
+                    <MudChip T="string" Color="Color.Info" Size="Size.Small">@cariSayisi.ToString("N0") kayıt</MudChip>
+                    @if (cariSayisi > 0)
+                    {
+                        <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.Delete"
+                                   Disabled="@islemDevamEdiyor" OnClick="CariSil">
+                            Verileri Sil
+                        </MudButton>
+                    }
+                    <MudButton Variant="Variant.Filled" Color="Color.Info" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.CloudDownload"
+                               Disabled="@(islemDevamEdiyor || cariSayisi > 0)"
+                               OnClick="CariAktar">
+                        SQL'den Çek ve Aktar
+                    </MudButton>
+                </div>
+            </div>
+            @if (!string.IsNullOrEmpty(cariSonuc))
+            {
+                <MudAlert Severity="@(cariBasarili ? Severity.Success : Severity.Error)" Dense="true" Class="mt-2">
+                    @cariSonuc
+                </MudAlert>
+            }
+        </MudPaper>
+
+        <MudPaper Class="pa-4 mb-3" Elevation="2">
+            <div class="d-flex justify-space-between align-center mb-2">
+                <MudText Typo="Typo.h6" Style="color:#1B5E20;">
+                    5. PMHS_StokKarti (Ürün Kartları)
+                </MudText>
+                <div>
+                    <MudChip T="string" Color="Color.Info" Size="Size.Small">@stokSayisi.ToString("N0") kayıt</MudChip>
+                    @if (stokSayisi > 0)
+                    {
+                        <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.Delete"
+                                   Disabled="@islemDevamEdiyor" OnClick="StokSil">
+                            Verileri Sil
+                        </MudButton>
+                    }
+                    <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.CloudDownload"
+                               Disabled="@(islemDevamEdiyor || stokSayisi > 0)"
+                               OnClick="StokAktar">
+                        SQL'den Çek ve Aktar
+                    </MudButton>
+                </div>
+            </div>
+            @if (!string.IsNullOrEmpty(stokSonuc))
+            {
+                <MudAlert Severity="@(stokBasarili ? Severity.Success : Severity.Error)" Dense="true" Class="mt-2">
+                    @stokSonuc
+                </MudAlert>
+            }
+        </MudPaper>
+
+    </MudItem>
+
+    <MudItem xs="12" md="4">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-2">ℹ️ Bilgi</MudText>
+            <MudText Typo="Typo.body2">
+                SabNetKANTAR'daki ham verileri SabNet.db içine aktarır.
+            </MudText>
+            <ul style="font-size:13px; padding-left:18px; margin-top:8px;">
+                <li><code>dbo.PMHS_KantarHareketleri</code> → <code>SabNetKantarHareketleri</code></li>
+                <li><code>dbo.PMHS_KantarHareketleri_Log</code> → <code>SabNetKantarHareketleriLog</code></li>
+                <li><code>dbo.PMHS_CariHesapKarti</code> → <code>SabNetCariHesaplar</code></li>
+                <li><code>dbo.PMHS_StokKarti</code> → <code>SabNetStokKartlari</code></li>
+            </ul>
+            <MudText Typo="Typo.body2" Class="mt-2">
+                <strong>Tüm yıllar</strong> aktarılır. Listeleme sayfasında <code>SozlesmeYili</code>'na göre filtrelenebilir.
+            </MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                Yeniden aktarım için önce mevcut verileri silin.
+            </MudText>
+        </MudPaper>
+
+        @if (!string.IsNullOrEmpty(yillarOzet))
+        {
+            <MudPaper Class="pa-3 mt-3" Elevation="2">
+                <MudText Typo="Typo.subtitle2" Class="mb-2">📊 Yıllara Göre Dağılım</MudText>
+                <pre style="font-size:11px; max-height:240px; overflow-y:auto; margin:0;">@yillarOzet</pre>
+            </MudPaper>
+        }
+    </MudItem>
+</MudGrid>
+
+@code {
+    private SabNetBaglantiAyari ayar = new();
+
+    private bool islemDevamEdiyor = false;
+    private string aktifTablo = "";
+
+    private int hareketSayisi = 0, logSayisi = 0, cariSayisi = 0, stokSayisi = 0;
+    private string yillarOzet = "";
+
+    private bool testBasarili = false;
+    private string testSonuc = "";
+
+    private bool hareketBasarili = false;
+    private string hareketSonuc = "";
+    private int hareketIlerleme = 0;
+    private string hareketDurum = "";
+
+    private bool logBasarili = false;
+    private string logSonuc = "";
+    private int logIlerleme = 0;
+    private string logDurum = "";
+
+    private bool cariBasarili = false;
+    private string cariSonuc = "";
+
+    private bool stokBasarili = false;
+    private string stokSonuc = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        ayar = Baglanti.GetAyar();
+        SyncDurum.Degisti += OnSyncDurumDegisti;
+        await SayilariGuncelle();
+    }
+
+    private void OnSyncDurumDegisti()
+    {
+        InvokeAsync(async () =>
+        {
+            await SayilariGuncelle();
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        SyncDurum.Degisti -= OnSyncDurumDegisti;
+    }
+
+    private async Task ManuelSync()
+    {
+        islemDevamEdiyor = true;
+        StateHasChanged();
+        if (!await SyncDurum.Kilit.WaitAsync(0))
+        {
+            Snackbar.Add("Sync zaten devam ediyor.", Severity.Warning);
+            islemDevamEdiyor = false;
+            StateHasChanged();
+            return;
+        }
+        try
+        {
+            var (silinen, eklenenH, sn1) = await Import.HareketleriGuncelleAsync(gunGeriye: 1);
+            var (eklenenL, sn2) = await Import.LoglariGuncelleAsync();
+            SyncDurum.SonSyncZamani = DateTime.Now;
+            SyncDurum.SonSyncEklenenHareket = eklenenH;
+            SyncDurum.SonSyncEklenenLog = eklenenL;
+            SyncDurum.SonSyncSureSn = sn1 + sn2;
+            SyncDurum.SonHata = null;
+            SyncDurum.SonHataZamani = null;
+            Snackbar.Add($"Sync OK: hareket {eklenenH}, log {eklenenL} ({(sn1 + sn2):F1} sn)", Severity.Success);
+            await SayilariGuncelle();
+        }
+        catch (Exception ex)
+        {
+            SyncDurum.SonHata = ex.Message;
+            SyncDurum.SonHataZamani = DateTime.Now;
+            Snackbar.Add($"Sync hata: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            SyncDurum.Kilit.Release();
+            islemDevamEdiyor = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SayilariGuncelle()
+    {
+        var s = await Db.KayitSayilariAsync();
+        hareketSayisi = s.hareket;
+        logSayisi     = s.log;
+        cariSayisi    = s.cari;
+        stokSayisi    = s.stok;
+
+        var ozet = await Db.YillaraGoreOzetAsync();
+        yillarOzet = string.Join("\n", ozet.Select(o => $"{o.Yil,-6}  {o.Adet,8:N0}"));
+        StateHasChanged();
+    }
+
+    private async Task AyariKaydet()
+    {
+        await Baglanti.KaydetAsync(ayar);
+        Snackbar.Add("Bağlantı bilgileri kaydedildi.", Severity.Success);
+    }
+
+    private async Task BaglantiTest()
+    {
+        islemDevamEdiyor = true;
+        testSonuc = "";
+        StateHasChanged();
+        var (ok, msg, _, _) = await Import.BaglantiTestAsync(ayar);
+        testBasarili = ok;
+        testSonuc = ok ? $"✅ {msg}" : $"❌ {msg}";
+        islemDevamEdiyor = false;
+        StateHasChanged();
+    }
+
+    private async Task HareketleriSil()
+    {
+        islemDevamEdiyor = true; StateHasChanged();
+        await SyncDurum.Kilit.WaitAsync();
+        try
+        {
+            await Db.TabloyuTemizleAsync("SabNetKantarHareketleri");
+            hareketSonuc = "✅ Silindi.";
+            hareketBasarili = true;
+            await SayilariGuncelle();
+        }
+        catch (Exception ex) { hareketSonuc = $"❌ {ex.Message}"; hareketBasarili = false; }
+        finally { SyncDurum.Kilit.Release(); islemDevamEdiyor = false; StateHasChanged(); }
+    }
+
+    private async Task LoglariSil()
+    {
+        islemDevamEdiyor = true; StateHasChanged();
+        await SyncDurum.Kilit.WaitAsync();
+        try
+        {
+            await Db.TabloyuTemizleAsync("SabNetKantarHareketleriLog");
+            logSonuc = "✅ Silindi.";
+            logBasarili = true;
+            await SayilariGuncelle();
+        }
+        catch (Exception ex) { logSonuc = $"❌ {ex.Message}"; logBasarili = false; }
+        finally { SyncDurum.Kilit.Release(); islemDevamEdiyor = false; StateHasChanged(); }
+    }
+
+    private async Task CariSil()
+    {
+        islemDevamEdiyor = true; StateHasChanged();
+        try
+        {
+            await Db.TabloyuTemizleAsync("SabNetCariHesaplar");
+            cariSonuc = "✅ Silindi.";
+            cariBasarili = true;
+            await SayilariGuncelle();
+        }
+        catch (Exception ex) { cariSonuc = $"❌ {ex.Message}"; cariBasarili = false; }
+        finally { islemDevamEdiyor = false; StateHasChanged(); }
+    }
+
+    private async Task StokSil()
+    {
+        islemDevamEdiyor = true; StateHasChanged();
+        try
+        {
+            await Db.TabloyuTemizleAsync("SabNetStokKartlari");
+            stokSonuc = "✅ Silindi.";
+            stokBasarili = true;
+            await SayilariGuncelle();
+        }
+        catch (Exception ex) { stokSonuc = $"❌ {ex.Message}"; stokBasarili = false; }
+        finally { islemDevamEdiyor = false; StateHasChanged(); }
+    }
+
+    private async Task HareketleriAktar()
+    {
+        islemDevamEdiyor = true;
+        aktifTablo = "Hareket";
+        hareketIlerleme = 1;
+        hareketDurum = "Toplam kayıt sayılıyor...";
+        hareketSonuc = "";
+        StateHasChanged();
+        await SyncDurum.Kilit.WaitAsync();
+
+        try
+        {
+            int eklenen = await Import.HareketleriAktarAsync((y, d) =>
+            {
+                hareketIlerleme = y;
+                hareketDurum = d;
+                InvokeAsync(StateHasChanged);
+            });
+            hareketIlerleme = 100;
+            hareketDurum = $"Tamamlandı: {eklenen:N0} kayıt";
+            hareketBasarili = true;
+            hareketSonuc = $"✅ {eklenen:N0} kayıt aktarıldı.";
+            await SayilariGuncelle();
+        }
+        catch (Exception ex)
+        {
+            hareketBasarili = false;
+            hareketSonuc = $"❌ {ex.Message}";
+        }
+        finally
+        {
+            SyncDurum.Kilit.Release();
+            islemDevamEdiyor = false;
+            aktifTablo = "";
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoglariAktar()
+    {
+        islemDevamEdiyor = true;
+        aktifTablo = "Log";
+        logIlerleme = 1;
+        logDurum = "Toplam kayıt sayılıyor...";
+        logSonuc = "";
+        StateHasChanged();
+        await SyncDurum.Kilit.WaitAsync();
+
+        try
+        {
+            int eklenen = await Import.LoglariAktarAsync((y, d) =>
+            {
+                logIlerleme = y;
+                logDurum = d;
+                InvokeAsync(StateHasChanged);
+            });
+            logIlerleme = 100;
+            logDurum = $"Tamamlandı: {eklenen:N0} kayıt";
+            logBasarili = true;
+            logSonuc = $"✅ {eklenen:N0} kayıt aktarıldı.";
+            await SayilariGuncelle();
+        }
+        catch (Exception ex)
+        {
+            logBasarili = false;
+            logSonuc = $"❌ {ex.Message}";
+        }
+        finally
+        {
+            SyncDurum.Kilit.Release();
+            islemDevamEdiyor = false;
+            aktifTablo = "";
+            StateHasChanged();
+        }
+    }
+
+    private async Task CariAktar()
+    {
+        islemDevamEdiyor = true;
+        aktifTablo = "Cari";
+        cariSonuc = "Aktarılıyor...";
+        cariBasarili = false;
+        StateHasChanged();
+
+        try
+        {
+            var (n, sn) = await Import.CariAktarAsync();
+            cariSonuc = $"✅ {n:N0} cari kaydı aktarıldı ({sn:F1} sn)";
+            cariBasarili = true;
+            await SayilariGuncelle();
+        }
+        catch (Exception ex) { cariSonuc = $"❌ {ex.Message}"; cariBasarili = false; }
+        finally { islemDevamEdiyor = false; aktifTablo = ""; StateHasChanged(); }
+    }
+
+    private async Task StokAktar()
+    {
+        islemDevamEdiyor = true;
+        aktifTablo = "Stok";
+        stokSonuc = "Aktarılıyor...";
+        stokBasarili = false;
+        StateHasChanged();
+
+        try
+        {
+            var (n, sn) = await Import.StokAktarAsync();
+            stokSonuc = $"✅ {n:N0} stok kartı aktarıldı ({sn:F1} sn)";
+            stokBasarili = true;
+            await SayilariGuncelle();
+        }
+        catch (Exception ex) { stokSonuc = $"❌ {ex.Message}"; stokBasarili = false; }
+        finally { islemDevamEdiyor = false; aktifTablo = ""; StateHasChanged(); }
+    }
+}

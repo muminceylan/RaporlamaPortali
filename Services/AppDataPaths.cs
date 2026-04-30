@@ -17,6 +17,8 @@ public static class AppDataPaths
     public static string MailAyarlariJson  => Path.Combine(DataRoot, "mail_ayarlari.json");
     public static string LaunchAuthJson      => Path.Combine(DataRoot, "launch_auth.json");
     public static string MalzemeListeleriJson => Path.Combine(DataRoot, "malzeme_listeleri.json");
+    public static string SabNetDb            => Path.Combine(DataRoot, "SabNet.db");
+    public static string SabNetBaglantiJson  => Path.Combine(DataRoot, "sabnet_baglanti.json");
     public static string WhatsAppDataDir     => Path.Combine(DataRoot, "WhatsApp");
 
     /// <summary>
