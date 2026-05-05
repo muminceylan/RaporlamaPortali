@@ -748,10 +748,35 @@ public class ExcelExportService
 
         ozet.Columns().AdjustToContents();
         ozet.SheetView.FreezeRows(r0);
+        YazdirmaAyariUygula(ozet, basliksatiri: r0);
 
         using var stream = new MemoryStream();
         wb.SaveAs(stream);
         return stream.ToArray();
+    }
+
+    /// <summary>
+    /// Yatay yön + 1 sayfa genişliğine sığdırma + dar kenar boşlukları.
+    /// Yazdırma anında kullanıcının el ayarı yapması gerekmez.
+    /// </summary>
+    private static void YazdirmaAyariUygula(IXLWorksheet ws, int? basliksatiri = null)
+    {
+        ws.PageSetup.PageOrientation = XLPageOrientation.Landscape;
+        ws.PageSetup.PaperSize = XLPaperSize.A4Paper;
+        ws.PageSetup.PagesWide = 1;     // Genişlikte 1 sayfaya sıkıştır
+        ws.PageSetup.PagesTall = 0;     // Yükseklikte sınır yok (taşarsa alt sayfaya geçsin)
+        ws.PageSetup.CenterHorizontally = true;
+        ws.PageSetup.Margins.Top = 0.5;
+        ws.PageSetup.Margins.Bottom = 0.5;
+        ws.PageSetup.Margins.Left = 0.25;
+        ws.PageSetup.Margins.Right = 0.25;
+        ws.PageSetup.Margins.Header = 0.3;
+        ws.PageSetup.Margins.Footer = 0.3;
+        if (basliksatiri.HasValue)
+        {
+            // Çok sayfaya bölünürse her sayfanın üstünde başlık satırı tekrarlansın
+            ws.PageSetup.SetRowsToRepeatAtTop(1, basliksatiri.Value);
+        }
     }
 
     private void TarimKrediBolgeSayfasiDoldur(IXLWorksheet ws, TarimKrediBolgeRapor r, DateTime bas, DateTime bit)
@@ -861,6 +886,7 @@ public class ExcelExportService
 
         ws.SheetView.FreezeRows(hr);
         ws.Columns().AdjustToContents();
+        YazdirmaAyariUygula(ws, basliksatiri: hr);
     }
 
     /// <summary>
@@ -995,6 +1021,221 @@ public class ExcelExportService
             var dataRange = ws.Range(hr, 1, r - 1, 18);
             dataRange.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
             dataRange.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+        }
+
+        ws.SheetView.FreezeRows(hr);
+        ws.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        wb.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    private static readonly DateTime _delphiBase = new(1899, 12, 30);
+    private static DateTime? DelphiToDate(int? d) =>
+        (d == null || d <= 0) ? null : _delphiBase.AddDays(d.Value);
+    private static TimeSpan? DelphiToTime(int? sn) =>
+        (sn == null || sn <= 0) ? null : TimeSpan.FromSeconds(sn.Value);
+
+    public byte[] ExportSabNetKantarHareketleri(
+        List<SabNetKantarHareketi> rows,
+        Dictionary<string, string> firmaAdlari,
+        Dictionary<string, string> urunAdlari,
+        string? sozlesmeYili,
+        string? kantar)
+    {
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("Kantar Hareketleri");
+
+        ws.Cell("A1").Value = "SABNET KANTAR HAREKETLERİ";
+        ws.Range("A1:K1").Merge();
+        ws.Cell("A1").Style.Font.Bold = true;
+        ws.Cell("A1").Style.Font.FontSize = 14;
+        ws.Cell("A1").Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+        var filtre = $"Sözleşme: {(string.IsNullOrEmpty(sozlesmeYili) ? "Tümü" : sozlesmeYili)}  |  " +
+                     $"Kantar: {(string.IsNullOrEmpty(kantar) ? "Tümü" : kantar)}  |  " +
+                     $"Toplam: {rows.Count:N0} kayıt  |  " +
+                     $"Oluşturma: {DateTime.Now:dd.MM.yyyy HH:mm}";
+        ws.Cell("A2").Value = filtre;
+        ws.Range("A2:K2").Merge();
+        ws.Cell("A2").Style.Font.Italic = true;
+        ws.Cell("A2").Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+        string[] basliklar = {
+            "Tarih", "Fiş No", "İşlem Tipi", "Sözleşme Yılı", "TC Kimlik No",
+            "Hesap Kodu", "Firma Adı", "Ürün Kodu", "Ürün Adı", "Plaka No",
+            "Şoför", "Açıklama2", "Birim Fiyat", "Brüt", "Dara", "Net",
+            "Sevk", "Fark", "Fire %", "Polar %",
+            "Nakit", "Kredi Kartı", "Cari", "Havale",
+            "Kayıt Tarihi", "Kayıt Saati", "Çıkış Tarihi", "Çıkış Saati",
+            "Boşaltma Yeri", "Açıklama", "Kantar", "Row_ID"
+        };
+
+        int hr = 4;
+        for (int i = 0; i < basliklar.Length; i++)
+        {
+            var c = ws.Cell(hr, i + 1);
+            c.Value = basliklar[i];
+            c.Style.Font.Bold = true;
+            c.Style.Fill.BackgroundColor = XLColor.FromHtml("#343A40");
+            c.Style.Font.FontColor = XLColor.White;
+            c.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        }
+
+        int r = hr + 1;
+        foreach (var h in rows)
+        {
+            int c = 1;
+            ws.Cell(r, c++).Value = DelphiToDate(h.Tarih);
+            ws.Cell(r, c++).Value = h.FisNo;
+            ws.Cell(r, c++).Value = h.IslemTipi;
+            ws.Cell(r, c++).Value = h.SozlesmeYili;
+            ws.Cell(r, c++).Value = h.TcKimlikNo;
+            ws.Cell(r, c++).Value = h.HesapKodu;
+            ws.Cell(r, c++).Value = !string.IsNullOrEmpty(h.HesapKodu) && firmaAdlari.TryGetValue(h.HesapKodu, out var fa) ? fa : "";
+            ws.Cell(r, c++).Value = h.UrunKodu;
+            ws.Cell(r, c++).Value = !string.IsNullOrEmpty(h.UrunKodu) && urunAdlari.TryGetValue(h.UrunKodu, out var ua) ? ua : "";
+            ws.Cell(r, c++).Value = h.PlakaNo;
+            ws.Cell(r, c++).Value = h.SoforAdiSoyadi;
+            ws.Cell(r, c++).Value = h.Kod5;
+            ws.Cell(r, c++).Value = h.BirimFiyat;
+            ws.Cell(r, c++).Value = h.Brut;
+            ws.Cell(r, c++).Value = h.Dara;
+            ws.Cell(r, c++).Value = h.Net;
+            ws.Cell(r, c++).Value = h.Sevk;
+            ws.Cell(r, c++).Value = h.Fark;
+            ws.Cell(r, c++).Value = h.FireOrani;
+            ws.Cell(r, c++).Value = h.PolarOrani;
+            ws.Cell(r, c++).Value = h.Nakit;
+            ws.Cell(r, c++).Value = h.KrediKarti;
+            ws.Cell(r, c++).Value = h.Cari;
+            ws.Cell(r, c++).Value = h.Havale;
+            ws.Cell(r, c++).Value = DelphiToDate(h.KayitTarihi);
+            ws.Cell(r, c++).Value = DelphiToTime(h.KayitSaati)?.ToString(@"hh\:mm\:ss");
+            ws.Cell(r, c++).Value = DelphiToDate(h.CikisTarihi);
+            ws.Cell(r, c++).Value = DelphiToTime(h.CikisSaati)?.ToString(@"hh\:mm\:ss");
+            ws.Cell(r, c++).Value = h.BosaltmaYeri;
+            ws.Cell(r, c++).Value = h.Aciklama;
+            ws.Cell(r, c++).Value = h.KantarKodu;
+            ws.Cell(r, c++).Value = h.RowId;
+            r++;
+        }
+
+        if (rows.Count > 0)
+        {
+            ws.Range(hr + 1, 1, r - 1, 1).Style.NumberFormat.Format = "dd.mm.yyyy";
+            ws.Range(hr + 1, 25, r - 1, 25).Style.NumberFormat.Format = "dd.mm.yyyy";
+            ws.Range(hr + 1, 27, r - 1, 27).Style.NumberFormat.Format = "dd.mm.yyyy";
+            ws.Range(hr + 1, 13, r - 1, 13).Style.NumberFormat.Format = "#,##0.0000";
+            for (int col = 14; col <= 24; col++)
+                ws.Range(hr + 1, col, r - 1, col).Style.NumberFormat.Format = "#,##0.00";
+
+            var dataRange = ws.Range(hr, 1, r - 1, basliklar.Length);
+            dataRange.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            dataRange.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+            ws.RangeUsed()!.SetAutoFilter();
+        }
+
+        ws.SheetView.FreezeRows(hr);
+        ws.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        wb.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    public byte[] ExportSabNetKantarHareketleriLog(
+        List<SabNetKantarHareketiLog> rows,
+        Dictionary<string, string> firmaAdlari,
+        Dictionary<string, string> urunAdlari,
+        string? sozlesmeYili,
+        string? kantar)
+    {
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("Kantar Log");
+
+        ws.Cell("A1").Value = "SABNET KANTAR LOG KAYITLARI";
+        ws.Range("A1:K1").Merge();
+        ws.Cell("A1").Style.Font.Bold = true;
+        ws.Cell("A1").Style.Font.FontSize = 14;
+        ws.Cell("A1").Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+        var filtre = $"Sözleşme: {(string.IsNullOrEmpty(sozlesmeYili) ? "Tümü" : sozlesmeYili)}  |  " +
+                     $"Kantar: {(string.IsNullOrEmpty(kantar) ? "Tümü" : kantar)}  |  " +
+                     $"Toplam: {rows.Count:N0} kayıt  |  " +
+                     $"Oluşturma: {DateTime.Now:dd.MM.yyyy HH:mm}";
+        ws.Cell("A2").Value = filtre;
+        ws.Range("A2:K2").Merge();
+        ws.Cell("A2").Style.Font.Italic = true;
+        ws.Cell("A2").Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+        string[] basliklar = {
+            "Log İşlem", "Log Kaydeden", "Log Tarih", "Log Saat",
+            "Tarih", "Fiş No", "İşlem Tipi", "Sözleşme Yılı", "TC Kimlik No",
+            "Hesap Kodu", "Firma Adı", "Ürün Kodu", "Ürün Adı", "Plaka No",
+            "Şoför", "Birim Fiyat", "Brüt", "Dara", "Net",
+            "Kayıt Tarihi", "Kayıt Saati", "Çıkış Tarihi", "Çıkış Saati",
+            "Kantar", "Row_ID"
+        };
+
+        int hr = 4;
+        for (int i = 0; i < basliklar.Length; i++)
+        {
+            var c = ws.Cell(hr, i + 1);
+            c.Value = basliklar[i];
+            c.Style.Font.Bold = true;
+            c.Style.Fill.BackgroundColor = XLColor.FromHtml("#343A40");
+            c.Style.Font.FontColor = XLColor.White;
+            c.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        }
+
+        int r = hr + 1;
+        foreach (var l in rows)
+        {
+            int c = 1;
+            ws.Cell(r, c++).Value = l.LogIslemTipi;
+            ws.Cell(r, c++).Value = l.LogKaydeden;
+            ws.Cell(r, c++).Value = DelphiToDate(l.LogKayitTarihi);
+            ws.Cell(r, c++).Value = DelphiToTime(l.LogKayitSaati)?.ToString(@"hh\:mm\:ss");
+            ws.Cell(r, c++).Value = DelphiToDate(l.Tarih);
+            ws.Cell(r, c++).Value = l.FisNo;
+            ws.Cell(r, c++).Value = l.IslemTipi;
+            ws.Cell(r, c++).Value = l.SozlesmeYili;
+            ws.Cell(r, c++).Value = l.TcKimlikNo;
+            ws.Cell(r, c++).Value = l.HesapKodu;
+            ws.Cell(r, c++).Value = !string.IsNullOrEmpty(l.HesapKodu) && firmaAdlari.TryGetValue(l.HesapKodu, out var fa) ? fa : "";
+            ws.Cell(r, c++).Value = l.UrunKodu;
+            ws.Cell(r, c++).Value = !string.IsNullOrEmpty(l.UrunKodu) && urunAdlari.TryGetValue(l.UrunKodu, out var ua) ? ua : "";
+            ws.Cell(r, c++).Value = l.PlakaNo;
+            ws.Cell(r, c++).Value = l.SoforAdiSoyadi;
+            ws.Cell(r, c++).Value = l.BirimFiyat;
+            ws.Cell(r, c++).Value = l.Brut;
+            ws.Cell(r, c++).Value = l.Dara;
+            ws.Cell(r, c++).Value = l.Net;
+            ws.Cell(r, c++).Value = DelphiToDate(l.KayitTarihi);
+            ws.Cell(r, c++).Value = DelphiToTime(l.KayitSaati)?.ToString(@"hh\:mm\:ss");
+            ws.Cell(r, c++).Value = DelphiToDate(l.CikisTarihi);
+            ws.Cell(r, c++).Value = DelphiToTime(l.CikisSaati)?.ToString(@"hh\:mm\:ss");
+            ws.Cell(r, c++).Value = l.KantarKodu;
+            ws.Cell(r, c++).Value = l.RowId;
+            r++;
+        }
+
+        if (rows.Count > 0)
+        {
+            ws.Range(hr + 1, 3, r - 1, 3).Style.NumberFormat.Format = "dd.mm.yyyy";
+            ws.Range(hr + 1, 5, r - 1, 5).Style.NumberFormat.Format = "dd.mm.yyyy";
+            ws.Range(hr + 1, 20, r - 1, 20).Style.NumberFormat.Format = "dd.mm.yyyy";
+            ws.Range(hr + 1, 22, r - 1, 22).Style.NumberFormat.Format = "dd.mm.yyyy";
+            ws.Range(hr + 1, 16, r - 1, 16).Style.NumberFormat.Format = "#,##0.0000";
+            for (int col = 17; col <= 19; col++)
+                ws.Range(hr + 1, col, r - 1, col).Style.NumberFormat.Format = "#,##0.00";
+
+            var dataRange = ws.Range(hr, 1, r - 1, basliklar.Length);
+            dataRange.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            dataRange.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+            ws.RangeUsed()!.SetAutoFilter();
         }
 
         ws.SheetView.FreezeRows(hr);

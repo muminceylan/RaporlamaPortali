@@ -1,7 +1,10 @@
 @page "/sabnet-kantar-hareketleri"
 @implements IDisposable
 @using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
 @inject SabNetSorguService Sorgu
+@inject ExcelExportService Excel
+@inject IJSRuntime JS
 
 <PageTitle>SabNet Kantar Hareketleri</PageTitle>
 
@@ -12,6 +15,19 @@
     </div>
 
     <div class="toolbar">
+        <div class="filter-group">
+            <label>Başlangıç Tarihi:</label>
+            <input type="date" @bind="baslangicTarih" @bind:after="TarihDegisti" class="form-input" />
+        </div>
+        <div class="filter-group">
+            <label>Bitiş Tarihi:</label>
+            <input type="date" @bind="bitisTarih" @bind:after="TarihDegisti" class="form-input" />
+        </div>
+        <div class="filter-group">
+            <label>&nbsp;</label>
+            <button class="btn-secondary" @onclick="TarihTemizle" title="Tarih filtresini kaldır">✕ Tarih</button>
+        </div>
+
         <div class="filter-group">
             <label>Sözleşme Yılı:</label>
             <select @bind="secilenYil" @bind:after="YilDegisti" class="form-select">
@@ -63,6 +79,16 @@
         </div>
 
         <button class="btn-primary" @onclick="Yenile">🔄 Yenile</button>
+        <button class="btn-success" @onclick="ExcelIndir" disabled="@(yukleniyor || excelHazirlaniyor)">
+            @(excelHazirlaniyor ? "⏳ Hazırlanıyor..." : "📊 Excel")
+        </button>
+        @if (sutunFiltreleri.Any(kv => !string.IsNullOrWhiteSpace(kv.Value)))
+        {
+            <button class="btn-secondary" @onclick="SutunFiltreleriniTemizle"
+                    title="Sütun başlıklarındaki tüm filtreleri temizle">
+                ✕ Sütun Filtreleri (@sutunFiltreleri.Count(kv => !string.IsNullOrWhiteSpace(kv.Value)))
+            </button>
+        }
 
         <div class="filter-group">
             <label>Otomatik Yenileme:</label>
@@ -138,6 +164,40 @@
                             <th>Açıklama</th>
                             <th>Kantar</th>
                             <th>Row_ID</th>
+                        </tr>
+                        <tr class="filter-row">
+                            <th>@FiltreInput("Tarih")</th>
+                            <th>@FiltreInput("FisNo")</th>
+                            <th>@FiltreInput("IslemTipi")</th>
+                            <th>@FiltreInput("SozlesmeYili")</th>
+                            <th>@FiltreInput("TcKimlikNo")</th>
+                            <th>@FiltreInput("HesapKodu")</th>
+                            <th>@FiltreInput("FirmaAdi")</th>
+                            <th>@FiltreInput("UrunKodu")</th>
+                            <th>@FiltreInput("UrunAdi")</th>
+                            <th>@FiltreInput("PlakaNo")</th>
+                            <th>@FiltreInput("SoforAdiSoyadi")</th>
+                            <th>@FiltreInput("Kod5")</th>
+                            <th>@FiltreInput("BirimFiyat")</th>
+                            <th>@FiltreInput("Brut")</th>
+                            <th>@FiltreInput("Dara")</th>
+                            <th>@FiltreInput("Net")</th>
+                            <th>@FiltreInput("Sevk")</th>
+                            <th>@FiltreInput("Fark")</th>
+                            <th>@FiltreInput("FireOrani")</th>
+                            <th>@FiltreInput("PolarOrani")</th>
+                            <th>@FiltreInput("Nakit")</th>
+                            <th>@FiltreInput("KrediKarti")</th>
+                            <th>@FiltreInput("Cari")</th>
+                            <th>@FiltreInput("Havale")</th>
+                            <th>@FiltreInput("KayitTarihi")</th>
+                            <th>@FiltreInput("KayitSaati")</th>
+                            <th>@FiltreInput("CikisTarihi")</th>
+                            <th>@FiltreInput("CikisSaati")</th>
+                            <th>@FiltreInput("BosaltmaYeri")</th>
+                            <th>@FiltreInput("Aciklama")</th>
+                            <th>@FiltreInput("KantarKodu")</th>
+                            <th>@FiltreInput("Row_ID")</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -229,6 +289,41 @@
                             <th>Kantar</th>
                             <th>Row_ID</th>
                         </tr>
+                        <tr class="filter-row">
+                            <th>@FiltreInput("LogIslemTipi")</th>
+                            <th>@FiltreInput("LogKaydeden")</th>
+                            <th>@FiltreInput("LogKayitTarihi")</th>
+                            <th>@FiltreInput("LogKayitSaati")</th>
+                            <th>@FiltreInput("Tarih")</th>
+                            <th>@FiltreInput("FisNo")</th>
+                            <th>@FiltreInput("SozlesmeYili")</th>
+                            <th>@FiltreInput("TcKimlikNo")</th>
+                            <th>@FiltreInput("HesapKodu")</th>
+                            <th>@FiltreInput("FirmaAdi")</th>
+                            <th>@FiltreInput("UrunKodu")</th>
+                            <th>@FiltreInput("UrunAdi")</th>
+                            <th>@FiltreInput("PlakaNo")</th>
+                            <th>@FiltreInput("SoforAdiSoyadi")</th>
+                            <th>@FiltreInput("Kod5")</th>
+                            <th>@FiltreInput("BirimFiyat")</th>
+                            <th>@FiltreInput("Brut")</th>
+                            <th>@FiltreInput("Net")</th>
+                            <th>@FiltreInput("Sevk")</th>
+                            <th>@FiltreInput("Fark")</th>
+                            <th>@FiltreInput("Nakit")</th>
+                            <th>@FiltreInput("KrediKarti")</th>
+                            <th>@FiltreInput("Cari")</th>
+                            <th>@FiltreInput("Havale")</th>
+                            <th>@FiltreInput("KayitTarihi")</th>
+                            <th>@FiltreInput("KayitSaati")</th>
+                            <th>@FiltreInput("CikisTarihi")</th>
+                            <th>@FiltreInput("CikisSaati")</th>
+                            <th>@FiltreInput("BosaltmaYeri")</th>
+                            <th>@FiltreInput("Aciklama")</th>
+                            <th>@FiltreInput("LogAciklama")</th>
+                            <th>@FiltreInput("KantarKodu")</th>
+                            <th>@FiltreInput("Row_ID")</th>
+                        </tr>
                     </thead>
                     <tbody>
                         @foreach (var l in loglar)
@@ -317,6 +412,17 @@
         border-radius: 4px; cursor: pointer; font-size: 13px;
     }
     .btn-primary:hover { background: #0b5ed7; }
+    .btn-success {
+        padding: 6px 14px; background: #198754; color: #fff; border: none;
+        border-radius: 4px; cursor: pointer; font-size: 13px;
+    }
+    .btn-success:hover:not(:disabled) { background: #157347; }
+    .btn-success:disabled { opacity: 0.6; cursor: not-allowed; }
+    .btn-secondary {
+        padding: 6px 12px; background: #6c757d; color: #fff; border: none;
+        border-radius: 4px; cursor: pointer; font-size: 13px;
+    }
+    .btn-secondary:hover { background: #5c636a; }
     .info-box {
         background: #e7f3ff; border: 1px solid #b6dffd; color: #084298;
         padding: 12px 16px; border-radius: 6px; text-align: center;
@@ -326,12 +432,23 @@
         max-height: calc(100vh - 320px);
     }
     .data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    .data-table thead th {
+    .data-table thead tr:first-child th {
         position: sticky; top: 0; background: #343a40; color: #fff;
         padding: 8px 10px; text-align: left; font-weight: 600;
-        white-space: nowrap; z-index: 1;
+        white-space: nowrap; z-index: 2;
     }
-    .data-table thead th.num { text-align: right; }
+    .data-table thead tr:first-child th.num { text-align: right; }
+    .data-table thead tr.filter-row th {
+        position: sticky; top: 33px; background: #f1f3f5;
+        padding: 4px 6px; z-index: 1; border-bottom: 1px solid #ced4da;
+    }
+    .filter-input {
+        width: 100%; min-width: 80px; max-width: 160px;
+        padding: 3px 6px; font-size: 11px;
+        border: 1px solid #ced4da; border-radius: 3px;
+        box-sizing: border-box;
+    }
+    .filter-input:focus { border-color: #0d6efd; outline: none; }
     .data-table tbody td {
         padding: 6px 10px; border-bottom: 1px solid #f1f3f5; white-space: nowrap;
     }
@@ -376,13 +493,20 @@
     private string secilenKantar = "";
     private string aktifTab = "hareket";
     private string aramaMetni = "";
+    private DateTime? baslangicTarih = DateTime.Today;
+    private DateTime? bitisTarih = DateTime.Today;
     private int sayfaBoyutu = 50;
+
+    // Sütun bazlı filtreler — anahtarlar SabNetSorguService._sutunMap ile uyumlu
+    private Dictionary<string, string> sutunFiltreleri = new();
+    private CancellationTokenSource? sutunFiltreCts;
     private int suankiSayfa = 1;
     private int toplamKayit = 0;
     private int toplamSayfa = 1;
     private long hareketSayisi = 0;
     private long logSayisi = 0;
     private bool yukleniyor = false;
+    private bool excelHazirlaniyor = false;
 
     private List<SabNetKantarHareketi> hareketler = new();
     private List<SabNetKantarHareketiLog> loglar = new();
@@ -460,6 +584,8 @@
         OtoYenileDurdur();
         aramaCts?.Cancel();
         aramaCts?.Dispose();
+        sutunFiltreCts?.Cancel();
+        sutunFiltreCts?.Dispose();
     }
 
     private string FirmaAdi(string? hesapKodu) =>
@@ -474,7 +600,9 @@
         StateHasChanged();
         try
         {
-            var (h, l) = await Sorgu.SayilarAsync(NullIfBos(secilenYil), NullIfBos(secilenKantar));
+            var aktifSutunFiltreleri = AktifSutunFiltreleri();
+            var (h, l) = await Sorgu.SayilarAsync(
+                NullIfBos(secilenYil), NullIfBos(secilenKantar), baslangicTarih, bitisTarih, aktifSutunFiltreleri);
             hareketSayisi = h;
             logSayisi = l;
 
@@ -482,7 +610,7 @@
             {
                 var (rows, toplam) = await Sorgu.HareketleriGetirAsync(
                     NullIfBos(secilenYil), NullIfBos(secilenKantar), NullIfBos(aramaMetni),
-                    suankiSayfa, sayfaBoyutu);
+                    suankiSayfa, sayfaBoyutu, baslangicTarih, bitisTarih, aktifSutunFiltreleri);
                 toplamKayit = toplam;
                 toplamSayfa = Math.Max(1, (int)Math.Ceiling(toplam / (double)sayfaBoyutu));
                 if (suankiSayfa > toplamSayfa) suankiSayfa = toplamSayfa;
@@ -493,7 +621,7 @@
             {
                 var (rows, toplam) = await Sorgu.LoglariGetirAsync(
                     NullIfBos(secilenYil), NullIfBos(secilenKantar), NullIfBos(aramaMetni),
-                    suankiSayfa, sayfaBoyutu);
+                    suankiSayfa, sayfaBoyutu, baslangicTarih, bitisTarih, aktifSutunFiltreleri);
                 toplamKayit = toplam;
                 toplamSayfa = Math.Max(1, (int)Math.Ceiling(toplam / (double)sayfaBoyutu));
                 if (suankiSayfa > toplamSayfa) suankiSayfa = toplamSayfa;
@@ -516,6 +644,68 @@
     private async Task YilDegisti()      { suankiSayfa = 1; await Yenile(); }
     private async Task KantarDegisti()   { suankiSayfa = 1; await Yenile(); }
     private async Task SayfaBoyutuDegisti(){ suankiSayfa = 1; await Yenile(); }
+    private async Task TarihDegisti()    { suankiSayfa = 1; await Yenile(); }
+    private async Task TarihTemizle()
+    {
+        baslangicTarih = null;
+        bitisTarih = null;
+        suankiSayfa = 1;
+        await Yenile();
+    }
+
+    private Dictionary<string, string>? AktifSutunFiltreleri()
+    {
+        var aktif = sutunFiltreleri
+            .Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
+            .ToDictionary(kv => kv.Key, kv => kv.Value);
+        return aktif.Count == 0 ? null : aktif;
+    }
+
+    private async Task SutunFiltresiDegistiAsync()
+    {
+        sutunFiltreCts?.Cancel();
+        sutunFiltreCts = new CancellationTokenSource();
+        var token = sutunFiltreCts.Token;
+        try
+        {
+            await Task.Delay(350, token);
+            if (token.IsCancellationRequested) return;
+            suankiSayfa = 1;
+            await Yenile();
+        }
+        catch (TaskCanceledException) { }
+    }
+
+    private async Task SutunFiltreleriniTemizle()
+    {
+        sutunFiltreleri.Clear();
+        suankiSayfa = 1;
+        await Yenile();
+    }
+
+    /// <summary>
+    /// Tablonun her sütun başlığının altına gelen filtre input'unu üretir.
+    /// Boş değer dictionary'den silinir; boş değil ise 350 ms debounce ile yeniden sorgulanır.
+    /// </summary>
+    private RenderFragment FiltreInput(string key) => builder =>
+    {
+        var current = sutunFiltreleri.TryGetValue(key, out var v) ? v : "";
+        builder.OpenElement(0, "input");
+        builder.AddAttribute(1, "type", "text");
+        builder.AddAttribute(2, "class", "filter-input");
+        builder.AddAttribute(3, "placeholder", "ara...");
+        builder.AddAttribute(4, "value", current);
+        builder.AddAttribute(5, "oninput", EventCallback.Factory.Create<ChangeEventArgs>(this, async e =>
+        {
+            var deger = e.Value?.ToString() ?? "";
+            if (string.IsNullOrWhiteSpace(deger))
+                sutunFiltreleri.Remove(key);
+            else
+                sutunFiltreleri[key] = deger;
+            await SutunFiltresiDegistiAsync();
+        }));
+        builder.CloseElement();
+    };
 
     private async Task TabDegistir(string tab)
     {
@@ -545,6 +735,62 @@
         if (yeniSayfa < 1 || yeniSayfa > toplamSayfa) return;
         suankiSayfa = yeniSayfa;
         await Yenile();
+    }
+
+    private async Task ExcelIndir()
+    {
+        if (excelHazirlaniyor || yukleniyor) return;
+        excelHazirlaniyor = true;
+        StateHasChanged();
+        try
+        {
+            const int hepsi = 1_000_000;
+            byte[] bytes;
+            string dosyaAdi;
+
+            var yilEtiket = string.IsNullOrWhiteSpace(secilenYil) ? "Tum" : secilenYil;
+            var kantarEtiket = string.IsNullOrWhiteSpace(secilenKantar) ? "Tum" : secilenKantar;
+            var tarihEtiket = (baslangicTarih, bitisTarih) switch
+            {
+                (null, null) => "TumTarih",
+                (DateTime b, DateTime s) when b.Date == s.Date => b.ToString("yyyyMMdd"),
+                (DateTime b, DateTime s) => $"{b:yyyyMMdd}-{s:yyyyMMdd}",
+                (DateTime b, null) => $"{b:yyyyMMdd}-",
+                (null, DateTime s) => $"-{s:yyyyMMdd}"
+            };
+            var zaman = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+
+            if (aktifTab == "hareket")
+            {
+                var (rows, _) = await Sorgu.HareketleriGetirAsync(
+                    NullIfBos(secilenYil), NullIfBos(secilenKantar), NullIfBos(aramaMetni),
+                    1, hepsi, baslangicTarih, bitisTarih);
+                bytes = Excel.ExportSabNetKantarHareketleri(
+                    rows, firmaAdlari, urunAdlari, NullIfBos(secilenYil), NullIfBos(secilenKantar));
+                dosyaAdi = $"SabNet_Kantar_Hareketleri_{yilEtiket}_{kantarEtiket}_{tarihEtiket}_{zaman}.xlsx";
+            }
+            else
+            {
+                var (rows, _) = await Sorgu.LoglariGetirAsync(
+                    NullIfBos(secilenYil), NullIfBos(secilenKantar), NullIfBos(aramaMetni),
+                    1, hepsi, baslangicTarih, bitisTarih);
+                bytes = Excel.ExportSabNetKantarHareketleriLog(
+                    rows, firmaAdlari, urunAdlari, NullIfBos(secilenYil), NullIfBos(secilenKantar));
+                dosyaAdi = $"SabNet_Kantar_Log_{yilEtiket}_{kantarEtiket}_{tarihEtiket}_{zaman}.xlsx";
+            }
+
+            await JS.InvokeVoidAsync("downloadFile", dosyaAdi, Convert.ToBase64String(bytes),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ExcelIndir] {ex.Message}");
+        }
+        finally
+        {
+            excelHazirlaniyor = false;
+            StateHasChanged();
+        }
     }
 
     private static string FormatDelphiTarih(int? serial)

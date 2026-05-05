@@ -8,13 +8,21 @@ const http = require('http');
 
 // =====================================================
 // DOSYA YOLLARI
+// Kod: __dirname (publish klasörü, her publish'te güncellenir)
+// Veri: WHATSAPP_DATA_DIR env (publish'ten etkilenmeyen kalıcı yer)
 // =====================================================
 
-const DIZIN         = __dirname;
-const CONFIG_DOSYA  = path.join(DIZIN, 'whatsapp-config.json');
-const DURUM_DOSYA   = path.join(DIZIN, 'whatsapp-status.json');
-const LOG_DOSYA     = path.join(DIZIN, 'whatsapp-log.json');
-const CIKTI_KLASORU = path.join(DIZIN, 'screenshots');
+const DIZIN      = __dirname;
+const VERI_DIZIN = process.env.WHATSAPP_DATA_DIR && process.env.WHATSAPP_DATA_DIR.trim().length > 0
+    ? process.env.WHATSAPP_DATA_DIR
+    : __dirname;
+
+try { if (!fs.existsSync(VERI_DIZIN)) fs.mkdirSync(VERI_DIZIN, { recursive: true }); } catch (_) {}
+
+const CONFIG_DOSYA  = path.join(VERI_DIZIN, 'whatsapp-config.json');
+const DURUM_DOSYA   = path.join(VERI_DIZIN, 'whatsapp-status.json');
+const LOG_DOSYA     = path.join(VERI_DIZIN, 'whatsapp-log.json');
+const CIKTI_KLASORU = path.join(VERI_DIZIN, 'screenshots');
 
 // =====================================================
 // CONFIG OKUMA / DURUM YAZMA
@@ -154,18 +162,34 @@ async function sekerRaporuGonder(message, baslangicStr, bitisStr, bulanik = fals
 // =====================================================
 
 const client = new Client({
-    authStrategy: new LocalAuth({ dataPath: path.join(DIZIN, '.wwebjs_auth') }),
+    authStrategy: new LocalAuth({ dataPath: path.join(VERI_DIZIN, '.wwebjs_auth') }),
     puppeteer: {
         headless: true,
         args: ['--no-sandbox', '--disable-setuid-sandbox']
     }
 });
 
+// Bağlantı takılırsa kendimizi öldür, .NET tarafı yeniden başlatsın
+let _hazirTimer = null;
+let _qrOkundu = false;
+function hazirTimerKur(saniye, sebep) {
+    if (_hazirTimer) clearTimeout(_hazirTimer);
+    _hazirTimer = setTimeout(() => {
+        console.error(`[WhatsApp] ${saniye}sn icinde bagli olunamadi (${sebep}). Bot yeniden baslatiliyor...`);
+        durumYaz('BAGLANIYOR', '');
+        try { client.destroy(); } catch (_) {}
+        process.exit(1);
+    }, saniye * 1000);
+}
+
 client.on('qr', (qr) => {
     console.log('\n[WhatsApp] QR kodu bekleniyor...');
     qrcodeTerminal.generate(qr, { small: true });
     // Ham QR string'ini yaz, .NET tarafı image'a çevirir
     durumYaz('QR_BEKLIYOR', qr);
+    _qrOkundu = true;
+    // QR gösterildikten sonra 180 sn icinde 'ready' gelmezse yeniden baslat
+    hazirTimerKur(180, 'QR okutma sonrasi authentication tamamlanmadi');
 });
 
 client.on('loading_screen', (percent, message) => {
@@ -176,6 +200,8 @@ client.on('loading_screen', (percent, message) => {
 client.on('authenticated', () => {
     console.log('[WhatsApp] Kimlik dogrulandi, ready bekleniyor...');
     durumYaz('BAGLANIYOR', '');
+    // Authentication sonrasi 90 sn icinde ready gelmezse yeniden baslat
+    hazirTimerKur(90, 'authenticated sonrasi ready gelmedi');
 });
 
 let _tumSistemHazir = false;
@@ -203,6 +229,7 @@ async function sistemWarmupYap() {
 }
 
 client.on('ready', () => {
+    if (_hazirTimer) { clearTimeout(_hazirTimer); _hazirTimer = null; }
     config = configOku();
     console.log('[WhatsApp] Baglandi!');
     durumYaz('BAGLI', '');
@@ -653,5 +680,8 @@ WScript.Quit 0
 // =====================================================
 
 console.log('[WhatsApp] Baslatiliyor...');
+console.log('[WhatsApp] Veri dizini:', VERI_DIZIN);
 durumYaz('BAGLANIYOR', '');
+// initialize cagrisi ile ilk baglanti icin 120 sn sinir koy
+hazirTimerKur(120, 'initialize sonrasi qr/ready gelmedi');
 client.initialize();
