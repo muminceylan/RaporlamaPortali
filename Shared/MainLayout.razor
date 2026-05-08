@@ -132,6 +132,9 @@
                 <MudNavLink Href="/ayarlar" Icon="@Icons.Material.Filled.Settings" IconColor="Color.Info">
                     Genel Ayarlar
                 </MudNavLink>
+                <MudNavLink Href="/sirlar" Icon="@Icons.Material.Filled.Lock" Style="color:#c2185b; font-weight:600;">
+                    Sırlar (Şifreli Kasa)
+                </MudNavLink>
             </MudNavGroup>
 
             <MudDivider Class="my-2" />
@@ -206,7 +209,7 @@
             _sabnetOpen = true;
         else if (path is "/evrak-arsivi" or "/evrak-ekle" or "/tesisler" or "/belge-tipleri")
             _evrakOpen = true;
-        else if (path is "/mail-ayarlari" or "/whatsapp-ayarlari" or "/ayarlar")
+        else if (path is "/mail-ayarlari" or "/whatsapp-ayarlari" or "/ayarlar" or "/sirlar")
             _ayarlarOpen = true;
     }
 

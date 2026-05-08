@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Data.SqlClient;
 
 namespace RaporlamaPortali.Services;
 
@@ -35,11 +36,21 @@ public static class SecretsService
 
     public static void Save(SecretsModel m)
     {
-        _cached = m;
-        SaveEncrypted(m);
+        _cached = Clone(m);
+        SaveEncrypted(_cached);
     }
 
-    public static SecretsModel Snapshot() => _cached ?? new SecretsModel();
+    // Sayfa düzenlemesi cache'i kirletmesin diye derin kopya döner.
+    public static SecretsModel Snapshot() => Clone(_cached ?? new SecretsModel());
+
+    private static SecretsModel Clone(SecretsModel m) => new()
+    {
+        LogoConnectionString   = m.LogoConnectionString,
+        KantarConnectionString = m.KantarConnectionString,
+        PmhsConnectionString   = m.PmhsConnectionString,
+        AnthropicApiKey        = m.AnthropicApiKey,
+        MailPassword           = m.MailPassword,
+    };
 
     // ---------- migration ----------
 
@@ -117,5 +128,57 @@ public static class SecretsService
         public string PmhsConnectionString   { get; set; } = "";
         public string AnthropicApiKey        { get; set; } = "";
         public string MailPassword           { get; set; } = "";
+    }
+
+    // Connection string'i parçalara ayırıp UI'da Server/Database/User/Password
+    // alanları olarak düzenlemeyi mümkün kılar. SQL server taşındığında
+    // (192.168.0.50\DOGUSNDB → 192.168.0.51\DOGUSNDB2) kullanıcı yine kendi başına düzeltebilsin.
+    public class ConnectionParts
+    {
+        public string Server   { get; set; } = "";
+        public string Database { get; set; } = "";
+        public string UserId   { get; set; } = "";
+        public string Password { get; set; } = "";
+
+        public static ConnectionParts Parse(string cs)
+        {
+            var p = new ConnectionParts();
+            if (string.IsNullOrWhiteSpace(cs)) return p;
+            try
+            {
+                var b = new SqlConnectionStringBuilder(cs);
+                p.Server   = b.DataSource    ?? "";
+                p.Database = b.InitialCatalog ?? "";
+                p.UserId   = b.UserID         ?? "";
+                p.Password = b.Password       ?? "";
+            }
+            catch { /* bozuk cs — boş döner, kullanıcı UI'dan girer */ }
+            return p;
+        }
+
+        public string Build() => new SqlConnectionStringBuilder
+        {
+            DataSource             = Server,
+            InitialCatalog         = Database,
+            UserID                 = UserId,
+            Password               = Password,
+            TrustServerCertificate = true,
+            Encrypt                = false,
+            ConnectTimeout         = 30,
+        }.ConnectionString;
+
+        public async Task<(bool ok, string message)> TestAsync()
+        {
+            try
+            {
+                using var con = new SqlConnection(Build());
+                await con.OpenAsync();
+                return (true, $"Bağlantı başarılı ({con.ServerVersion}).");
+            }
+            catch (Exception ex)
+            {
+                return (false, ex.Message);
+            }
+        }
     }
 }

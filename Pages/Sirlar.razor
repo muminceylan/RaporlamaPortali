@@ -1,0 +1,260 @@
+@page "/sirlar"
+@using RaporlamaPortali.Services
+@inject ISnackbar Snackbar
+
+<PageTitle>Sırlar</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-2">
+    <MudIcon Icon="@Icons.Material.Filled.Lock" Class="mr-2" />
+    Sırlar (Şifreli Kasa)
+</MudText>
+
+<MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.Security" Class="mr-1" />
+    Bu sayfadaki bilgiler <strong>secrets.enc</strong> dosyasında AES-GCM ile şifreli tutulur.
+    SQL sunucusu taşındığında (örn. <code>192.168.0.50\DOGUSNDB</code> → <code>192.168.0.51\DOGUSNDB2</code>)
+    veya parola değiştiğinde, kaynak koda dokunmadan buradan güncelleyin.
+</MudAlert>
+
+<MudGrid>
+    @* SQL Bağlantıları *@
+    <MudItem xs="12">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.h6" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.Storage" Class="mr-2" />
+                SQL Bağlantıları
+            </MudText>
+
+            @RenderConnection("Logo (DOGUSNDB)", "logo", _logo)
+            <MudDivider Class="my-4" />
+            @RenderConnection("Kantar (KANTAR)", "kantar", _kantar)
+            <MudDivider Class="my-4" />
+            @RenderConnection("PMHS (SabNetPMHS)", "pmhs", _pmhs)
+        </MudPaper>
+    </MudItem>
+
+    @* Diğer sırlar *@
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.h6" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.Email" Class="mr-2" />
+                Outlook / SMTP Şifresi
+            </MudText>
+            <MudTextField T="string"
+                          Label="Mail Şifresi"
+                          @bind-Value="_mailPassword"
+                          InputType="@(_mailGoster ? InputType.Text : InputType.Password)"
+                          Adornment="Adornment.End"
+                          AdornmentIcon="@(_mailGoster ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                          OnAdornmentClick="@(() => _mailGoster = !_mailGoster)"
+                          HelperText="Outlook üzerinden gönderim kullanılıyorsa boş bırakılabilir." />
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.h6" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.Key" Class="mr-2" />
+                Anthropic API Key
+            </MudText>
+            <MudTextField T="string"
+                          Label="ANTHROPIC_API_KEY"
+                          @bind-Value="_anthropicKey"
+                          InputType="@(_apiGoster ? InputType.Text : InputType.Password)"
+                          Adornment="Adornment.End"
+                          AdornmentIcon="@(_apiGoster ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                          OnAdornmentClick="@(() => _apiGoster = !_apiGoster)"
+                          HelperText="Claude AI çağrıları için. sk-ant-... ile başlar." />
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12">
+        <MudPaper Class="pa-4">
+            <div class="d-flex justify-end gap-2">
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Default"
+                           StartIcon="@Icons.Material.Filled.Refresh"
+                           OnClick="Yenile"
+                           Disabled="@_kaydediliyor">
+                    Sıfırla
+                </MudButton>
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Save"
+                           OnClick="TumunuKaydet"
+                           Disabled="@_kaydediliyor"
+                           Size="Size.Large">
+                    @if (_kaydediliyor)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        <span>Kaydediliyor...</span>
+                    }
+                    else
+                    {
+                        <span>TÜMÜNÜ KAYDET</span>
+                    }
+                </MudButton>
+            </div>
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">
+                <MudIcon Icon="@Icons.Material.Filled.Info" Class="mr-1" />
+                Connection string değişikliklerinin tüm sayfalarda etkili olabilmesi için
+                <strong>uygulamayı yeniden başlatmanız</strong> önerilir.
+            </MudAlert>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private SecretsService.ConnectionParts _logo   = new();
+    private SecretsService.ConnectionParts _kantar = new();
+    private SecretsService.ConnectionParts _pmhs   = new();
+    private string _mailPassword  = "";
+    private string _anthropicKey  = "";
+
+    private bool _mailGoster = false;
+    private bool _apiGoster  = false;
+    private bool _kaydediliyor = false;
+
+    // her bağlantı için bağımsız test/şifre toggle state
+    private readonly Dictionary<string, bool> _showPwd = new() { ["logo"] = false, ["kantar"] = false, ["pmhs"] = false };
+    private readonly Dictionary<string, bool> _testing = new() { ["logo"] = false, ["kantar"] = false, ["pmhs"] = false };
+    private readonly Dictionary<string, (bool ok, string msg)?> _testSonuc = new() { ["logo"] = null, ["kantar"] = null, ["pmhs"] = null };
+
+    protected override void OnInitialized() => Yukle();
+
+    private void Yukle()
+    {
+        var s = SecretsService.Snapshot();
+        _logo   = SecretsService.ConnectionParts.Parse(s.LogoConnectionString);
+        _kantar = SecretsService.ConnectionParts.Parse(s.KantarConnectionString);
+        _pmhs   = SecretsService.ConnectionParts.Parse(s.PmhsConnectionString);
+        _mailPassword = s.MailPassword;
+        _anthropicKey = s.AnthropicApiKey;
+        foreach (var k in _testSonuc.Keys.ToList()) _testSonuc[k] = null;
+    }
+
+    private void Yenile()
+    {
+        Yukle();
+        Snackbar.Add("Diskteki son kayıtlı değerlere döndürüldü.", Severity.Info);
+    }
+
+    private SecretsService.ConnectionParts Get(string key) => key switch
+    {
+        "logo"   => _logo,
+        "kantar" => _kantar,
+        "pmhs"   => _pmhs,
+        _ => throw new ArgumentOutOfRangeException(nameof(key)),
+    };
+
+    private async Task TestEt(string key)
+    {
+        _testing[key] = true;
+        _testSonuc[key] = null;
+        StateHasChanged();
+        try
+        {
+            var sonuc = await Get(key).TestAsync();
+            _testSonuc[key] = sonuc;
+            Snackbar.Add(sonuc.message, sonuc.ok ? Severity.Success : Severity.Error);
+        }
+        finally
+        {
+            _testing[key] = false;
+            StateHasChanged();
+        }
+    }
+
+    private void TumunuKaydet()
+    {
+        _kaydediliyor = true;
+        StateHasChanged();
+        try
+        {
+            var m = new SecretsService.SecretsModel
+            {
+                LogoConnectionString   = _logo.Build(),
+                KantarConnectionString = _kantar.Build(),
+                PmhsConnectionString   = _pmhs.Build(),
+                MailPassword           = _mailPassword ?? "",
+                AnthropicApiKey        = _anthropicKey ?? "",
+            };
+            SecretsService.Save(m);
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", m.AnthropicApiKey);
+            Snackbar.Add("✅ Sırlar kaydedildi (secrets.enc).", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("❌ Kaydedilemedi: " + ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _kaydediliyor = false;
+            StateHasChanged();
+        }
+    }
+
+    private RenderFragment RenderConnection(string baslik, string key, SecretsService.ConnectionParts p) => __builder =>
+    {
+        <MudText Typo="Typo.subtitle1" Style="font-weight: 600;" Class="mb-2">@baslik</MudText>
+        <MudGrid>
+            <MudItem xs="12" md="6">
+                <MudTextField T="string"
+                              Label="Server"
+                              @bind-Value="p.Server"
+                              Placeholder="192.168.0.51\DOGUSNDB2"
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Dns" />
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudTextField T="string"
+                              Label="Database"
+                              @bind-Value="p.Database"
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Folder" />
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudTextField T="string"
+                              Label="User Id"
+                              @bind-Value="p.UserId"
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Person" />
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudTextField T="string"
+                              Label="Password"
+                              @bind-Value="p.Password"
+                              InputType="@(_showPwd[key] ? InputType.Text : InputType.Password)"
+                              Adornment="Adornment.End"
+                              AdornmentIcon="@(_showPwd[key] ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                              OnAdornmentClick="@(() => _showPwd[key] = !_showPwd[key])" />
+            </MudItem>
+        </MudGrid>
+        <div class="d-flex align-center gap-2 mt-2">
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Info"
+                       StartIcon="@Icons.Material.Filled.Bolt"
+                       OnClick="@(() => TestEt(key))"
+                       Disabled="@_testing[key]">
+                @if (_testing[key])
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    <span>Test ediliyor...</span>
+                }
+                else
+                {
+                    <span>Bağlantıyı Test Et</span>
+                }
+            </MudButton>
+            @if (_testSonuc[key] is { } r)
+            {
+                <MudChip T="string"
+                         Color="@(r.ok ? Color.Success : Color.Error)"
+                         Icon="@(r.ok ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Error)"
+                         Size="Size.Small">
+                    @r.msg
+                </MudChip>
+            }
+        </div>
+    };
+}
