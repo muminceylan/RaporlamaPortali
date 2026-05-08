@@ -38,15 +38,48 @@ public class WhatsAppProcessService : BackgroundService
         await Task.Delay(3000, stoppingToken); // Uygulamanın tam açılmasını bekle
         await BotBaslatAsync();
 
-        // Bot durduğunda yeniden başlat (kullanıcı durdurmadıysa)
+        // Bot durduğunda VEYA stale state'te takıldığında yeniden başlat
         while (!stoppingToken.IsCancellationRequested)
         {
             await Task.Delay(10000, stoppingToken);
+            if (_kullaniciDurdurdu || stoppingToken.IsCancellationRequested) continue;
 
-            if (!_kullaniciDurdurdu && !CalisiyorMu && !stoppingToken.IsCancellationRequested)
+            // 1) Process tamamen ölmüşse
+            if (!CalisiyorMu)
             {
                 _logger.LogWarning("WhatsApp botu durmus, yeniden baslatiliyor...");
                 await BotBaslatAsync();
+                continue;
+            }
+
+            // 2) Stale-state tespiti (bot canli ama yariz kilitli)
+            try
+            {
+                var durum = _ayarlarService.GetDurum();
+                if (durum.Guncelleme == DateTime.MinValue) continue;
+
+                var stale = (DateTime.Now - durum.Guncelleme).TotalSeconds;
+                string? sebep = null;
+
+                // BAGLI: heartbeat 20sn'de bir gelmeli — 90sn yoksa bot kilitli
+                if (durum.Durum == "BAGLI" && stale > 90)
+                    sebep = $"BAGLI ama {stale:F0}sn heartbeat yok (kilitli)";
+                // BAGLANIYOR: 180sn'den uzunsa basarisiz initialize
+                else if (durum.Durum == "BAGLANIYOR" && stale > 180)
+                    sebep = $"BAGLANIYOR durumunda {stale:F0}sn takildi";
+                // QR_BEKLIYOR: 5 dakika boyunca QR okutulmadıysa eski QR'ı yenile
+                else if (durum.Durum == "QR_BEKLIYOR" && stale > 300)
+                    sebep = $"QR_BEKLIYOR {stale:F0}sn boyunca okutulmadi";
+
+                if (sebep != null)
+                {
+                    _logger.LogWarning("WhatsApp watchdog: {Sebep} → restart", sebep);
+                    await BotYenidenBaslatAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "WhatsApp watchdog stale-state kontrolu hatasi");
             }
         }
     }

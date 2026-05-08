@@ -52,9 +52,11 @@ public class LogoIslemleriService
         { 12, "Özel İşlem Fişi (Borç)" },
         { 13, "Özel İşlem Fişi (Alacak)" },
         { 14, "Açılış Fişi" },
-        { 20, "Kredi Kartı İşlem Fişi" },
+        // TRCODE 20 = Gelen Havaleler (Logo Tiger gerçek kayıtlarıyla doğrulandı, ekran fişinde
+        // "(20) Gelen Havaleler" şeklinde görünüyor). Daha önce yanlışlıkla
+        // "Kredi Kartı İşlem Fişi" olarak eşleştirilmişti.
+        { 20, "Gelen Havaleler" },
         { 21, "Gönderilen Havaleler" },
-        { 22, "Gelen Havaleler" },
         { 24, "Krediden Ödeme" },
         { 31, "Satınalma Faturası" },
         { 32, "Perakende Satış İade Faturası" },
@@ -512,6 +514,209 @@ ORDER BY C.CODE, F.DATE_, F.LOGICALREF";
         }
 
         return (list, hamSayi, tarihAraligiSayi, ornek);
+    }
+
+    /// <summary>
+    /// Belirli bir cari kod öneki için CLFLINE tablosundan TAHSİLAT satırlarını (SIGN=1)
+    /// dönerir. View değil, doğrudan CLFLINE — local olarak girilen Nakit Tahsilat (TRCODE 1)
+    /// ve Kredi Kartı (TRCODE 20) fişleri Genel Merkez view'üne düşmediği için kullanılır.
+    /// Sonuç FinansRaporSatiri formatında döner; panel ve Excel export aynı şemayla çalışır.
+    /// </summary>
+    public async Task<List<FinansRaporSatiri>> CariYerelTahsilatlarAsync(
+        DateTime baslangic, DateTime bitis,
+        string cariPrefix, int[] trcodes,
+        CancellationToken ct = default)
+    {
+        bitis = SistemTarihi.Clamp(bitis);
+        var clfTbl = _db.GetPeriodTableName("CLFLINE");
+        var clcTbl = _db.GetTableName("CLCARD");
+        var invTbl = _db.GetPeriodTableName("INVOICE");
+        var cfiTbl = _db.GetPeriodTableName("CLFICHE");
+
+        var sql = $@"
+SELECT
+    TARIH    = F.DATE_,
+    TRCODE   = F.TRCODE,
+    AMOUNT   = F.AMOUNT,
+    LINEEXP  = ISNULL(F.LINEEXP,''),
+    TRANNO   = ISNULL(CAST(F.TRANNO AS varchar(16)),''),
+    INVNO    = ISNULL(INV.FICHENO,''),
+    CFINO    = ISNULL(CLFI.FICHENO,''),
+    SPECODE  = ISNULL(F.SPECODE,''),
+    CARIKODU = C.CODE,
+    CARIUNV  = C.DEFINITION_
+FROM {clfTbl} F WITH(NOLOCK)
+INNER JOIN {clcTbl} C  WITH(NOLOCK) ON F.CLIENTREF = C.LOGICALREF
+LEFT JOIN  {invTbl} INV  WITH(NOLOCK) ON F.MODULENR = 4 AND F.SOURCEFREF = INV.LOGICALREF
+LEFT JOIN  {cfiTbl} CLFI WITH(NOLOCK) ON F.MODULENR = 5 AND F.SOURCEFREF = CLFI.LOGICALREF
+WHERE F.CANCELLED = 0
+  AND F.SIGN = 1
+  AND F.TRCODE IN @trcodes
+  AND F.DATE_ BETWEEN @bas AND @bit
+  AND C.CODE LIKE @cariPrefix
+ORDER BY F.DATE_, F.LOGICALREF";
+
+        using var conn = _db.CreateConnection();
+        var rows = (await conn.QueryAsync<dynamic>(new CommandDefinition(sql, new
+        {
+            bas = baslangic.Date,
+            bit = bitis.Date.AddDays(1).AddSeconds(-1),
+            trcodes = trcodes,
+            cariPrefix = cariPrefix.TrimEnd('%') + "%"
+        }, commandTimeout: 120, cancellationToken: ct))).ToList();
+
+        var list = new List<FinansRaporSatiri>(rows.Count);
+        foreach (var r in rows)
+        {
+            int trcode = Convert.ToInt32(r.TRCODE);
+            decimal tutar = Convert.ToDecimal(r.AMOUNT ?? 0);
+            DateTime tarih = Convert.ToDateTime(r.TARIH);
+
+            string fisNo = ((string)(r.INVNO ?? "")).Trim();
+            if (string.IsNullOrEmpty(fisNo)) fisNo = ((string)(r.CFINO ?? "")).Trim();
+            if (string.IsNullOrEmpty(fisNo)) fisNo = ((string)(r.TRANNO ?? "")).Trim();
+
+            // Logo Tiger CLFLINE TRCODE eşlemesi (gerçek kayıtlar):
+            //   1, 2  → KASA (Nakit Tahsilat / Ödeme)
+            //   20    → BANKA (Gelen Havaleler)   — Genel Merkez kullanır
+            //   21    → BANKA (Gönderilen Havaleler)
+            //   70    → KREDİ KARTI (Kredi Kartı Fişi)
+            //   71    → KREDİ KARTI (Kredi Kartı İade Fişi)
+            string modul = trcode switch
+            {
+                1 or 2   => "KASA",
+                20 or 21 => "BANKA",
+                70 or 71 => "KREDİ KARTI",
+                _        => $"TRCODE {trcode}"
+            };
+            bool bankaHavale = trcode == 20 || trcode == 21;
+
+            list.Add(new FinansRaporSatiri
+            {
+                LogicalRef           = 0,
+                Tarih                = tarih,
+                Yil                  = tarih.Year,
+                Ay                   = tarih.Month,
+                Gun                  = tarih.Day,
+                HareketTuru          = "TAHSİLAT",
+                Modul                = modul,
+                FisTuru              = ClfFisTuruAdi(trcode),
+                ChKod                = ((string)(r.CARIKODU ?? "")).Trim(),
+                ChUnvani             = ((string)(r.CARIUNV  ?? "")).Trim(),
+                BankaHesapKodu       = "",
+                BankaHesapAciklamasi = "",
+                ProjeKodu            = "",
+                ProjeAdi             = "",
+                HaraketOzelKodu      = ((string)(r.SPECODE ?? "")).Trim(),
+                IslemNo              = fisNo,
+                Havale               = bankaHavale ? tutar : 0,
+                Cek                  = 0,
+                Devir                = 0,
+                Diger                = bankaHavale ? 0 : tutar,
+                Sign                 = 1,
+                SpecOde              = ""
+            });
+        }
+
+        return list;
+    }
+
+    /// <summary>
+    /// Belirli vergi numarasına ait TÜM cari hesapları döndürür (örn. aynı firma için
+    /// 320.06 / 320.13 / 320.09 farklı kart kodlarında olabiliyor). Mutabakat sayfasında
+    /// kullanılır — tek vergi numarası ile birden fazla cari kartın hareketleri birleşik
+    /// olarak çekilebilsin diye.
+    /// </summary>
+    public async Task<List<CariSecenek>> VergiNoyaGoreCarilerAsync(
+        string vergiNo, CancellationToken ct = default)
+    {
+        var clcTbl = _db.GetTableName("CLCARD");
+        var sql = $@"
+SELECT
+    Kod        = CODE,
+    Unvan      = DEFINITION_,
+    TcKimlikNo = ISNULL(TCKNO,''),
+    VergiNo    = ISNULL(TAXNR,'')
+FROM {clcTbl} WITH(NOLOCK)
+WHERE ACTIVE = 0
+  AND (TAXNR = @vno OR TCKNO = @vno)
+ORDER BY CODE";
+        using var conn = _db.CreateConnection();
+        return (await conn.QueryAsync<CariSecenek>(new CommandDefinition(
+            sql, new { vno = (vergiNo ?? "").Trim() },
+            commandTimeout: 60, cancellationToken: ct))).ToList();
+    }
+
+    /// <summary>
+    /// Birden fazla cari kart için CLFLINE hareketlerini tek listede döner — mutabakat
+    /// için kullanılır. CariHareketListesiAsync'in vergi numarası tabanlı versiyonu
+    /// (in-clause ile çoklu cari kodu).
+    /// </summary>
+    public async Task<List<CariHareket>> CarilerinHareketleriAsync(
+        IEnumerable<string> cariKodlari,
+        DateTime baslangic, DateTime bitis,
+        CancellationToken ct = default)
+    {
+        var kodList = cariKodlari?.Where(k => !string.IsNullOrWhiteSpace(k))
+                                   .Select(k => k.Trim())
+                                   .Distinct()
+                                   .ToList() ?? new List<string>();
+        if (kodList.Count == 0) return new();
+
+        bitis = SistemTarihi.Clamp(bitis);
+        var clfTbl = _db.GetPeriodTableName("CLFLINE");
+        var clcTbl = _db.GetTableName("CLCARD");
+        var invTbl = _db.GetPeriodTableName("INVOICE");
+        var cfiTbl = _db.GetPeriodTableName("CLFICHE");
+
+        var sql = $@"
+SELECT
+    TARIH      = F.DATE_,
+    TRCODE     = F.TRCODE,
+    FISNO      = COALESCE(
+        CASE F.MODULENR WHEN 4 THEN INV.FICHENO END,
+        CASE F.MODULENR WHEN 5 THEN CLFI.FICHENO END,
+        CAST(F.TRANNO AS varchar(16))),
+    ACIKLAMA   = ISNULL(F.LINEEXP,''),
+    CARIKODU   = C.CODE,
+    CARIUNVAN  = C.DEFINITION_,
+    BORC       = CASE F.SIGN WHEN 0 THEN F.AMOUNT ELSE 0 END,
+    ALACAK     = CASE F.SIGN WHEN 1 THEN F.AMOUNT ELSE 0 END
+FROM {clfTbl} F WITH(NOLOCK)
+INNER JOIN {clcTbl} C  WITH(NOLOCK) ON F.CLIENTREF = C.LOGICALREF
+LEFT JOIN  {invTbl} INV  WITH(NOLOCK) ON F.MODULENR = 4 AND F.SOURCEFREF = INV.LOGICALREF
+LEFT JOIN  {cfiTbl} CLFI WITH(NOLOCK) ON F.MODULENR = 5 AND F.SOURCEFREF = CLFI.LOGICALREF
+WHERE F.CANCELLED = 0
+  AND F.DATE_ BETWEEN @bas AND @bit
+  AND C.CODE IN @kodlar
+ORDER BY F.DATE_, F.LOGICALREF";
+
+        using var conn = _db.CreateConnection();
+        var rows = (await conn.QueryAsync<dynamic>(new CommandDefinition(sql, new
+        {
+            bas = baslangic.Date,
+            bit = bitis.Date.AddDays(1).AddSeconds(-1),
+            kodlar = kodList
+        }, commandTimeout: 180, cancellationToken: ct))).ToList();
+
+        var list = new List<CariHareket>(rows.Count);
+        foreach (var r in rows)
+        {
+            int trcode = r.TRCODE is null ? 0 : Convert.ToInt32(r.TRCODE);
+            list.Add(new CariHareket
+            {
+                Tarih     = Convert.ToDateTime(r.TARIH),
+                TrCode    = trcode,
+                FisTuru   = ClfFisTuruAdi(trcode),
+                FisNo     = ((string)(r.FISNO ?? "")).Trim(),
+                Aciklama  = (string)(r.ACIKLAMA ?? ""),
+                CariKodu  = ((string)(r.CARIKODU ?? "")).Trim(),
+                CariUnvan = (string)(r.CARIUNVAN ?? ""),
+                Borc      = Convert.ToDecimal(r.BORC ?? 0),
+                Alacak    = Convert.ToDecimal(r.ALACAK ?? 0),
+            });
+        }
+        return list;
     }
 
     /// <summary>

@@ -64,8 +64,10 @@ function logYaz(numara, mesaj, sonuc) {
     }
 }
 
+let _sonDurum = '';
 function durumYaz(durum, qrString) {
     try {
+        _sonDurum = durum;
         fs.writeFileSync(DURUM_DOSYA, JSON.stringify({
             durum: durum,
             qrString: qrString || '',
@@ -165,8 +167,19 @@ const client = new Client({
     authStrategy: new LocalAuth({ dataPath: path.join(VERI_DIZIN, '.wwebjs_auth') }),
     puppeteer: {
         headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
-    }
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            // Headless tab'ın throttle edilmesini engelle — mesaj/ready gecikmesini önler
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding',
+            '--disable-features=IsolateOrigins,site-per-process,CalculateNativeWinOcclusion'
+        ]
+    },
+    takeoverOnConflict: true,
+    takeoverTimeoutMs: 10000,
+    qrMaxRetries: 5
 });
 
 // Bağlantı takılırsa kendimizi öldür, .NET tarafı yeniden başlatsın
@@ -228,13 +241,51 @@ async function sistemWarmupYap() {
     }
 }
 
-client.on('ready', () => {
+async function bagliOlarakIsaretle(kaynak) {
+    if (_sonDurum === 'BAGLI') return;
     if (_hazirTimer) { clearTimeout(_hazirTimer); _hazirTimer = null; }
     config = configOku();
-    console.log('[WhatsApp] Baglandi!');
+    console.log(`[WhatsApp] Baglandi! (kaynak: ${kaynak}) — warmup baslatiliyor...`);
+    // Önce warmup'ı bitir, sonra BAGLI yaz — ilk tetikleyicide browser takılı kalmasın
+    if (!_tumSistemHazir) {
+        try { await sistemWarmupYap(); } catch (_) {}
+    }
+    console.log('[WhatsApp] Warmup tamam, BAGLI olarak isaretleniyor.');
     durumYaz('BAGLI', '');
-    sistemWarmupYap();
+}
+
+client.on('ready', () => { bagliOlarakIsaretle('ready'); });
+
+// LocalAuth ile session restore'da 'ready' bazen atlanır; change_state -> CONNECTED yedek tetikleyici
+client.on('change_state', (state) => {
+    console.log('[WhatsApp] state:', state);
+    if (state === 'CONNECTED') bagliOlarakIsaretle('change_state');
 });
+
+// Periyodik durum sorgusu — ready/change_state hiç gelmezse 10sn'de bir kontrol et
+setInterval(async () => {
+    if (_sonDurum === 'BAGLI') return;
+    try {
+        const state = await client.getState();
+        if (state === 'CONNECTED') bagliOlarakIsaretle('poll');
+    } catch (_) { /* henüz hazır değil */ }
+}, 10000);
+
+// HEARTBEAT — BAGLI iken 20sn'de bir status dosyasini tazele.
+// .NET watchdog'i bu zaman damgasina bakarak "kilitli BAGLI" durumlarini tespit edip restart eder.
+setInterval(async () => {
+    if (_sonDurum !== 'BAGLI') return;
+    try {
+        const state = await client.getState();
+        if (state === 'CONNECTED') {
+            durumYaz('BAGLI', '');
+        } else {
+            console.warn('[Heartbeat] state=', state, '— BAGLI degil, durum guncellemesi atlandi');
+        }
+    } catch (e) {
+        console.warn('[Heartbeat] getState hatasi:', e.message);
+    }
+}, 20000);
 
 client.on('disconnected', (reason) => {
     console.log('[WhatsApp] Baglanti kesildi:', reason);
@@ -249,6 +300,9 @@ client.on('auth_failure', (msg) => {
 client.on('message', async (message) => {
     try {
         config = configOku(); // Her mesajda taze config oku
+
+        // Mesaj alabildiysek bağlıyız — UI'da hâlâ BAGLANIYOR görünüyorsa düzelt
+        if (_sonDurum !== 'BAGLI') bagliOlarakIsaretle('message');
 
         // Sistem warmup tamamlanmadıysa tetikleyicileri hazırla-kabul et-bekle
         if (!_tumSistemHazir) {
@@ -537,8 +591,13 @@ async function browserGetir() {
         console.log('[Puppeteer] Browser baslatiliyor...');
         _browser = await puppeteer.launch({
             headless: 'new',
+            timeout: 60000,
             args: ['--no-sandbox', '--disable-setuid-sandbox',
-                   '--font-render-hinting=none', '--disable-font-subpixel-positioning']
+                   '--font-render-hinting=none', '--disable-font-subpixel-positioning',
+                   // Anti-throttling: tab arka planda da hızlı kalsın
+                   '--disable-background-timer-throttling',
+                   '--disable-backgrounding-occluded-windows',
+                   '--disable-renderer-backgrounding']
         });
         _browser.on('disconnected', () => {
             console.log('[Puppeteer] Browser baglantisi kesildi, bir sonraki istekte yeniden baslatilacak.');
@@ -576,10 +635,17 @@ async function htmldenPngOlusturVeGonder(message, htmlIcerik, kaynak, viewportGe
         await page.setViewport({ width: viewportGenislik, height: 900, deviceScaleFactor: 1 });
 
         const fileUrl = 'file:///' + htmlDosya.replace(/\\/g, '/');
+        console.log(`[PNG] page.goto: ${kaynak}`);
         await page.goto(fileUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
         await new Promise(r => setTimeout(r, 800));
 
-        await page.screenshot({ path: pngDosya, fullPage: true, type: 'png' });
+        console.log(`[PNG] page.screenshot: ${kaynak}`);
+        // page.screenshot timeoutsuz olabilir — Promise.race ile 60sn limit
+        await Promise.race([
+            page.screenshot({ path: pngDosya, fullPage: true, type: 'png' }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('screenshot 60sn timeout')), 60000))
+        ]);
+        console.log(`[PNG] screenshot OK: ${kaynak}`);
         await page.close();
         page = null;
 
@@ -605,8 +671,12 @@ async function htmldenPngOlusturVeGonder(message, htmlIcerik, kaynak, viewportGe
         }
     } catch (error) {
         console.error('PNG/Gonderim hatasi:', error.message);
+        logYaz('SISTEM', `PNG hata (${kaynak}): ${error.message}`, 'HATA');
         if (page) { try { await page.close(); } catch (_) {} }
-        await message.reply('Rapor gonderilirken hata olustu: ' + error.message);
+        // Browser bozulmuş olabilir — bir sonraki istekte yeniden başlat
+        try { if (_browser) { await _browser.close(); } } catch (_) {}
+        _browser = null;
+        try { await message.reply('Rapor gonderilirken hata olustu: ' + error.message); } catch (_) {}
     } finally {
         _puppeteerKilit = false;
     }

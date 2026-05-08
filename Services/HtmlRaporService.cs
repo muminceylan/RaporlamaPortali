@@ -413,17 +413,17 @@ public class HtmlRaporService
             sb.AppendLine("<div class='ozet-wrap'>");
             if (ozet != null)
             {
-                sb.AppendLine($"<div class='ozet-kart'><div class='deger'>{ozet.ToplamCiftci:N0}</div><div class='etiket'>Toplam Çiftçi</div></div>");
-                sb.AppendLine($"<div class='ozet-kart'><div class='deger'>{ozet.ToplamTaahhut/1000:N0} ton</div><div class='etiket'>Taahhüt</div></div>");
+                sb.AppendLine($"<div class='ozet-kart'><div class='etiket'>Toplam Çiftçi</div><div class='deger'>{ozet.ToplamCiftci:N0}</div></div>");
+                sb.AppendLine($"<div class='ozet-kart'><div class='etiket'>Taahhüt</div><div class='deger'>{ozet.ToplamTaahhut/1000:N0} ton</div></div>");
             }
             if (icmalDetay != null)
-                sb.AppendLine($"<div class='ozet-kart'><div class='deger'>{icmalDetay.NetMiktarTon:N1} ton</div><div class='etiket'>Gelen Net</div></div>");
+                sb.AppendLine($"<div class='ozet-kart'><div class='etiket'>Gelen Net</div><div class='deger'>{icmalDetay.NetMiktarTon:N1} ton</div></div>");
             if (ozet != null)
             {
-                sb.AppendLine($"<div class='ozet-kart'><div class='deger'>%{ozet.OrtFireOrani:N2}</div><div class='etiket'>Fire Oranı</div></div>");
-                sb.AppendLine($"<div class='ozet-kart'><div class='deger'>%{ozet.OrtPolar:N2}</div><div class='etiket'>Polar</div></div>");
+                sb.AppendLine($"<div class='ozet-kart'><div class='etiket'>Fire Oranı</div><div class='deger'>%{ozet.OrtFireOrani:N2}</div></div>");
+                sb.AppendLine($"<div class='ozet-kart'><div class='etiket'>Polar</div><div class='deger'>%{ozet.OrtPolar:N2}</div></div>");
             }
-            sb.AppendLine($"<div class='ozet-kart'><div class='deger' style='color:{(borcAlacak > 0 ? "#B71C1C" : "#1B5E20")}'>{Math.Abs(borcAlacak):N0} ₺</div><div class='etiket'>{(borcAlacak > 0 ? "Müstahsil Borçlu" : "Müstahsil Alacaklı")}</div></div>");
+            sb.AppendLine($"<div class='ozet-kart'><div class='etiket'>{(borcAlacak > 0 ? "Müstahsil Borçlu" : "Müstahsil Alacaklı")}</div><div class='deger' style='color:{(borcAlacak > 0 ? "#B71C1C" : "#1B5E20")}'>{Math.Abs(borcAlacak):N0} ₺</div></div>");
             sb.AppendLine("</div>");
         }
 

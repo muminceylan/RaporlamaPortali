@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Dapper;
 using RaporlamaPortali.Models;
 
@@ -6,13 +7,22 @@ namespace RaporlamaPortali.Services;
 /// <summary>
 /// Kantar (SabNetKANTAR) ile Logo (INF_UT_Kısıtlı_Malzeme_Raporu) arasında
 /// ürün bazında hareket karşılaştırması yapar. Excel makrosunun birebir karşılığı.
+/// Eşleştirme listesi C:\RaporlamaPortaliData\kantar_logo_eslesmeleri.json içinde tutulur.
 /// </summary>
 public class KantarLogoKarsilastirmaService
 {
     private readonly DatabaseService _db;
 
-    // Kantar kodu → Logo kodu eşleştirmesi (Excel VBA'dan alınan 10 kalem)
-    private static readonly List<KantarLogoEslesme> Eslesmeler = new()
+    private static readonly object _lock = new();
+    private static List<KantarLogoEslesme>? _cache;
+
+    private static readonly JsonSerializerOptions _jsonOpts = new()
+    {
+        WriteIndented = true,
+        PropertyNameCaseInsensitive = true
+    };
+
+    private static readonly List<KantarLogoEslesme> _varsayilan = new()
     {
         new() { KantarKodu = "2862", LogoKodu = "S.706.04.0002", MalzemeAdi = "Yaş Küspe Dökme (Bedelli)" },
         new() { KantarKodu = "2926", LogoKodu = "S.706.04.0009", MalzemeAdi = "Yaş Küspe Poşet (1000 Kg)" },
@@ -27,7 +37,126 @@ public class KantarLogoKarsilastirmaService
         new() { KantarKodu = "2829", LogoKodu = "Y_100153",      MalzemeAdi = "Iskarta Patates", KdvDus = true },
     };
 
+    private static List<KantarLogoEslesme> Eslesmeler
+    {
+        get
+        {
+            if (_cache != null) return _cache;
+            lock (_lock)
+            {
+                if (_cache != null) return _cache;
+                _cache = Yukle();
+                return _cache;
+            }
+        }
+    }
+
+    private static List<KantarLogoEslesme> Yukle()
+    {
+        try
+        {
+            var yol = AppDataPaths.KantarLogoEslesmeleriJson;
+            if (File.Exists(yol))
+            {
+                var json = File.ReadAllText(yol);
+                var liste = JsonSerializer.Deserialize<List<KantarLogoEslesme>>(json, _jsonOpts);
+                if (liste != null) return liste;
+            }
+        }
+        catch { }
+        // İlk açılışta veya bozuk dosyada varsayılan listeyi kaydet
+        var ilk = _varsayilan.Select(e => new KantarLogoEslesme
+        {
+            KantarKodu = e.KantarKodu,
+            LogoKodu = e.LogoKodu,
+            MalzemeAdi = e.MalzemeAdi,
+            KdvDus = e.KdvDus
+        }).ToList();
+        try
+        {
+            Directory.CreateDirectory(AppDataPaths.DataRoot);
+            File.WriteAllText(AppDataPaths.KantarLogoEslesmeleriJson, JsonSerializer.Serialize(ilk, _jsonOpts));
+        }
+        catch { }
+        return ilk;
+    }
+
+    private static void Kaydet()
+    {
+        try
+        {
+            Directory.CreateDirectory(AppDataPaths.DataRoot);
+            File.WriteAllText(AppDataPaths.KantarLogoEslesmeleriJson, JsonSerializer.Serialize(Eslesmeler, _jsonOpts));
+        }
+        catch { }
+    }
+
     public static IReadOnlyList<KantarLogoEslesme> Eslestirmeler => Eslesmeler;
+
+    /// <summary>Yeni bir eşleştirme ekler. Aynı KantarKodu varsa false döner.</summary>
+    public static bool Ekle(KantarLogoEslesme yeni)
+    {
+        if (yeni == null) return false;
+        yeni.KantarKodu = (yeni.KantarKodu ?? "").Trim();
+        yeni.LogoKodu = (yeni.LogoKodu ?? "").Trim();
+        yeni.MalzemeAdi = (yeni.MalzemeAdi ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(yeni.KantarKodu) || string.IsNullOrWhiteSpace(yeni.LogoKodu))
+            return false;
+        lock (_lock)
+        {
+            var liste = Eslesmeler;
+            if (liste.Any(e => string.Equals(e.KantarKodu, yeni.KantarKodu, StringComparison.OrdinalIgnoreCase)))
+                return false;
+            liste.Add(yeni);
+            Kaydet();
+        }
+        return true;
+    }
+
+    /// <summary>Var olan eşleştirmeyi günceller (KantarKodu eşleşene göre).</summary>
+    public static bool Guncelle(string kantarKodu, KantarLogoEslesme yeni)
+    {
+        if (yeni == null) return false;
+        lock (_lock)
+        {
+            var liste = Eslesmeler;
+            var mevcut = liste.FirstOrDefault(e => string.Equals(e.KantarKodu, kantarKodu, StringComparison.OrdinalIgnoreCase));
+            if (mevcut == null) return false;
+            mevcut.KantarKodu = (yeni.KantarKodu ?? "").Trim();
+            mevcut.LogoKodu = (yeni.LogoKodu ?? "").Trim();
+            mevcut.MalzemeAdi = (yeni.MalzemeAdi ?? "").Trim();
+            mevcut.KdvDus = yeni.KdvDus;
+            Kaydet();
+        }
+        return true;
+    }
+
+    public static bool Sil(string kantarKodu)
+    {
+        lock (_lock)
+        {
+            var liste = Eslesmeler;
+            var n = liste.RemoveAll(e => string.Equals(e.KantarKodu, kantarKodu, StringComparison.OrdinalIgnoreCase));
+            if (n == 0) return false;
+            Kaydet();
+            return true;
+        }
+    }
+
+    public static void VarsayilanaDondur()
+    {
+        lock (_lock)
+        {
+            _cache = _varsayilan.Select(e => new KantarLogoEslesme
+            {
+                KantarKodu = e.KantarKodu,
+                LogoKodu = e.LogoKodu,
+                MalzemeAdi = e.MalzemeAdi,
+                KdvDus = e.KdvDus
+            }).ToList();
+            Kaydet();
+        }
+    }
 
     public KantarLogoKarsilastirmaService(DatabaseService db)
     {

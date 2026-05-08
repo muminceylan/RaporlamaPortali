@@ -17,7 +17,7 @@
             </span>
         </MudText>
         <MudSpacer />
-        <MudText Typo="Typo.body2" Class="mr-4" Style="color:#FFECB3; font-weight:500;">Doğuş Çay - Afyon Şeker Fabrikası</MudText>
+        <MudText Typo="Typo.body2" Class="mr-4" Style="color:#FFECB3; font-weight:500;">Bu Uygulamanın Tüm Yasal Hakları Mümin CEYLAN'a aittir. İzinsiz Kullanılamaz.</MudText>
         <MudIconButton Icon="@Icons.Material.Filled.Refresh" Color="Color.Inherit" Title="Yenile" OnClick="@(() => NavigationManager.NavigateTo(NavigationManager.Uri, true))" />
     </MudAppBar>
 
@@ -79,6 +79,9 @@
                 </MudNavLink>
                 <MudNavLink Href="/kur-farki-calismasi" Icon="@Icons.Material.Filled.Calculate" IconColor="Color.Primary">
                     Kur Farkı Çalışması
+                </MudNavLink>
+                <MudNavLink Href="/mutabakat" Icon="@Icons.Material.Filled.CompareArrows" IconColor="Color.Primary">
+                    Cari Mutabakatı (AI)
                 </MudNavLink>
             </MudNavGroup>
 

@@ -1,0 +1,404 @@
+@page "/mutabakat"
+@using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
+@using Microsoft.AspNetCore.Components.Forms
+@inject MutabakatService MutabakatSrv
+@inject ClaudeService AI
+@inject ExcelExportService Excel
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Cari Mutabakatı</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-3">
+    <MudIcon Icon="@Icons.Material.Filled.CompareArrows" Class="mr-2" />
+    Cari Mutabakatı (Mümin CEYLAN Destekli)
+</MudText>
+
+<MudAlert Severity="Severity.Info" Class="mb-3" Dense="true">
+    <b>Karşı firmadan</b> aldığınız ekstreyi (PDF veya Excel) yükleyin, firmaya ait <b>vergi numarasını</b>
+    girin. Bizdeki tüm cari kartlardan o vergi numarasına ait olanlar bulunup hareketleri birleştirilir;
+    karşı taraf ekstresiyle <b>tarih + tutar</b> ve <b>belge no</b> üzerinden eşleştirme yapılır.
+</MudAlert>
+
+<MudPaper Class="pa-3 mb-3 d-flex align-center justify-center"
+          Style="background:linear-gradient(90deg,#1a237e 0%,#283593 50%,#3949ab 100%);
+                 border:2px solid #ffd54f; border-radius:8px;
+                 box-shadow:0 3px 10px rgba(0,0,0,0.2);">
+    <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Style="color:#ffd54f; font-size:2rem;" Class="mr-3" />
+    <MudText Typo="Typo.h6"
+             Style="color:#fff; font-weight:700; letter-spacing:0.5px; text-shadow:1px 1px 2px rgba(0,0,0,0.3);">
+        PDF Parse'ı için <span style="color:#ffd54f">Mümin CEYLAN Özel Amaçlı Yazılımı</span> kullanılıyor
+    </MudText>
+    <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Style="color:#ffd54f; font-size:2rem;" Class="ml-3" />
+</MudPaper>
+
+@if (!AI.ApiKeyVar)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-3" Dense="true">
+        <b>ANTHROPIC_API_KEY</b> ortam değişkeni tanımlı değil. PowerShell ile şu komutu çalıştırıp
+        uygulamayı yeniden başlatın:
+        <code>[Environment]::SetEnvironmentVariable("ANTHROPIC_API_KEY", "sk-...", "User")</code>
+    </MudAlert>
+}
+
+<MudPaper Class="pa-3 mb-3">
+    <MudGrid>
+        <MudItem xs="12" md="3">
+            <MudDatePicker @bind-Date="_baslangic" Label="Başlangıç" DateFormat="dd.MM.yyyy"
+                           Editable="true" Mask="@(new DateMask("dd.MM.yyyy"))"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudDatePicker @bind-Date="_bitis" Label="Bitiş" DateFormat="dd.MM.yyyy"
+                           Editable="true" Mask="@(new DateMask("dd.MM.yyyy"))"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudTextField @bind-Value="_vkn" Label="Karşı Firma Vergi No (10 hane) / TC (11)"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudNumericField @bind-Value="_gunKesim" Label="Gün Kesimi (bitişten N gün hariç)"
+                             Min="0" Max="30" Step="1" HelperText="Henüz karşı tarafa ulaşmamış olabilecek son hareketleri at"
+                             Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+
+        <MudItem xs="12" md="8">
+            <MudFileUpload T="IBrowserFile" FilesChanged="DosyaSecildi" Accept=".pdf,.xlsx,.xls,.xlsm">
+                <ButtonTemplate>
+                    <MudButton HtmlTag="label" for="@context.Id" Variant="Variant.Outlined" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.UploadFile">
+                        Karşı Firma Ekstresini Yükle (PDF / Excel)
+                    </MudButton>
+                </ButtonTemplate>
+            </MudFileUpload>
+            @if (_dosyaAdi != null)
+            {
+                <MudText Typo="Typo.caption" Class="ml-2">
+                    Seçilen dosya: <b>@_dosyaAdi</b> (@($"{_dosyaBoyut / 1024.0:N0} KB"))
+                </MudText>
+            }
+        </MudItem>
+
+        <MudItem xs="12" md="4" Class="d-flex align-center gap-2">
+            <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.PlayArrow"
+                       OnClick="MutabakatYap" Disabled="@_calisiyor">
+                @(_calisiyor ? "Çalışıyor..." : "Mutabakat Yap")
+            </MudButton>
+            <MudButton Color="Color.Success" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.FileDownload"
+                       OnClick="ExcelIndir" Disabled="@(_sonuc == null)">
+                Excel
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@if (_hata != null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-3">@_hata</MudAlert>
+}
+
+@if (_sonuc != null)
+{
+    <MudGrid Class="mb-3">
+        <MudItem xs="12" md="3">
+            <MudPaper Class="pa-3" Style="border-left:4px solid #1976d2">
+                <MudText Typo="Typo.subtitle2" Style="color:#1976d2"><b>BİZDEKİ NET</b></MudText>
+                <MudText Typo="Typo.h6">@_sonuc.BizimNet.ToString("N2")</MudText>
+                <MudText Typo="Typo.caption">
+                    Borç: @_sonuc.BizimToplamBorc.ToString("N2") |
+                    Alacak: @_sonuc.BizimToplamAlacak.ToString("N2")
+                </MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudPaper Class="pa-3" Style="border-left:4px solid #6a1b9a">
+                <MudText Typo="Typo.subtitle2" Style="color:#6a1b9a"><b>ONLARDAKİ NET</b></MudText>
+                <MudText Typo="Typo.h6">@_sonuc.OnlarNet.ToString("N2")</MudText>
+                <MudText Typo="Typo.caption">
+                    Borç: @_sonuc.OnlarToplamBorc.ToString("N2") |
+                    Alacak: @_sonuc.OnlarToplamAlacak.ToString("N2")
+                </MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudPaper Class="pa-3" Style="@($"border-left:4px solid {(Math.Abs(_sonuc.MutabakatFarki) < 0.01m ? "#2e7d32" : "#c62828")}")">
+                <MudText Typo="Typo.subtitle2"
+                         Style="@($"color:{(Math.Abs(_sonuc.MutabakatFarki) < 0.01m ? "#2e7d32" : "#c62828")}")">
+                    <b>MUTABAKAT FARKI</b>
+                </MudText>
+                <MudText Typo="Typo.h6">@_sonuc.MutabakatFarki.ToString("N2")</MudText>
+                <MudText Typo="Typo.caption">
+                    @(Math.Abs(_sonuc.MutabakatFarki) < 0.01m ? "✅ Mutabıkız" : "⚠️ Fark var")
+                </MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudPaper Class="pa-3" Style="border-left:4px solid #ef6c00">
+                <MudText Typo="Typo.subtitle2" Style="color:#ef6c00"><b>EŞLEŞME</b></MudText>
+                <MudText Typo="Typo.h6">
+                    @_sonuc.Eslesenler.Count / @(_sonuc.Eslesenler.Count + Math.Max(_sonuc.SadeceBizde.Count, _sonuc.SadeceOnlarda.Count))
+                </MudText>
+                <MudText Typo="Typo.caption">
+                    @_sonuc.SadeceBizde.Count sadece bizde, @_sonuc.SadeceOnlarda.Count sadece onlarda
+                </MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    @if (_sonuc.EslesenCariler.Count > 0)
+    {
+        <MudPaper Class="pa-3 mb-3">
+            <MudText Typo="Typo.subtitle1"><b>Bu vergi numarasına ait bizdeki cariler:</b></MudText>
+            <MudSimpleTable Dense="true" Hover="true" Class="mt-2">
+                <thead>
+                    <tr><th>Kod</th><th>Ünvan</th><th>Vergi/TC</th><th style="text-align:right">Hareket</th></tr>
+                </thead>
+                <tbody>
+                @foreach (var c in _sonuc.EslesenCariler)
+                {
+                    <tr>
+                        <td><b>@c.Kod</b></td>
+                        <td>@c.Unvan</td>
+                        <td>@c.VergiNo</td>
+                        <td style="text-align:right">@c.HareketSayisi</td>
+                    </tr>
+                }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    }
+
+    <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-3">
+        <MudTabPanel Text="@($"✅ Eşleşenler ({_sonuc.Eslesenler.Count})")"
+                     BadgeColor="Color.Success">
+            <MudTable Items="_sonuc.Eslesenler" Dense="true" Hover="true" Striped="true"
+                      Filter="EslesmeFilter" FixedHeader="true" Height="500px">
+                <ToolBarContent>
+                    <MudTextField @bind-Value="_arama" Placeholder="Ara..." Adornment="Adornment.Start"
+                                  AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium"
+                                  Class="mt-0" />
+                </ToolBarContent>
+                <HeaderContent>
+                    <MudTh>Bizim Tarih</MudTh>
+                    <MudTh>Bizim Cari</MudTh>
+                    <MudTh>Bizim Fiş</MudTh>
+                    <MudTh Style="text-align:right">Bizim Borç</MudTh>
+                    <MudTh Style="text-align:right">Bizim Alacak</MudTh>
+                    <MudTh>Onlar Tarih</MudTh>
+                    <MudTh>Onlar Açıklama</MudTh>
+                    <MudTh>Onlar Fiş</MudTh>
+                    <MudTh Style="text-align:right">Onlar Borç</MudTh>
+                    <MudTh Style="text-align:right">Onlar Alacak</MudTh>
+                    <MudTh>Yöntem</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.Bizim.Tarih.ToString("dd.MM.yyyy")</MudTd>
+                    <MudTd>@context.Bizim.CariKodu</MudTd>
+                    <MudTd>@context.Bizim.FisNo</MudTd>
+                    <MudTd Style="text-align:right">@context.Bizim.Borc.ToString("N2")</MudTd>
+                    <MudTd Style="text-align:right">@context.Bizim.Alacak.ToString("N2")</MudTd>
+                    <MudTd>@context.Onlar.Tarih.ToString("dd.MM.yyyy")</MudTd>
+                    <MudTd>@context.Onlar.Aciklama</MudTd>
+                    <MudTd>@context.Onlar.FisNo</MudTd>
+                    <MudTd Style="text-align:right">@context.Onlar.Borc.ToString("N2")</MudTd>
+                    <MudTd Style="text-align:right">@context.Onlar.Alacak.ToString("N2")</MudTd>
+                    <MudTd>
+                        <MudChip Size="Size.Small"
+                                 Color="@(context.GunFarki == 0 ? Color.Success : Color.Warning)">
+                            @context.EslesmeYontemi
+                        </MudChip>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudTabPanel>
+
+        <MudTabPanel Text="@($"⚠️ Sadece Bizde ({_sonuc.SadeceBizde.Count})")"
+                     BadgeColor="Color.Warning">
+            <MudTable Items="_sonuc.SadeceBizde" Dense="true" Hover="true" Striped="true"
+                      Filter="BizimFilter" FixedHeader="true" Height="500px">
+                <HeaderContent>
+                    <MudTh>Tarih</MudTh>
+                    <MudTh>Cari Kodu</MudTh>
+                    <MudTh>Cari Ünvanı</MudTh>
+                    <MudTh>Fiş No</MudTh>
+                    <MudTh>Fiş Türü</MudTh>
+                    <MudTh>Açıklama</MudTh>
+                    <MudTh Style="text-align:right">Borç</MudTh>
+                    <MudTh Style="text-align:right">Alacak</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.Tarih.ToString("dd.MM.yyyy")</MudTd>
+                    <MudTd>@context.CariKodu</MudTd>
+                    <MudTd>@context.CariUnvan</MudTd>
+                    <MudTd>@context.FisNo</MudTd>
+                    <MudTd>@context.FisTuru</MudTd>
+                    <MudTd>@context.Aciklama</MudTd>
+                    <MudTd Style="text-align:right">@context.Borc.ToString("N2")</MudTd>
+                    <MudTd Style="text-align:right">@context.Alacak.ToString("N2")</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudTabPanel>
+
+        <MudTabPanel Text="@($"❌ Sadece Onlarda ({_sonuc.SadeceOnlarda.Count})")"
+                     BadgeColor="Color.Error">
+            <MudTable Items="_sonuc.SadeceOnlarda" Dense="true" Hover="true" Striped="true"
+                      Filter="OnlarFilter" FixedHeader="true" Height="500px">
+                <HeaderContent>
+                    <MudTh>Tarih</MudTh>
+                    <MudTh>Açıklama</MudTh>
+                    <MudTh>Fiş No</MudTh>
+                    <MudTh Style="text-align:right">Borç</MudTh>
+                    <MudTh Style="text-align:right">Alacak</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.Tarih.ToString("dd.MM.yyyy")</MudTd>
+                    <MudTd>@context.Aciklama</MudTd>
+                    <MudTd>@context.FisNo</MudTd>
+                    <MudTd Style="text-align:right">@context.Borc.ToString("N2")</MudTd>
+                    <MudTd Style="text-align:right">@context.Alacak.ToString("N2")</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudTabPanel>
+
+        <MudTabPanel Text="@($"🔍 AI Parse Çıktısı ({_sonuc.AIHamKayitlar.Count})")">
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-2">
+                <b>Debug:</b> AI'nın ekstreden çıkardığı TÜM satırlar (tarih filtresi öncesi). Bu listede
+                olması gereken bir kayıt YOKSA → AI o satırı yanlış parse etmiş demektir (genelde TL yerine
+                USD okuma, vade tarihini işlem tarihi sanma, ya da satırı atlamak). Listede VAR ama
+                eşleşmedi ise → tarih/tutar/yön farkı vardır.
+            </MudAlert>
+            <MudTable Items="_sonuc.AIHamKayitlar" Dense="true" Hover="true" Striped="true"
+                      FixedHeader="true" Height="500px">
+                <HeaderContent>
+                    <MudTh>#</MudTh>
+                    <MudTh>Tarih</MudTh>
+                    <MudTh>Açıklama</MudTh>
+                    <MudTh>Fiş No</MudTh>
+                    <MudTh Style="text-align:right">Borç</MudTh>
+                    <MudTh Style="text-align:right">Alacak</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@(_sonuc.AIHamKayitlar.IndexOf(context) + 1)</MudTd>
+                    <MudTd>@context.Tarih.ToString("dd.MM.yyyy")</MudTd>
+                    <MudTd>@context.Aciklama</MudTd>
+                    <MudTd>@context.FisNo</MudTd>
+                    <MudTd Style="text-align:right">@context.Borc.ToString("N2")</MudTd>
+                    <MudTd Style="text-align:right">@context.Alacak.ToString("N2")</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudTabPanel>
+    </MudTabs>
+}
+
+@code {
+    DateTime? _baslangic = new DateTime(SistemTarihi.Bugun().Year, 1, 1);
+    DateTime? _bitis     = SistemTarihi.Bugun();
+    string _vkn = "";
+    int _gunKesim = 0;
+
+    string? _dosyaAdi;
+    long _dosyaBoyut;
+    byte[]? _dosyaBytes;
+
+    bool _calisiyor;
+    string? _hata;
+    MutabakatSonuc? _sonuc;
+    string _arama = "";
+
+    async Task DosyaSecildi(IBrowserFile? f)
+    {
+        if (f == null) { _dosyaAdi = null; _dosyaBytes = null; return; }
+        _dosyaAdi = f.Name;
+        _dosyaBoyut = f.Size;
+        const int max = 20 * 1024 * 1024; // 20 MB
+        if (f.Size > max)
+        {
+            Snackbar.Add("Dosya 20 MB'den büyük olamaz.", Severity.Error);
+            _dosyaAdi = null; _dosyaBytes = null; return;
+        }
+        using var ms = new MemoryStream();
+        await f.OpenReadStream(max).CopyToAsync(ms);
+        _dosyaBytes = ms.ToArray();
+        Snackbar.Add($"Dosya yüklendi: {_dosyaAdi}", Severity.Success);
+    }
+
+    async Task MutabakatYap()
+    {
+        _hata = null; _sonuc = null;
+        if (string.IsNullOrWhiteSpace(_vkn)) { Snackbar.Add("Vergi numarası girin.", Severity.Warning); return; }
+        if (_dosyaBytes == null || _dosyaAdi == null) { Snackbar.Add("Karşı firma ekstresini yükleyin.", Severity.Warning); return; }
+        if (_baslangic == null || _bitis == null) { Snackbar.Add("Tarih aralığı seçin.", Severity.Warning); return; }
+
+        _calisiyor = true;
+        try
+        {
+            Snackbar.Add("Ekstre AI ile parse ediliyor...", Severity.Info);
+            var aiHam = await AI.EkstreyiParseEtAsync(_dosyaBytes, _dosyaAdi);
+            Snackbar.Add($"{aiHam.Count} satır parse edildi.", Severity.Success);
+
+            // Bitiş tarihinden _gunKesim gün geriye çek — son N gün hareketleri
+            // henüz karşı tarafın ekstresine geçmemiş olabilir, ikisinden de hariç tutulsun.
+            var bas = _baslangic!.Value.Date;
+            var bit = _bitis!.Value.Date.AddDays(-_gunKesim);
+            if (bit < bas)
+            {
+                Snackbar.Add($"Gün kesimi ({_gunKesim}) tarih aralığını sıfırlıyor.", Severity.Warning);
+                bit = bas;
+            }
+            var karsiKayitlar = aiHam.Where(k => k.Tarih.Date >= bas && k.Tarih.Date <= bit).ToList();
+
+            _sonuc = await MutabakatSrv.MutabakatYapAsync(_vkn, bas, bit, karsiKayitlar);
+            _sonuc.AIHamKayitlar = aiHam.OrderBy(x => x.Tarih).ToList();
+            var kesimEtiketi = _gunKesim > 0 ? $" (son {_gunKesim} gün hariç)" : "";
+            Snackbar.Add($"Mutabakat tamamlandı{kesimEtiketi}. {_sonuc.Eslesenler.Count} eşleşme bulundu.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _hata = ex.Message;
+            Snackbar.Add("Hata: " + ex.Message, Severity.Error);
+        }
+        finally { _calisiyor = false; }
+    }
+
+    bool EslesmeFilter(MutabakatEslesme e)
+    {
+        if (string.IsNullOrWhiteSpace(_arama)) return true;
+        var f = _arama.Trim();
+        return (e.Bizim.CariKodu?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (e.Bizim.CariUnvan?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (e.Bizim.FisNo?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (e.Onlar.FisNo?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (e.Onlar.Aciklama?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false);
+    }
+
+    bool BizimFilter(MutabakatKayit k) => Filtrele(k);
+    bool OnlarFilter(MutabakatKayit k) => Filtrele(k);
+    bool Filtrele(MutabakatKayit k)
+    {
+        if (string.IsNullOrWhiteSpace(_arama)) return true;
+        var f = _arama.Trim();
+        return (k.CariKodu?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (k.CariUnvan?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (k.FisNo?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (k.Aciklama?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false);
+    }
+
+    async Task ExcelIndir()
+    {
+        if (_sonuc == null) return;
+        try
+        {
+            var bytes = Excel.MutabakatExportEt(_sonuc);
+            var ad = $"Mutabakat_{_vkn}_{_baslangic:yyyyMMdd}_{_bitis:yyyyMMdd}.xlsx";
+            await JS.InvokeVoidAsync("downloadFileFromStream", ad, bytes);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Excel hatası: " + ex.Message, Severity.Error);
+        }
+    }
+}

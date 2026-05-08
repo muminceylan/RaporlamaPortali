@@ -134,23 +134,79 @@ else if (_sonuc != null)
         </MudTabPanel>
 
         <MudTabPanel Text="Eşleştirme Tablosu" Icon="@Icons.Material.Filled.Link">
+            <MudPaper Class="pa-2 mb-2 d-flex align-center gap-2" Elevation="0">
+                <MudButton Color="Color.Success" Variant="Variant.Filled"
+                           StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="EklemeDialogAc">
+                    Yeni Eşleştirme Ekle
+                </MudButton>
+                <MudButton Color="Color.Default" Variant="Variant.Outlined"
+                           StartIcon="@Icons.Material.Filled.Restore"
+                           OnClick="VarsayilanaDondur">
+                    Varsayılana Döndür
+                </MudButton>
+                <MudText Typo="Typo.caption" Class="ml-2">
+                    Toplam: <b>@KantarLogoKarsilastirmaService.Eslestirmeler.Count</b> eşleştirme
+                </MudText>
+            </MudPaper>
             <MudTable Items="KantarLogoKarsilastirmaService.Eslestirmeler" Dense="true" Bordered="true" Striped="true" Class="mt-2">
                 <HeaderContent>
                     <MudTh>Kantar Kodu</MudTh>
                     <MudTh>Logo Kodu</MudTh>
                     <MudTh>Malzeme Adı</MudTh>
-                    <MudTh>KDV (%1) Düş?</MudTh>
+                    <MudTh Style="text-align:center">KDV (%1) Düş?</MudTh>
+                    <MudTh Style="text-align:center; width:140px">İşlem</MudTh>
                 </HeaderContent>
                 <RowTemplate>
                     <MudTd>@context.KantarKodu</MudTd>
                     <MudTd>@context.LogoKodu</MudTd>
                     <MudTd>@context.MalzemeAdi</MudTd>
-                    <MudTd>@(context.KdvDus ? "Evet" : "-")</MudTd>
+                    <MudTd Style="text-align:center">@(context.KdvDus ? "Evet" : "-")</MudTd>
+                    <MudTd Style="text-align:center">
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Primary"
+                                       OnClick="@(() => DuzenlemeDialogAc(context))" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                       OnClick="@(() => SilAsync(context))" />
+                    </MudTd>
                 </RowTemplate>
+                <NoRecordsContent><MudText>Henüz eşleştirme yok. "Yeni Eşleştirme Ekle" butonuna tıklayın.</MudText></NoRecordsContent>
             </MudTable>
         </MudTabPanel>
     </MudTabs>
 }
+
+<MudDialog @bind-IsVisible="_eslesmeDialogAcik" Options="@(new DialogOptions{ MaxWidth=MaxWidth.Small, FullWidth=true, CloseButton=true })">
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@(_duzenleniyor ? Icons.Material.Filled.Edit : Icons.Material.Filled.Add)" Class="mr-2" />
+            @(_duzenleniyor ? "Eşleştirmeyi Düzenle" : "Yeni Eşleştirme")
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudGrid>
+            <MudItem xs="12" md="6">
+                <MudTextField @bind-Value="_form.KantarKodu" Label="Kantar Kodu" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Disabled="_duzenleniyor" HelperText="@(_duzenleniyor ? "Düzenlemede değiştirilemez" : "Örn: 2862")" />
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudTextField @bind-Value="_form.LogoKodu" Label="Logo Kodu" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              HelperText="Örn: S.706.04.0002" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_form.MalzemeAdi" Label="Malzeme Adı" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudCheckBox T="bool" @bind-Value="_form.KdvDus" Label="KDV (%1) Düş — Kantar tutarı/birim fiyatı 1.01'e bölünür" Color="Color.Primary" />
+            </MudItem>
+        </MudGrid>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _eslesmeDialogAcik = false">İptal</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="EslesmeKaydetAsync">
+            @(_duzenleniyor ? "Güncelle" : "Ekle")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
 
 <MudDialog @bind-IsVisible="_detayAcik" Options="@(new DialogOptions{ MaxWidth=MaxWidth.ExtraExtraLarge, FullWidth=true, CloseButton=true })">
     <TitleContent>
@@ -225,6 +281,96 @@ else if (_sonuc != null)
     private DateTime _detayTarih;
     private string _detayMalzeme = "";
     private List<FisEslestirmesi>? _fisDetay;
+
+    private bool _eslesmeDialogAcik;
+    private bool _duzenleniyor;
+    private string _orijinalKantarKodu = "";
+    private KantarLogoEslesme _form = new();
+
+    [Inject] private IDialogService DialogService { get; set; } = default!;
+
+    private void EklemeDialogAc()
+    {
+        _duzenleniyor = false;
+        _orijinalKantarKodu = "";
+        _form = new KantarLogoEslesme();
+        _eslesmeDialogAcik = true;
+    }
+
+    private void DuzenlemeDialogAc(KantarLogoEslesme satir)
+    {
+        _duzenleniyor = true;
+        _orijinalKantarKodu = satir.KantarKodu;
+        _form = new KantarLogoEslesme
+        {
+            KantarKodu = satir.KantarKodu,
+            LogoKodu = satir.LogoKodu,
+            MalzemeAdi = satir.MalzemeAdi,
+            KdvDus = satir.KdvDus
+        };
+        _eslesmeDialogAcik = true;
+    }
+
+    private async Task EslesmeKaydetAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_form.KantarKodu) || string.IsNullOrWhiteSpace(_form.LogoKodu))
+        {
+            Snackbar.Add("Kantar Kodu ve Logo Kodu zorunlu.", Severity.Warning);
+            return;
+        }
+
+        bool ok;
+        if (_duzenleniyor)
+        {
+            ok = KantarLogoKarsilastirmaService.Guncelle(_orijinalKantarKodu, _form);
+            if (ok) Snackbar.Add("Eşleştirme güncellendi.", Severity.Success);
+            else    Snackbar.Add("Güncelleme başarısız.", Severity.Error);
+        }
+        else
+        {
+            ok = KantarLogoKarsilastirmaService.Ekle(_form);
+            if (ok) Snackbar.Add("Eşleştirme eklendi.", Severity.Success);
+            else    Snackbar.Add("Aynı Kantar Kodu zaten var veya alanlar geçersiz.", Severity.Warning);
+        }
+
+        if (ok)
+        {
+            _eslesmeDialogAcik = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task SilAsync(KantarLogoEslesme satir)
+    {
+        var onay = await DialogService.ShowMessageBox(
+            "Eşleştirmeyi Sil",
+            $"\"{satir.KantarKodu} → {satir.LogoKodu} ({satir.MalzemeAdi})\" eşleştirmesi silinsin mi?",
+            yesText: "Sil", cancelText: "İptal");
+        if (onay != true) return;
+
+        if (KantarLogoKarsilastirmaService.Sil(satir.KantarKodu))
+        {
+            Snackbar.Add("Eşleştirme silindi.", Severity.Success);
+            await InvokeAsync(StateHasChanged);
+        }
+        else
+        {
+            Snackbar.Add("Silme başarısız.", Severity.Error);
+        }
+    }
+
+    private async Task VarsayilanaDondur()
+    {
+        var onay = await DialogService.ShowMessageBox(
+            "Varsayılana Döndür",
+            "Eşleştirme listesi 10 kalemlik fabrika varsayılanına dönecek. Mevcut özel kayıtlar silinecek. Onaylıyor musunuz?",
+            yesText: "Evet, döndür", cancelText: "İptal");
+        if (onay != true) return;
+
+        KantarLogoKarsilastirmaService.VarsayilanaDondur();
+        Snackbar.Add("Varsayılan listeye dönüldü.", Severity.Info);
+        await InvokeAsync(StateHasChanged);
+    }
 
     private async Task FisDetayAc(KarsilastirmaSatiri satir)
     {

@@ -13,6 +13,10 @@ RaporlamaPortali.Services.LaunchAuthService.Require();
 // Örn: MALZEME_KODU → MalzemeKodu, AMBAR_NO → AmbarNo
 DefaultTypeMap.MatchNamesWithUnderscores = true;
 
+// .NET Core/8: cp1254 vb. eski code page'ler default değil — ExcelDataReader BIFF5 (Logo NetRapor)
+// dosyalarında Türkçe karakter okumak için bu provider'ı kayıt etmek zorunlu.
+System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+
 var exeDir = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
 
 // Veritabanı, evrak arşivi, WhatsApp oturumu vb. kalıcı verileri publish klasörü
@@ -104,6 +108,11 @@ builder.Services.AddSingleton<MalzemeListeService>();
 
 // Finans Raporu — yıllık INF_MD_FINANS_PROJE_RAPORU_211_YYYY view'lerini birleştirir
 builder.Services.AddScoped<FinansRaporService>();
+
+// Cari Mutabakatı — AI destekli (Anthropic Claude API ile PDF/Excel parse)
+builder.Services.AddHttpClient();
+builder.Services.AddScoped<ClaudeService>();
+builder.Services.AddScoped<MutabakatService>();
 
 // SabNet Kantar — SabNetKANTAR SQL Server'dan SabNet.db SQLite'a aktarım + listeleme
 builder.Services.AddSingleton<SabNetDbService>();

@@ -1,6 +1,10 @@
 @page "/finans-raporu"
 @using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
 @inject FinansRaporService FinansService
+@inject LogoIslemleriService Logo
+@inject ExcelExportService Excel
+@inject IJSRuntime JS
 @inject ISnackbar Snackbar
 
 <PageTitle>Finans Raporu</PageTitle>
@@ -124,6 +128,225 @@
             </MudPaper>
         </MudItem>
     </MudGrid>
+
+    var etilAlkolHam = _ham
+        .Where(x => (x.ChKod ?? "").StartsWith("120.99.10", StringComparison.OrdinalIgnoreCase)
+                    && x.HareketTuru == "TAHSİLAT"
+                    && x.Havale > 0)
+        .OrderBy(x => x.Tarih)
+        .ToList();
+
+    var etilAlkol = etilAlkolHam
+        .Where(x => string.IsNullOrWhiteSpace(_eTarih)
+                    || x.Tarih.ToString("dd.MM.yyyy").Contains(_eTarih.Trim())
+                    || x.Tarih.ToString("yyyy-MM-dd").Contains(_eTarih.Trim()))
+        .Where(x => MetinEslesir(x.ChKod, _eChKod))
+        .Where(x => MetinEslesir(x.ChUnvani, _eChUnvan))
+        .Where(x => MetinEslesir(x.BankaHesapKodu, _eBankaKod))
+        .Where(x => MetinEslesir(x.BankaHesapAciklamasi, _eBankaAcik))
+        .Where(x => MetinEslesir(x.ProjeKodu, _eProjeKod))
+        .Where(x => MetinEslesir(x.IslemNo, _eIslemNo))
+        .Where(x => MetinEslesir(x.FisTuru, _eFisTuru))
+        .Where(x => SayiEslesir(x.Havale, _eHavale))
+        .ToList();
+    var etilToplam = etilAlkol.Sum(x => x.Havale);
+
+    // Genel Merkez view'inden sadece Havale (Gelen Havaleler) — bu kayıtlar
+    // INF_MD_FINANS_PROJE_RAPORU_211_YYYY view'üne Genel Merkez'in girdiği fişlerden gelir.
+    var view120_04Havale = _ham
+        .Where(x => (x.ChKod ?? "").StartsWith("120.04", StringComparison.OrdinalIgnoreCase)
+                    && x.HareketTuru == "TAHSİLAT"
+                    && x.Havale > 0)
+        .ToList();
+
+    // Lokal Cari Hesap Hareketleri'nden gelen Nakit Tahsilat + Kredi Kartı (CLFLINE).
+    // Bunlar Genel Merkez view'üne düşmediği için tablo eksik kalmasın diye ayrı çekiliyor.
+    var kkHam = view120_04Havale
+        .Concat(_yerel120_04)
+        .OrderBy(x => x.Tarih)
+        .ToList();
+
+    var kk = kkHam
+        .Where(x => string.IsNullOrWhiteSpace(_kkTarih)
+                    || x.Tarih.ToString("dd.MM.yyyy").Contains(_kkTarih.Trim())
+                    || x.Tarih.ToString("yyyy-MM-dd").Contains(_kkTarih.Trim()))
+        .Where(x => MetinEslesir(x.ChKod, _kkChKod))
+        .Where(x => MetinEslesir(x.ChUnvani, _kkChUnvan))
+        .Where(x => MetinEslesir(x.Modul, _kkModul))
+        .Where(x => MetinEslesir(x.BankaHesapKodu, _kkBankaKod))
+        .Where(x => MetinEslesir(x.BankaHesapAciklamasi, _kkBankaAcik))
+        .Where(x => MetinEslesir(x.ProjeKodu, _kkProjeKod))
+        .Where(x => MetinEslesir(x.IslemNo, _kkIslemNo))
+        .Where(x => MetinEslesir(x.FisTuru, _kkFisTuru))
+        .Where(x => SayiEslesir(x.Havale + x.Cek + x.Devir + x.Diger, _kkTutar))
+        .ToList();
+    var kkToplam = kk.Sum(x => x.Havale + x.Cek + x.Devir + x.Diger);
+
+    <MudExpansionPanels Class="mb-3" MultiExpansion="true">
+        <MudExpansionPanel IsInitiallyExpanded="true">
+            <TitleContent>
+                <div class="d-flex align-center" style="width:100%; gap:12px;">
+                    <MudIcon Icon="@Icons.Material.Filled.LocalBar" Color="Color.Primary" />
+                    <MudText Typo="Typo.subtitle1"><b>Etil Alkol Carileri — Gelen Bedeller</b> (CH 120.99.10.* / Havale)</MudText>
+                    <MudSpacer />
+                    <MudChip T="string" Color="Color.Success" Size="Size.Small">@etilAlkol.Count / @etilAlkolHam.Count satır</MudChip>
+                    <MudChip T="string" Color="Color.Info" Size="Size.Small">Toplam: @etilToplam.ToString("N2") ₺</MudChip>
+                    <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.FileDownload"
+                               OnClick="EtilAlkolExcelIndir"
+                               OnClickStopPropagation="true"
+                               Disabled="@(etilAlkol.Count == 0)">
+                        Excel
+                    </MudButton>
+                </div>
+            </TitleContent>
+            <ChildContent>
+                @if (etilAlkolHam.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info" Dense="true">
+                        Seçili tarih aralığında 120.99.10.* cari kodlu firmalardan gelen havale bulunamadı.
+                    </MudAlert>
+                }
+                else
+                {
+                    <div style="overflow:auto; max-height:340px;">
+                        <table class="finans-table">
+                            <thead>
+                                <tr class="baslik-row">
+                                    <th>Tarih</th>
+                                    <th>CH Kodu</th>
+                                    <th>CH Ünvanı</th>
+                                    <th>Banka Kodu</th>
+                                    <th>Banka Açıklaması</th>
+                                    <th>Proje Kodu</th>
+                                    <th>İşlem No</th>
+                                    <th>Fiş Türü</th>
+                                    <th class="num">Havale (₺)</th>
+                                </tr>
+                                <tr class="filtre-row">
+                                    <th><input type="text" @bind="_eTarih" @bind:event="oninput" placeholder="örn. 2026-03" /></th>
+                                    <th><input type="text" @bind="_eChKod" @bind:event="oninput" placeholder="120.99.10..." /></th>
+                                    <th><input type="text" @bind="_eChUnvan" @bind:event="oninput" placeholder="ünvan..." /></th>
+                                    <th><input type="text" @bind="_eBankaKod" @bind:event="oninput" placeholder="filtre..." /></th>
+                                    <th><input type="text" @bind="_eBankaAcik" @bind:event="oninput" placeholder="filtre..." /></th>
+                                    <th><input type="text" @bind="_eProjeKod" @bind:event="oninput" placeholder="filtre..." /></th>
+                                    <th><input type="text" @bind="_eIslemNo" @bind:event="oninput" placeholder="filtre..." /></th>
+                                    <th><input type="text" @bind="_eFisTuru" @bind:event="oninput" placeholder="filtre..." /></th>
+                                    <th><input type="text" @bind="_eHavale" @bind:event="oninput" placeholder=">=100 &lt;=500" /></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var x in etilAlkol)
+                                {
+                                    <tr>
+                                        <td>@x.Tarih.ToString("dd.MM.yyyy")</td>
+                                        <td>@x.ChKod</td>
+                                        <td>@x.ChUnvani</td>
+                                        <td>@x.BankaHesapKodu</td>
+                                        <td>@x.BankaHesapAciklamasi</td>
+                                        <td>@x.ProjeKodu</td>
+                                        <td>@x.IslemNo</td>
+                                        <td>@x.FisTuru</td>
+                                        <td class="num">@x.Havale.ToString("N2")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                            <tfoot>
+                                <tr class="toplam-row">
+                                    <td colspan="8">TOPLAM (@etilAlkol.Count satır)</td>
+                                    <td class="num">@etilToplam.ToString("N2")</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                }
+            </ChildContent>
+        </MudExpansionPanel>
+
+        <MudExpansionPanel IsInitiallyExpanded="true">
+            <TitleContent>
+                <div class="d-flex align-center" style="width:100%; gap:12px;">
+                    <MudIcon Icon="@Icons.Material.Filled.CreditCard" Color="Color.Tertiary" />
+                    <MudText Typo="Typo.subtitle1"><b>120.04 Carileri — Tahsilatlar</b> (Havale + Kredi Kartı + diğer)</MudText>
+                    <MudSpacer />
+                    <MudChip T="string" Color="Color.Success" Size="Size.Small">@kk.Count / @kkHam.Count satır</MudChip>
+                    <MudChip T="string" Color="Color.Info" Size="Size.Small">Toplam: @kkToplam.ToString("N2") ₺</MudChip>
+                    <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.FileDownload"
+                               OnClick="Cari120_04ExcelIndir"
+                               OnClickStopPropagation="true"
+                               Disabled="@(kk.Count == 0)">
+                        Excel
+                    </MudButton>
+                </div>
+            </TitleContent>
+            <ChildContent>
+                @if (kkHam.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info" Dense="true">
+                        Seçili tarih aralığında 120.04.* cari kodlu firmalardan tahsilat bulunamadı.
+                    </MudAlert>
+                }
+                else
+                {
+                    <div style="overflow:auto; max-height:340px;">
+                        <table class="finans-table">
+                            <thead>
+                                <tr class="baslik-row">
+                                    <th>Tarih</th>
+                                    <th>CH Kodu</th>
+                                    <th>CH Ünvanı</th>
+                                    <th>Modül</th>
+                                    <th>Banka Kodu</th>
+                                    <th>Banka Açıklaması</th>
+                                    <th>Proje Kodu</th>
+                                    <th>İşlem No</th>
+                                    <th>Fiş Türü</th>
+                                    <th class="num">Tutar (₺)</th>
+                                </tr>
+                                <tr class="filtre-row">
+                                    <th><input type="text" @bind="_kkTarih" @bind:event="oninput" placeholder="örn. 2026-03" /></th>
+                                    <th><input type="text" @bind="_kkChKod" @bind:event="oninput" placeholder="120.04..." /></th>
+                                    <th><input type="text" @bind="_kkChUnvan" @bind:event="oninput" placeholder="ünvan..." /></th>
+                                    <th><input type="text" @bind="_kkModul" @bind:event="oninput" placeholder="BANKA / KK..." /></th>
+                                    <th><input type="text" @bind="_kkBankaKod" @bind:event="oninput" placeholder="filtre..." /></th>
+                                    <th><input type="text" @bind="_kkBankaAcik" @bind:event="oninput" placeholder="filtre..." /></th>
+                                    <th><input type="text" @bind="_kkProjeKod" @bind:event="oninput" placeholder="filtre..." /></th>
+                                    <th><input type="text" @bind="_kkIslemNo" @bind:event="oninput" placeholder="filtre..." /></th>
+                                    <th><input type="text" @bind="_kkFisTuru" @bind:event="oninput" placeholder="filtre..." /></th>
+                                    <th><input type="text" @bind="_kkTutar" @bind:event="oninput" placeholder=">=100 &lt;=500" /></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var x in kk)
+                                {
+                                    var tutar = x.Havale + x.Cek + x.Devir + x.Diger;
+                                    <tr>
+                                        <td>@x.Tarih.ToString("dd.MM.yyyy")</td>
+                                        <td>@x.ChKod</td>
+                                        <td>@x.ChUnvani</td>
+                                        <td>@x.Modul</td>
+                                        <td>@x.BankaHesapKodu</td>
+                                        <td>@x.BankaHesapAciklamasi</td>
+                                        <td>@x.ProjeKodu</td>
+                                        <td>@x.IslemNo</td>
+                                        <td>@x.FisTuru</td>
+                                        <td class="num">@tutar.ToString("N2")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                            <tfoot>
+                                <tr class="toplam-row">
+                                    <td colspan="9">TOPLAM (@kk.Count satır)</td>
+                                    <td class="num">@kkToplam.ToString("N2")</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                }
+            </ChildContent>
+        </MudExpansionPanel>
+    </MudExpansionPanels>
 
     <MudPaper Class="pa-2">
         <div style="overflow:auto; max-height:620px;">
@@ -284,9 +507,25 @@ else if (!_yukleniyor)
     private string _fHavale = "", _fCek = "", _fDevir = "", _fDiger = "";
     private string _fSign = "", _fSpecOde = "";
 
+    // Etil Alkol panel sütun filtreleri
+    private string _eTarih = "", _eChKod = "", _eChUnvan = "";
+    private string _eBankaKod = "", _eBankaAcik = "";
+    private string _eProjeKod = "", _eIslemNo = "", _eFisTuru = "";
+    private string _eHavale = "";
+
+    // 120.04 Carileri (Havale + Kredi Kartı) panel sütun filtreleri
+    private string _kkTarih = "", _kkChKod = "", _kkChUnvan = "";
+    private string _kkModul = "";
+    private string _kkBankaKod = "", _kkBankaAcik = "";
+    private string _kkProjeKod = "", _kkIslemNo = "", _kkFisTuru = "";
+    private string _kkTutar = "";
+
     private bool _yukleniyor;
     private string? _hata;
     private List<FinansRaporSatiri>? _ham;
+    // 120.04 carileri için CLFLINE'dan çekilen Nakit Tahsilat (TRCODE 1) +
+    // Kredi Kartı (TRCODE 20) — Genel Merkez view'üne düşmediği için ayrı alınıyor.
+    private List<FinansRaporSatiri> _yerel120_04 = new();
     private List<int> _hizliYillar = new();
     private List<string> _mevcutModuller = new();
 
@@ -344,7 +583,23 @@ else if (!_yukleniyor)
             _ham = await FinansService.GetHareketlerAsync(_baslangic.Value, _bitis.Value);
             _mevcutModuller = _ham.Select(x => x.Modul).Where(x => !string.IsNullOrEmpty(x))
                                   .Distinct().OrderBy(x => x).ToList();
-            Snackbar.Add($"{_ham.Count} satır yüklendi.", Severity.Success);
+
+            // 120.04 carileri için Genel Merkez view'üne düşmeyen local Nakit + Kredi Kartı
+            // tahsilatlarını CLFLINE'dan ayrı çek. TRCODE 1 = Nakit Tahsilat, TRCODE 70 = Kredi
+            // Kartı Fişi. TRCODE 20 (Gelen Havaleler) zaten view'den geliyor — burada çekersek
+            // çift sayım olur.
+            try
+            {
+                _yerel120_04 = await Logo.CariYerelTahsilatlarAsync(
+                    _baslangic.Value, _bitis.Value, "120.04", new[] { 1, 70 });
+            }
+            catch (Exception lex)
+            {
+                _yerel120_04 = new();
+                Snackbar.Add("Yerel Nakit/KK tahsilat sorgusu başarısız: " + lex.Message, Severity.Warning);
+            }
+
+            Snackbar.Add($"{_ham.Count} merkez + {_yerel120_04.Count} yerel satır yüklendi.", Severity.Success);
         }
         catch (Exception ex)
         {
@@ -367,11 +622,131 @@ else if (!_yukleniyor)
         _fOzelKod = _fIslemNo = "";
         _fHavale = _fCek = _fDevir = _fDiger = "";
         _fSign = _fSpecOde = "";
+
+        _eTarih = _eChKod = _eChUnvan = "";
+        _eBankaKod = _eBankaAcik = "";
+        _eProjeKod = _eIslemNo = _eFisTuru = "";
+        _eHavale = "";
+
+        _kkTarih = _kkChKod = _kkChUnvan = "";
+        _kkModul = "";
+        _kkBankaKod = _kkBankaAcik = "";
+        _kkProjeKod = _kkIslemNo = _kkFisTuru = "";
+        _kkTutar = "";
+    }
+
+    private async Task EtilAlkolExcelIndir()
+    {
+        if (_ham == null || _baslangic == null || _bitis == null) return;
+
+        var liste = _ham
+            .Where(x => (x.ChKod ?? "").StartsWith("120.99.10", StringComparison.OrdinalIgnoreCase)
+                        && x.HareketTuru == "TAHSİLAT"
+                        && x.Havale > 0)
+            .Where(x => string.IsNullOrWhiteSpace(_eTarih)
+                        || x.Tarih.ToString("dd.MM.yyyy").Contains(_eTarih.Trim())
+                        || x.Tarih.ToString("yyyy-MM-dd").Contains(_eTarih.Trim()))
+            .Where(x => MetinEslesir(x.ChKod,                _eChKod))
+            .Where(x => MetinEslesir(x.ChUnvani,             _eChUnvan))
+            .Where(x => MetinEslesir(x.BankaHesapKodu,       _eBankaKod))
+            .Where(x => MetinEslesir(x.BankaHesapAciklamasi, _eBankaAcik))
+            .Where(x => MetinEslesir(x.ProjeKodu,            _eProjeKod))
+            .Where(x => MetinEslesir(x.IslemNo,              _eIslemNo))
+            .Where(x => MetinEslesir(x.FisTuru,              _eFisTuru))
+            .Where(x => SayiEslesir(x.Havale,                _eHavale))
+            .OrderBy(x => x.Tarih)
+            .ToList();
+
+        if (liste.Count == 0)
+        {
+            Snackbar.Add("İndirilecek kayıt yok.", Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            var bytes = Excel.ExportEtilAlkolGelenBedeller(liste, _baslangic.Value, _bitis.Value);
+            var fileName = $"EtilAlkol_GelenBedeller_{_baslangic:yyyyMMdd}_{_bitis:yyyyMMdd}.xlsx";
+            await JS.InvokeVoidAsync("downloadFile", fileName, Convert.ToBase64String(bytes),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            Snackbar.Add($"{liste.Count} satır Excel'e aktarıldı.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Excel hatası: " + ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task Cari120_04ExcelIndir()
+    {
+        if (_ham == null || _baslangic == null || _bitis == null) return;
+
+        var liste = _ham
+            .Where(x => (x.ChKod ?? "").StartsWith("120.04", StringComparison.OrdinalIgnoreCase)
+                        && x.HareketTuru == "TAHSİLAT"
+                        && (x.Havale + x.Cek + x.Devir + x.Diger) != 0)
+            .Where(x => string.IsNullOrWhiteSpace(_kkTarih)
+                        || x.Tarih.ToString("dd.MM.yyyy").Contains(_kkTarih.Trim())
+                        || x.Tarih.ToString("yyyy-MM-dd").Contains(_kkTarih.Trim()))
+            .Where(x => MetinEslesir(x.ChKod,                _kkChKod))
+            .Where(x => MetinEslesir(x.ChUnvani,             _kkChUnvan))
+            .Where(x => MetinEslesir(x.Modul,                _kkModul))
+            .Where(x => MetinEslesir(x.BankaHesapKodu,       _kkBankaKod))
+            .Where(x => MetinEslesir(x.BankaHesapAciklamasi, _kkBankaAcik))
+            .Where(x => MetinEslesir(x.ProjeKodu,            _kkProjeKod))
+            .Where(x => MetinEslesir(x.IslemNo,              _kkIslemNo))
+            .Where(x => MetinEslesir(x.FisTuru,              _kkFisTuru))
+            .Where(x => SayiEslesir(x.Havale + x.Cek + x.Devir + x.Diger, _kkTutar))
+            .OrderBy(x => x.Tarih)
+            .ToList();
+
+        if (liste.Count == 0)
+        {
+            Snackbar.Add("İndirilecek kayıt yok.", Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            var bytes = Excel.ExportCariTahsilatlari(liste, _baslangic.Value, _bitis.Value,
+                sheetAdi: "120.04 Tahsilatlar",
+                baslik: "120.04 Carileri — Tahsilatlar (Havale + Kredi Kartı + diğer)",
+                filtreAciklama: "Filtre: CH Kodu 120.04 ile başlayan, Hareket Türü = TAHSİLAT");
+            var fileName = $"Cari120_04_Tahsilatlar_{_baslangic:yyyyMMdd}_{_bitis:yyyyMMdd}.xlsx";
+            await JS.InvokeVoidAsync("downloadFile", fileName, Convert.ToBase64String(bytes),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            Snackbar.Add($"{liste.Count} satır Excel'e aktarıldı.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Excel hatası: " + ex.Message, Severity.Error);
+        }
+    }
+
+    private static string TurkceNormalize(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return "";
+        var sb = new System.Text.StringBuilder(s.Length);
+        foreach (var ch in s)
+        {
+            char n = ch switch
+            {
+                'İ' or 'I' or 'ı' or 'i' => 'i',
+                'Ş' or 'ş' => 's',
+                'Ğ' or 'ğ' => 'g',
+                'Ü' or 'ü' => 'u',
+                'Ö' or 'ö' => 'o',
+                'Ç' or 'ç' => 'c',
+                _ => char.ToLowerInvariant(ch)
+            };
+            sb.Append(n);
+        }
+        return sb.ToString();
     }
 
     private static bool MetinEslesir(string? hucre, string filtre)
         => string.IsNullOrWhiteSpace(filtre) ||
-           (hucre ?? "").Contains(filtre.Trim(), StringComparison.OrdinalIgnoreCase);
+           TurkceNormalize(hucre ?? "").Contains(TurkceNormalize(filtre.Trim()));
 
     private static bool SayiEslesir(decimal deger, string filtre)
     {
@@ -415,15 +790,14 @@ else if (!_yukleniyor)
             q = q.Where(x => x.Modul == _filtreModul);
         if (!string.IsNullOrWhiteSpace(_arama))
         {
-            var s = _arama.Trim();
             q = q.Where(x =>
-                (x.ChUnvani            ?? "").Contains(s, StringComparison.OrdinalIgnoreCase) ||
-                (x.ChKod               ?? "").Contains(s, StringComparison.OrdinalIgnoreCase) ||
-                (x.BankaHesapAciklamasi?? "").Contains(s, StringComparison.OrdinalIgnoreCase) ||
-                (x.BankaHesapKodu      ?? "").Contains(s, StringComparison.OrdinalIgnoreCase) ||
-                (x.ProjeKodu           ?? "").Contains(s, StringComparison.OrdinalIgnoreCase) ||
-                (x.ProjeAdi            ?? "").Contains(s, StringComparison.OrdinalIgnoreCase) ||
-                (x.FisTuru             ?? "").Contains(s, StringComparison.OrdinalIgnoreCase));
+                MetinEslesir(x.ChUnvani,             _arama) ||
+                MetinEslesir(x.ChKod,                _arama) ||
+                MetinEslesir(x.BankaHesapAciklamasi, _arama) ||
+                MetinEslesir(x.BankaHesapKodu,       _arama) ||
+                MetinEslesir(x.ProjeKodu,            _arama) ||
+                MetinEslesir(x.ProjeAdi,             _arama) ||
+                MetinEslesir(x.FisTuru,              _arama));
         }
 
         // Sütun filtreleri

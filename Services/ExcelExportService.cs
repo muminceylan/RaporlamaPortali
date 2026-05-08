@@ -1245,4 +1245,397 @@ public class ExcelExportService
         wb.SaveAs(stream);
         return stream.ToArray();
     }
+
+    /// <summary>
+    /// Etil Alkol Carileri (CH 120.99.10.*) için gelen havale tahsilatlarını Excel'e aktarır.
+    /// </summary>
+    public byte[] ExportEtilAlkolGelenBedeller(List<FinansRaporSatiri> veriler, DateTime baslangic, DateTime bitis)
+        => ExportCariGelenBedeller(veriler, baslangic, bitis,
+            sheetAdi: "Etil Alkol Gelen Bedel",
+            baslik: "Etil Alkol Carileri — Gelen Bedeller (Havale)",
+            filtreAciklama: "Filtre: CH Kodu 120.99.10 ile başlayan, Hareket Türü = TAHSİLAT, Havale > 0");
+
+    /// <summary>
+    /// Cari Gelen Bedeller (Havale tahsilat) için genel Excel dışa aktarımı.
+    /// </summary>
+    public byte[] ExportCariGelenBedeller(
+        List<FinansRaporSatiri> veriler, DateTime baslangic, DateTime bitis,
+        string sheetAdi, string baslik, string filtreAciklama)
+    {
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add(sheetAdi);
+
+        const int colCount = 9;
+        ws.Cell(1, 1).Value = $"{baslik}   {baslangic:dd.MM.yyyy} / {bitis:dd.MM.yyyy}";
+        ws.Range(1, 1, 1, colCount).Merge();
+        ws.Cell(1, 1).Style.Font.Bold = true;
+        ws.Cell(1, 1).Style.Font.FontSize = 13;
+        ws.Cell(1, 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        ws.Cell(1, 1).Style.Fill.BackgroundColor = XLColor.FromHtml("#E3F2FD");
+
+        ws.Cell(2, 1).Value = filtreAciklama;
+        ws.Range(2, 1, 2, colCount).Merge();
+        ws.Cell(2, 1).Style.Font.Italic = true;
+        ws.Cell(2, 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+        string[] basliklar = { "Tarih", "CH Kodu", "CH Ünvanı", "Banka Kodu",
+                               "Banka Açıklaması", "Proje Kodu", "İşlem No", "Fiş Türü", "Havale (₺)" };
+        const int hr = 4;
+        for (int i = 0; i < basliklar.Length; i++)
+        {
+            var c = ws.Cell(hr, i + 1);
+            c.Value = basliklar[i];
+            c.Style.Font.Bold = true;
+            c.Style.Fill.BackgroundColor = XLColor.FromHtml("#1976D2");
+            c.Style.Font.FontColor = XLColor.White;
+            c.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            c.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+        }
+
+        int row = hr + 1;
+        decimal toplam = 0;
+        foreach (var x in veriler)
+        {
+            ws.Cell(row, 1).Value = x.Tarih;
+            ws.Cell(row, 1).Style.NumberFormat.Format = "dd.MM.yyyy";
+            ws.Cell(row, 2).Value = x.ChKod;
+            ws.Cell(row, 3).Value = x.ChUnvani;
+            ws.Cell(row, 4).Value = x.BankaHesapKodu;
+            ws.Cell(row, 5).Value = x.BankaHesapAciklamasi;
+            ws.Cell(row, 6).Value = x.ProjeKodu;
+            ws.Cell(row, 7).Value = x.IslemNo;
+            ws.Cell(row, 8).Value = x.FisTuru;
+            ws.Cell(row, 9).Value = x.Havale;
+            ws.Cell(row, 9).Style.NumberFormat.Format = "#,##0.00";
+            toplam += x.Havale;
+            row++;
+        }
+
+        // Toplam satırı
+        ws.Cell(row, 1).Value = $"TOPLAM ({veriler.Count} satır)";
+        ws.Range(row, 1, row, 8).Merge();
+        ws.Cell(row, 1).Style.Font.Bold = true;
+        ws.Cell(row, 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+        ws.Cell(row, 1).Style.Fill.BackgroundColor = XLColor.FromHtml("#FFF59D");
+        ws.Cell(row, 9).Value = toplam;
+        ws.Cell(row, 9).Style.NumberFormat.Format = "#,##0.00";
+        ws.Cell(row, 9).Style.Font.Bold = true;
+        ws.Cell(row, 9).Style.Fill.BackgroundColor = XLColor.FromHtml("#FFF59D");
+        ws.Range(row, 1, row, 9).Style.Border.TopBorder = XLBorderStyleValues.Medium;
+
+        // Sütun genişlikleri (manuel ayar — AdjustToContents bazen başlığa göre dar bırakıyor)
+        ws.Column(1).Width = 12;   // Tarih
+        ws.Column(2).Width = 18;   // CH Kodu
+        ws.Column(3).Width = 45;   // CH Ünvanı
+        ws.Column(4).Width = 14;   // Banka Kodu
+        ws.Column(5).Width = 30;   // Banka Açıklaması
+        ws.Column(6).Width = 14;   // Proje Kodu
+        ws.Column(7).Width = 16;   // İşlem No
+        ws.Column(8).Width = 12;   // Fiş Türü
+        ws.Column(9).Width = 16;   // Havale
+
+        // Otomatik filtre + üst satır dondurma
+        if (row > hr + 1)
+            ws.Range(hr, 1, row - 1, colCount).SetAutoFilter();
+        ws.SheetView.FreezeRows(hr);
+
+        // Yazdırma ayarı: yatay + 1 sayfa eni + başlık satırı her sayfada
+        YazdirmaAyariUygula(ws, basliksatiri: hr);
+
+        using var stream = new MemoryStream();
+        wb.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    /// <summary>
+    /// 120.04.* carileri için TAHSİLAT (Havale + Kredi Kartı + diğer) tüm tahsilat tiplerini Excel'e aktarır.
+    /// </summary>
+    public byte[] ExportCariTahsilatlari(
+        List<FinansRaporSatiri> veriler, DateTime baslangic, DateTime bitis,
+        string sheetAdi, string baslik, string filtreAciklama)
+    {
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add(sheetAdi);
+
+        const int colCount = 10;
+        ws.Cell(1, 1).Value = $"{baslik}   {baslangic:dd.MM.yyyy} / {bitis:dd.MM.yyyy}";
+        ws.Range(1, 1, 1, colCount).Merge();
+        ws.Cell(1, 1).Style.Font.Bold = true;
+        ws.Cell(1, 1).Style.Font.FontSize = 13;
+        ws.Cell(1, 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        ws.Cell(1, 1).Style.Fill.BackgroundColor = XLColor.FromHtml("#E8F5E9");
+
+        ws.Cell(2, 1).Value = filtreAciklama;
+        ws.Range(2, 1, 2, colCount).Merge();
+        ws.Cell(2, 1).Style.Font.Italic = true;
+        ws.Cell(2, 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+        string[] basliklar = { "Tarih", "CH Kodu", "CH Ünvanı", "Modül",
+                               "Banka Kodu", "Banka Açıklaması", "Proje Kodu",
+                               "İşlem No", "Fiş Türü", "Tutar (₺)" };
+        const int hr = 4;
+        for (int i = 0; i < basliklar.Length; i++)
+        {
+            var c = ws.Cell(hr, i + 1);
+            c.Value = basliklar[i];
+            c.Style.Font.Bold = true;
+            c.Style.Fill.BackgroundColor = XLColor.FromHtml("#2E7D32");
+            c.Style.Font.FontColor = XLColor.White;
+            c.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            c.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+        }
+
+        int row = hr + 1;
+        decimal toplam = 0;
+        foreach (var x in veriler)
+        {
+            var tutar = x.Havale + x.Cek + x.Devir + x.Diger;
+            ws.Cell(row, 1).Value = x.Tarih;
+            ws.Cell(row, 1).Style.NumberFormat.Format = "dd.MM.yyyy";
+            ws.Cell(row, 2).Value = x.ChKod;
+            ws.Cell(row, 3).Value = x.ChUnvani;
+            ws.Cell(row, 4).Value = x.Modul;
+            ws.Cell(row, 5).Value = x.BankaHesapKodu;
+            ws.Cell(row, 6).Value = x.BankaHesapAciklamasi;
+            ws.Cell(row, 7).Value = x.ProjeKodu;
+            ws.Cell(row, 8).Value = x.IslemNo;
+            ws.Cell(row, 9).Value = x.FisTuru;
+            ws.Cell(row, 10).Value = tutar;
+            ws.Cell(row, 10).Style.NumberFormat.Format = "#,##0.00";
+            toplam += tutar;
+            row++;
+        }
+
+        // Toplam satırı
+        ws.Cell(row, 1).Value = $"TOPLAM ({veriler.Count} satır)";
+        ws.Range(row, 1, row, 9).Merge();
+        ws.Cell(row, 1).Style.Font.Bold = true;
+        ws.Cell(row, 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+        ws.Cell(row, 1).Style.Fill.BackgroundColor = XLColor.FromHtml("#FFF59D");
+        ws.Cell(row, 10).Value = toplam;
+        ws.Cell(row, 10).Style.NumberFormat.Format = "#,##0.00";
+        ws.Cell(row, 10).Style.Font.Bold = true;
+        ws.Cell(row, 10).Style.Fill.BackgroundColor = XLColor.FromHtml("#FFF59D");
+        ws.Range(row, 1, row, 10).Style.Border.TopBorder = XLBorderStyleValues.Medium;
+
+        ws.Column(1).Width = 12;
+        ws.Column(2).Width = 18;
+        ws.Column(3).Width = 45;
+        ws.Column(4).Width = 14;
+        ws.Column(5).Width = 14;
+        ws.Column(6).Width = 30;
+        ws.Column(7).Width = 14;
+        ws.Column(8).Width = 16;
+        ws.Column(9).Width = 22;
+        ws.Column(10).Width = 16;
+
+        if (row > hr + 1)
+            ws.Range(hr, 1, row - 1, colCount).SetAutoFilter();
+        ws.SheetView.FreezeRows(hr);
+
+        YazdirmaAyariUygula(ws, basliksatiri: hr);
+
+        using var stream = new MemoryStream();
+        wb.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    /// <summary>
+    /// Cari mutabakat sonucunu üç sayfalık Excel'e aktarır:
+    /// 1) Eşleşenler  2) Sadece Bizde  3) Sadece Onlarda  +  4) Özet (üst sayfa)
+    /// </summary>
+    public byte[] MutabakatExportEt(MutabakatSonuc s)
+    {
+        using var wb = new XLWorkbook();
+
+        // ---- Sayfa 1: ÖZET ----
+        var ozet = wb.Worksheets.Add("Özet");
+        ozet.Cell(1, 1).Value = "CARİ MUTABAKAT RAPORU";
+        ozet.Cell(1, 1).Style.Font.Bold = true;
+        ozet.Cell(1, 1).Style.Font.FontSize = 16;
+        ozet.Range(1, 1, 1, 4).Merge();
+        ozet.Range(1, 1, 1, 4).Style.Fill.BackgroundColor = XLColor.FromHtml("#1976D2");
+        ozet.Range(1, 1, 1, 4).Style.Font.FontColor = XLColor.White;
+        ozet.Range(1, 1, 1, 4).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+        ozet.Cell(3, 1).Value = "Vergi/TC No:";
+        ozet.Cell(3, 2).Value = s.AranılanVergiNo;
+        ozet.Cell(4, 1).Value = "Tarih Aralığı:";
+        ozet.Cell(4, 2).Value = $"{s.Baslangic:dd.MM.yyyy} - {s.Bitis:dd.MM.yyyy}";
+        ozet.Cell(5, 1).Value = "Bizdeki Cari Sayısı:";
+        ozet.Cell(5, 2).Value = s.EslesenCariler.Count;
+        ozet.Range(3, 1, 5, 1).Style.Font.Bold = true;
+
+        ozet.Cell(7, 1).Value = "TOPLAMLAR";
+        ozet.Cell(7, 1).Style.Font.Bold = true;
+        ozet.Cell(7, 1).Style.Fill.BackgroundColor = XLColor.FromHtml("#E3F2FD");
+        ozet.Range(7, 1, 7, 4).Merge();
+
+        ozet.Cell(8, 1).Value = "";
+        ozet.Cell(8, 2).Value = "Borç";
+        ozet.Cell(8, 3).Value = "Alacak";
+        ozet.Cell(8, 4).Value = "Net (Borç-Alacak)";
+        ozet.Range(8, 1, 8, 4).Style.Font.Bold = true;
+
+        ozet.Cell(9, 1).Value = "Bizdeki";
+        ozet.Cell(9, 2).Value = s.BizimToplamBorc;
+        ozet.Cell(9, 3).Value = s.BizimToplamAlacak;
+        ozet.Cell(9, 4).Value = s.BizimNet;
+
+        ozet.Cell(10, 1).Value = "Onlarda";
+        ozet.Cell(10, 2).Value = s.OnlarToplamBorc;
+        ozet.Cell(10, 3).Value = s.OnlarToplamAlacak;
+        ozet.Cell(10, 4).Value = s.OnlarNet;
+
+        ozet.Cell(11, 1).Value = "Mutabakat Farkı";
+        ozet.Cell(11, 4).Value = s.MutabakatFarki;
+        ozet.Cell(11, 1).Style.Font.Bold = true;
+        ozet.Cell(11, 4).Style.Font.Bold = true;
+        ozet.Cell(11, 4).Style.Fill.BackgroundColor =
+            Math.Abs(s.MutabakatFarki) < 0.01m ? XLColor.FromHtml("#C8E6C9") : XLColor.FromHtml("#FFCDD2");
+
+        ozet.Range(9, 2, 11, 4).Style.NumberFormat.Format = "#,##0.00";
+
+        ozet.Cell(13, 1).Value = "Eşleşen Hareketler:";
+        ozet.Cell(13, 2).Value = s.Eslesenler.Count;
+        ozet.Cell(14, 1).Value = "Sadece Bizde:";
+        ozet.Cell(14, 2).Value = s.SadeceBizde.Count;
+        ozet.Cell(15, 1).Value = "Sadece Onlarda:";
+        ozet.Cell(15, 2).Value = s.SadeceOnlarda.Count;
+        ozet.Range(13, 1, 15, 1).Style.Font.Bold = true;
+
+        if (s.EslesenCariler.Count > 0)
+        {
+            int r = 17;
+            ozet.Cell(r, 1).Value = "BİZDEKİ CARİ KARTLARI";
+            ozet.Cell(r, 1).Style.Font.Bold = true;
+            ozet.Cell(r, 1).Style.Fill.BackgroundColor = XLColor.FromHtml("#E3F2FD");
+            ozet.Range(r, 1, r, 4).Merge();
+            r++;
+            ozet.Cell(r, 1).Value = "Kod";
+            ozet.Cell(r, 2).Value = "Ünvan";
+            ozet.Cell(r, 3).Value = "Vergi/TC";
+            ozet.Cell(r, 4).Value = "Hareket";
+            ozet.Range(r, 1, r, 4).Style.Font.Bold = true;
+            r++;
+            foreach (var c in s.EslesenCariler)
+            {
+                ozet.Cell(r, 1).Value = c.Kod;
+                ozet.Cell(r, 2).Value = c.Unvan;
+                ozet.Cell(r, 3).Value = c.VergiNo;
+                ozet.Cell(r, 4).Value = c.HareketSayisi;
+                r++;
+            }
+        }
+        ozet.Column(1).Width = 22;
+        ozet.Column(2).Width = 38;
+        ozet.Column(3).Width = 18;
+        ozet.Column(4).Width = 18;
+        YazdirmaAyariUygula(ozet);
+
+        // ---- Sayfa 2: Eşleşenler ----
+        var es = wb.Worksheets.Add("Eşleşenler");
+        var esBaslik = new[] { "Bizim Tarih", "Bizim Cari", "Bizim Cari Ünvan", "Bizim Fiş",
+            "Bizim Borç", "Bizim Alacak",
+            "Onlar Tarih", "Onlar Açıklama", "Onlar Fiş", "Onlar Borç", "Onlar Alacak",
+            "Gün Farkı", "Tutar Farkı", "Yöntem" };
+        for (int i = 0; i < esBaslik.Length; i++)
+        {
+            var c = es.Cell(1, i + 1);
+            c.Value = esBaslik[i];
+            c.Style.Font.Bold = true;
+            c.Style.Fill.BackgroundColor = XLColor.FromHtml("#2E7D32");
+            c.Style.Font.FontColor = XLColor.White;
+        }
+        int row1 = 2;
+        foreach (var e in s.Eslesenler)
+        {
+            es.Cell(row1, 1).Value = e.Bizim.Tarih;
+            es.Cell(row1, 1).Style.DateFormat.Format = "dd.MM.yyyy";
+            es.Cell(row1, 2).Value = e.Bizim.CariKodu;
+            es.Cell(row1, 3).Value = e.Bizim.CariUnvan;
+            es.Cell(row1, 4).Value = e.Bizim.FisNo;
+            es.Cell(row1, 5).Value = e.Bizim.Borc;
+            es.Cell(row1, 6).Value = e.Bizim.Alacak;
+            es.Cell(row1, 7).Value = e.Onlar.Tarih;
+            es.Cell(row1, 7).Style.DateFormat.Format = "dd.MM.yyyy";
+            es.Cell(row1, 8).Value = e.Onlar.Aciklama;
+            es.Cell(row1, 9).Value = e.Onlar.FisNo;
+            es.Cell(row1, 10).Value = e.Onlar.Borc;
+            es.Cell(row1, 11).Value = e.Onlar.Alacak;
+            es.Cell(row1, 12).Value = e.GunFarki;
+            es.Cell(row1, 13).Value = e.TutarFarki;
+            es.Cell(row1, 14).Value = e.EslesmeYontemi;
+            row1++;
+        }
+        es.Range(2, 5, Math.Max(2, row1 - 1), 6).Style.NumberFormat.Format = "#,##0.00";
+        es.Range(2, 10, Math.Max(2, row1 - 1), 11).Style.NumberFormat.Format = "#,##0.00";
+        es.Range(2, 13, Math.Max(2, row1 - 1), 13).Style.NumberFormat.Format = "#,##0.00";
+        es.Columns().AdjustToContents(1, 60);
+        if (row1 > 2) es.Range(1, 1, row1 - 1, esBaslik.Length).SetAutoFilter();
+        es.SheetView.FreezeRows(1);
+        YazdirmaAyariUygula(es, basliksatiri: 1);
+
+        // ---- Sayfa 3: Sadece Bizde ----
+        var sb = wb.Worksheets.Add("Sadece Bizde");
+        TekTaraflıYaz(sb, s.SadeceBizde, bizim: true);
+        YazdirmaAyariUygula(sb, basliksatiri: 1);
+
+        // ---- Sayfa 4: Sadece Onlarda ----
+        var so = wb.Worksheets.Add("Sadece Onlarda");
+        TekTaraflıYaz(so, s.SadeceOnlarda, bizim: false);
+        YazdirmaAyariUygula(so, basliksatiri: 1);
+
+        using var stream = new MemoryStream();
+        wb.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    private static void TekTaraflıYaz(IXLWorksheet ws, List<MutabakatKayit> liste, bool bizim)
+    {
+        var basliklar = bizim
+            ? new[] { "Tarih", "Cari Kodu", "Cari Ünvanı", "Fiş No", "Fiş Türü", "Açıklama", "Borç", "Alacak" }
+            : new[] { "Tarih", "Açıklama", "Fiş No", "Borç", "Alacak" };
+
+        var baslikRengi = bizim ? "#F57C00" : "#C62828";
+        for (int i = 0; i < basliklar.Length; i++)
+        {
+            var c = ws.Cell(1, i + 1);
+            c.Value = basliklar[i];
+            c.Style.Font.Bold = true;
+            c.Style.Fill.BackgroundColor = XLColor.FromHtml(baslikRengi);
+            c.Style.Font.FontColor = XLColor.White;
+        }
+
+        int r = 2;
+        foreach (var k in liste)
+        {
+            int col = 1;
+            ws.Cell(r, col).Value = k.Tarih;
+            ws.Cell(r, col).Style.DateFormat.Format = "dd.MM.yyyy";
+            col++;
+            if (bizim)
+            {
+                ws.Cell(r, col++).Value = k.CariKodu;
+                ws.Cell(r, col++).Value = k.CariUnvan;
+                ws.Cell(r, col++).Value = k.FisNo;
+                ws.Cell(r, col++).Value = k.FisTuru;
+                ws.Cell(r, col++).Value = k.Aciklama;
+            }
+            else
+            {
+                ws.Cell(r, col++).Value = k.Aciklama;
+                ws.Cell(r, col++).Value = k.FisNo;
+            }
+            ws.Cell(r, col++).Value = k.Borc;
+            ws.Cell(r, col++).Value = k.Alacak;
+            r++;
+        }
+        int borcAlacakStart = bizim ? 7 : 4;
+        if (r > 2)
+            ws.Range(2, borcAlacakStart, r - 1, borcAlacakStart + 1).Style.NumberFormat.Format = "#,##0.00";
+        ws.Columns().AdjustToContents(1, 60);
+        if (r > 2) ws.Range(1, 1, r - 1, basliklar.Length).SetAutoFilter();
+        ws.SheetView.FreezeRows(1);
+    }
 }
