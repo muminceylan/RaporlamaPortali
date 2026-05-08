@@ -6,8 +6,19 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication;
 
-// Başlatma şifresi sor. Yanlış/iptal → process kapanır.
+// Başlatma şifresi sor + şifrelenmiş kasayı (vault) aç. Yanlış/iptal → process kapanır.
+// Require() bittiğinde SecretsService de yüklü; SQL şifreleri / mail şifresi / Claude API key
+// hep buradan okunacak.
 RaporlamaPortali.Services.LaunchAuthService.Require();
+
+// Anthropic API key — ClaudeService env var'dan okuyor, kasadan gelen değeri Process scope'a yansıt
+if (!string.IsNullOrEmpty(RaporlamaPortali.Services.SecretsService.AnthropicApiKey))
+{
+    Environment.SetEnvironmentVariable(
+        "ANTHROPIC_API_KEY",
+        RaporlamaPortali.Services.SecretsService.AnthropicApiKey,
+        EnvironmentVariableTarget.Process);
+}
 
 // Alt çizgili SQL kolon adlarını PascalCase property'lere otomatik eşleştir
 // Örn: MALZEME_KODU → MalzemeKodu, AMBAR_NO → AmbarNo
@@ -29,6 +40,23 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
     ContentRootPath = exeDir,
     WebRootPath     = Path.Combine(exeDir, "wwwroot")
 });
+
+// Şifrelenmiş kasadan gelen değerleri IConfiguration'a bindir.
+// Bu kayıt en sona eklenir → appsettings.json'daki (boş/placeholder) değerleri ezer.
+// DatabaseService, MailGonderimService vb. constructor'ları bu sayede şifrelenmiş değeri görür.
+{
+    var s = RaporlamaPortali.Services.SecretsService.Snapshot();
+    var ovr = new Dictionary<string, string?>();
+    if (!string.IsNullOrWhiteSpace(s.LogoConnectionString))
+        ovr["ConnectionStrings:LogoDB"]   = s.LogoConnectionString;
+    if (!string.IsNullOrWhiteSpace(s.KantarConnectionString))
+        ovr["ConnectionStrings:KantarDB"] = s.KantarConnectionString;
+    if (!string.IsNullOrWhiteSpace(s.PmhsConnectionString))
+        ovr["ConnectionStrings:PMHSDB"]   = s.PmhsConnectionString;
+    if (!string.IsNullOrWhiteSpace(s.MailPassword))
+        ovr["MailAyarlari:Sifre"]         = s.MailPassword;
+    if (ovr.Count > 0) builder.Configuration.AddInMemoryCollection(ovr);
+}
 
 // IIS out-of-process altında çalışmıyorsa Kestrel portunu sabitle
 if (Environment.GetEnvironmentVariable("ASPNETCORE_PORT") == null &&
