@@ -113,6 +113,7 @@ builder.Services.AddScoped<FinansRaporService>();
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<ClaudeService>();
 builder.Services.AddScoped<MutabakatService>();
+builder.Services.AddScoped<KarsiFirmaKurFarkiService>();
 
 // SabNet Kantar — SabNetKANTAR SQL Server'dan SabNet.db SQLite'a aktarım + listeleme
 builder.Services.AddSingleton<SabNetDbService>();

@@ -207,14 +207,20 @@ client.on('qr', (qr) => {
 
 client.on('loading_screen', (percent, message) => {
     console.log(`[WhatsApp] Yukleniyor: ${percent}% ${message || ''}`);
-    durumYaz('BAGLANIYOR', '');
+    // BAGLI iken sync amaçlı loading_screen tetiklenebiliyor — durumu geri düşürme
+    if (_sonDurum !== 'BAGLI') durumYaz('BAGLANIYOR', '');
 });
 
 client.on('authenticated', () => {
     console.log('[WhatsApp] Kimlik dogrulandi, ready bekleniyor...');
-    durumYaz('BAGLANIYOR', '');
-    // Authentication sonrasi 90 sn icinde ready gelmezse yeniden baslat
-    hazirTimerKur(90, 'authenticated sonrasi ready gelmedi');
+    // BAGLI iken authenticated yeniden firing edebilir (re-auth/sync).
+    // Bu durumda durumu geri düşürme ve "kendini öldür" timerini kurma — yoksa döngüye girer.
+    if (_sonDurum !== 'BAGLI') {
+        durumYaz('BAGLANIYOR', '');
+        hazirTimerKur(90, 'authenticated sonrasi ready gelmedi');
+    } else {
+        console.log('[WhatsApp] Zaten BAGLI iken authenticated — yok sayildi.');
+    }
 });
 
 let _tumSistemHazir = false;

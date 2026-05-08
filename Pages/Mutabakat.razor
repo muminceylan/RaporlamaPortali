@@ -264,7 +264,7 @@
             </MudTable>
         </MudTabPanel>
 
-        <MudTabPanel Text="@($"🔍 AI Parse Çıktısı ({_sonuc.AIHamKayitlar.Count})")">
+        <MudTabPanel Text="@($"🔍 Mümin Yazılım Parse Çıktısı ({_sonuc.AIHamKayitlar.Count})")">
             <MudAlert Severity="Severity.Info" Dense="true" Class="mb-2">
                 <b>Debug:</b> AI'nın ekstreden çıkardığı TÜM satırlar (tarih filtresi öncesi). Bu listede
                 olması gereken bir kayıt YOKSA → AI o satırı yanlış parse etmiş demektir (genelde TL yerine
@@ -336,7 +336,7 @@
         _calisiyor = true;
         try
         {
-            Snackbar.Add("Ekstre AI ile parse ediliyor...", Severity.Info);
+            Snackbar.Add("Ekstre Mümin CEYLAN uygulaması ile parse ediliyor...", Severity.Info);
             var aiHam = await AI.EkstreyiParseEtAsync(_dosyaBytes, _dosyaAdi);
             Snackbar.Add($"{aiHam.Count} satır parse edildi.", Severity.Success);
 
@@ -394,7 +394,9 @@
         {
             var bytes = Excel.MutabakatExportEt(_sonuc);
             var ad = $"Mutabakat_{_vkn}_{_baslangic:yyyyMMdd}_{_bitis:yyyyMMdd}.xlsx";
-            await JS.InvokeVoidAsync("downloadFileFromStream", ad, bytes);
+            using var stream = new MemoryStream(bytes);
+            using var streamRef = new DotNetStreamReference(stream);
+            await JS.InvokeVoidAsync("downloadFileFromStream", ad, streamRef);
         }
         catch (Exception ex)
         {

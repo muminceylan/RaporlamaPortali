@@ -1638,4 +1638,188 @@ public class ExcelExportService
         if (r > 2) ws.Range(1, 1, r - 1, basliklar.Length).SetAutoFilter();
         ws.SheetView.FreezeRows(1);
     }
+
+    public byte[] KurFarkiExportEt(KurFarkiSonuc s)
+    {
+        using var wb = new XLWorkbook();
+
+        // ---- Özet ----
+        var ozet = wb.Worksheets.Add("Özet");
+        ozet.Cell(1, 1).Value = "KARŞI FİRMA KUR FARKI RAPORU (FIFO)";
+        ozet.Cell(1, 1).Style.Font.Bold = true;
+        ozet.Cell(1, 1).Style.Font.FontSize = 16;
+        ozet.Range(1, 1, 1, 5).Merge();
+        ozet.Range(1, 1, 1, 5).Style.Fill.BackgroundColor = XLColor.FromHtml("#1976D2");
+        ozet.Range(1, 1, 1, 5).Style.Font.FontColor = XLColor.White;
+        ozet.Range(1, 1, 1, 5).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+        ozet.Cell(3, 1).Value = "Vergi/TC No:";
+        ozet.Cell(3, 2).Value = s.AranılanVergiNo;
+        ozet.Cell(4, 1).Value = "Tarih Aralığı:";
+        ozet.Cell(4, 2).Value = $"{s.Baslangic:dd.MM.yyyy} - {s.Bitis:dd.MM.yyyy}";
+        ozet.Cell(5, 1).Value = "Döviz Cinsi:";
+        ozet.Cell(5, 2).Value = s.Doviz;
+        ozet.Cell(6, 1).Value = "Toplam Fatura (Döviz):";
+        ozet.Cell(6, 2).Value = s.ToplamFaturaDoviz;
+        ozet.Cell(7, 1).Value = "Toplam Ödeme (Döviz):";
+        ozet.Cell(7, 2).Value = s.ToplamOdemeDoviz;
+        ozet.Cell(8, 1).Value = "① FIFO Toplam Kur Farkı (TL):";
+        ozet.Cell(8, 2).Value = s.ToplamKurFarki;
+        ozet.Cell(8, 1).Style.Font.Bold = true;
+        ozet.Cell(8, 2).Style.Font.Bold = true;
+        ozet.Cell(8, 2).Style.Fill.BackgroundColor =
+            s.ToplamKurFarki >= 0 ? XLColor.FromHtml("#C8E6C9") : XLColor.FromHtml("#FFCDD2");
+        ozet.Cell(9, 1).Value = "② Belge Bazlı Toplam TL Farkı:";
+        ozet.Cell(9, 2).Value = s.BelgeBazliToplamTLFarki;
+        ozet.Cell(9, 1).Style.Font.Bold = true;
+        ozet.Cell(9, 2).Style.Font.Bold = true;
+        ozet.Cell(9, 2).Style.Fill.BackgroundColor =
+            s.BelgeBazliToplamTLFarki >= 0 ? XLColor.FromHtml("#C8E6C9") : XLColor.FromHtml("#FFCDD2");
+        ozet.Range(3, 1, 9, 1).Style.Font.Bold = true;
+        ozet.Range(6, 2, 9, 2).Style.NumberFormat.Format = "#,##0.00";
+        ozet.Column(1).Width = 32;
+        ozet.Column(2).Width = 20;
+        YazdirmaAyariUygula(ozet);
+
+        // ---- ① FIFO Eşleşmeler ----
+        var es = wb.Worksheets.Add("① FIFO Eşleşmeleri");
+        var basliklar = new[]
+        {
+            "Fatura Tarih","Fatura Açıklama","Fatura Fiş",
+            "Fatura Döviz","Fatura TL","Fatura Kur",
+            "Ödeme Tarih","Ödeme Açıklama","Ödeme Fiş",
+            "Ödeme Döviz","Ödeme TL","Ödeme Kur",
+            "Eşleşen Döviz","Kur Farkı (TL)"
+        };
+        for (int i = 0; i < basliklar.Length; i++)
+        {
+            var c = es.Cell(1, i + 1);
+            c.Value = basliklar[i];
+            c.Style.Font.Bold = true;
+            c.Style.Fill.BackgroundColor = XLColor.FromHtml("#1565C0");
+            c.Style.Font.FontColor = XLColor.White;
+        }
+        int r1 = 2;
+        foreach (var e in s.Eslesmeler)
+        {
+            es.Cell(r1, 1).Value = e.FaturaTarihi;  es.Cell(r1, 1).Style.DateFormat.Format = "dd.MM.yyyy";
+            es.Cell(r1, 2).Value = e.FaturaAciklama;
+            es.Cell(r1, 3).Value = e.FaturaFisNo;
+            es.Cell(r1, 4).Value = e.FaturaDoviz;
+            es.Cell(r1, 5).Value = e.FaturaTL;
+            es.Cell(r1, 6).Value = e.FaturaKur;
+            es.Cell(r1, 7).Value = e.OdemeTarihi;   es.Cell(r1, 7).Style.DateFormat.Format = "dd.MM.yyyy";
+            es.Cell(r1, 8).Value = e.OdemeAciklama;
+            es.Cell(r1, 9).Value = e.OdemeFisNo;
+            es.Cell(r1, 10).Value = e.OdemeDoviz;
+            es.Cell(r1, 11).Value = e.OdemeTL;
+            es.Cell(r1, 12).Value = e.OdemeKur;
+            es.Cell(r1, 13).Value = e.EslesenDoviz;
+            es.Cell(r1, 14).Value = e.KurFarki;
+            r1++;
+        }
+        if (r1 > 2)
+        {
+            es.Range(2, 4, r1 - 1, 5).Style.NumberFormat.Format = "#,##0.00";
+            es.Range(2, 6, r1 - 1, 6).Style.NumberFormat.Format = "#,##0.0000";
+            es.Range(2, 10, r1 - 1, 11).Style.NumberFormat.Format = "#,##0.00";
+            es.Range(2, 12, r1 - 1, 12).Style.NumberFormat.Format = "#,##0.0000";
+            es.Range(2, 13, r1 - 1, 13).Style.NumberFormat.Format = "#,##0.00";
+            es.Range(2, 14, r1 - 1, 14).Style.NumberFormat.Format = "#,##0.00";
+            es.Range(1, 1, r1 - 1, basliklar.Length).SetAutoFilter();
+        }
+        es.Columns().AdjustToContents(1, 60);
+        es.SheetView.FreezeRows(1);
+        YazdirmaAyariUygula(es, basliksatiri: 1);
+
+        // ---- ② Belge Bazlı Kur Farkı (Bizim Logo ↔ Onlar) ----
+        if (s.BelgeBazliFarklar.Count > 0)
+        {
+            var bb = wb.Worksheets.Add("② Belge Bazlı Kur Farkı");
+            var bbBaslik = new[]
+            {
+                "Tarih","Yön","Cari","Fiş No","Açıklama",
+                "Döviz Tutarı","Döviz Cinsi",
+                "Bizim TL","Bizim Kur",
+                "Onların TL","Onların Kur",
+                "TL Farkı","Kur Farkı","Yöntem"
+            };
+            for (int i = 0; i < bbBaslik.Length; i++)
+            {
+                var c = bb.Cell(1, i + 1);
+                c.Value = bbBaslik[i];
+                c.Style.Font.Bold = true;
+                c.Style.Fill.BackgroundColor = XLColor.FromHtml("#EF6C00");
+                c.Style.Font.FontColor = XLColor.White;
+            }
+            int rb = 2;
+            foreach (var b in s.BelgeBazliFarklar)
+            {
+                bb.Cell(rb, 1).Value = b.Tarih; bb.Cell(rb, 1).Style.DateFormat.Format = "dd.MM.yyyy";
+                bb.Cell(rb, 2).Value = b.Yon;
+                bb.Cell(rb, 3).Value = b.BizimCariKodu;
+                bb.Cell(rb, 4).Value = b.FisNo;
+                bb.Cell(rb, 5).Value = b.Aciklama;
+                bb.Cell(rb, 6).Value = b.DovizTutar;
+                bb.Cell(rb, 7).Value = b.Doviz;
+                bb.Cell(rb, 8).Value = b.BizimTL;
+                bb.Cell(rb, 9).Value = b.BizimKur;
+                bb.Cell(rb, 10).Value = b.OnlarTL;
+                bb.Cell(rb, 11).Value = b.OnlarKur;
+                bb.Cell(rb, 12).Value = b.TLFarki;
+                bb.Cell(rb, 13).Value = b.KurFarki;
+                bb.Cell(rb, 14).Value = b.EslesmeYontemi;
+                bb.Cell(rb, 12).Style.Fill.BackgroundColor = b.TLFarki > 0
+                    ? XLColor.FromHtml("#C8E6C9")
+                    : (b.TLFarki < 0 ? XLColor.FromHtml("#FFCDD2") : XLColor.NoColor);
+                rb++;
+            }
+            if (rb > 2)
+            {
+                bb.Range(2, 6, rb - 1, 6).Style.NumberFormat.Format = "#,##0.00";
+                bb.Range(2, 8, rb - 1, 8).Style.NumberFormat.Format = "#,##0.00";
+                bb.Range(2, 9, rb - 1, 9).Style.NumberFormat.Format = "#,##0.0000";
+                bb.Range(2, 10, rb - 1, 10).Style.NumberFormat.Format = "#,##0.00";
+                bb.Range(2, 11, rb - 1, 11).Style.NumberFormat.Format = "#,##0.0000";
+                bb.Range(2, 12, rb - 1, 12).Style.NumberFormat.Format = "#,##0.00";
+                bb.Range(2, 13, rb - 1, 13).Style.NumberFormat.Format = "#,##0.0000";
+                bb.Range(1, 1, rb - 1, bbBaslik.Length).SetAutoFilter();
+            }
+            bb.Columns().AdjustToContents(1, 60);
+            bb.SheetView.FreezeRows(1);
+            YazdirmaAyariUygula(bb, basliksatiri: 1);
+        }
+
+        // ---- Açık Faturalar ----
+        if (s.AcikFaturalar.Count > 0)
+        {
+            var af = wb.Worksheets.Add("Açık Faturalar");
+            af.Cell(1, 1).Value = "Tarih";
+            af.Cell(1, 2).Value = "Açıklama";
+            af.Cell(1, 3).Value = "Fiş";
+            af.Cell(1, 4).Value = "Kalan Döviz";
+            af.Cell(1, 5).Value = "Kalan TL (yaklaşık)";
+            af.Range(1, 1, 1, 5).Style.Font.Bold = true;
+            af.Range(1, 1, 1, 5).Style.Fill.BackgroundColor = XLColor.FromHtml("#EF6C00");
+            af.Range(1, 1, 1, 5).Style.Font.FontColor = XLColor.White;
+            int r2 = 2;
+            foreach (var f in s.AcikFaturalar)
+            {
+                af.Cell(r2, 1).Value = f.Tarih; af.Cell(r2, 1).Style.DateFormat.Format = "dd.MM.yyyy";
+                af.Cell(r2, 2).Value = f.Aciklama;
+                af.Cell(r2, 3).Value = f.FisNo;
+                af.Cell(r2, 4).Value = f.DovizAlacak;
+                af.Cell(r2, 5).Value = f.Alacak;
+                r2++;
+            }
+            if (r2 > 2) af.Range(2, 4, r2 - 1, 5).Style.NumberFormat.Format = "#,##0.00";
+            af.Columns().AdjustToContents(1, 60);
+            af.SheetView.FreezeRows(1);
+            YazdirmaAyariUygula(af, basliksatiri: 1);
+        }
+
+        using var ms = new MemoryStream();
+        wb.SaveAs(ms);
+        return ms.ToArray();
+    }
 }
