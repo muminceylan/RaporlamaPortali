@@ -77,10 +77,14 @@
                 <MudNavLink Href="/cari-hareket" Icon="@Icons.Material.Filled.ReceiptLong" IconColor="Color.Primary">
                     Cari Hesap Hareketleri
                 </MudNavLink>
-                <MudNavLink Href="/mutabakat" Icon="@Icons.Material.Filled.CompareArrows" IconColor="Color.Primary">
+            </MudNavGroup>
+
+            <MudNavGroup Title="Mutabakat ve Kur Farkı" Icon="@Icons.Material.Filled.CompareArrows" @bind-Expanded="_mutabakatOpen"
+                         IconColor="Color.Error">
+                <MudNavLink Href="/mutabakat" Icon="@Icons.Material.Filled.CompareArrows" IconColor="Color.Error">
                     Cari Mutabakatı (Mümin CEYLAN Uygulaması)
                 </MudNavLink>
-                <MudNavLink Href="/karsi-firma-kur-farki" Icon="@Icons.Material.Filled.CurrencyExchange" IconColor="Color.Primary">
+                <MudNavLink Href="/karsi-firma-kur-farki" Icon="@Icons.Material.Filled.CurrencyExchange" IconColor="Color.Error">
                     Karşı Firma Kur Farkı (Mümin CEYLAN Uygulaması)
                 </MudNavLink>
             </MudNavGroup>
@@ -176,6 +180,7 @@
     private bool _drawerOpen = true;
     private bool _raporlarOpen = true;
     private bool _logoOpen;
+    private bool _mutabakatOpen;
     private bool _kontrolOpen;
     private bool _sabnetOpen;
     private bool _evrakOpen;
@@ -203,6 +208,8 @@
             _raporlarOpen = true;
         else if (path is "/kasa-hareketleri" or "/kur-bilgileri" or "/stok-durumu" or "/cari-bakiye" or "/cari-hareket" or "/kur-farki-calismasi")
             _logoOpen = true;
+        else if (path is "/mutabakat" or "/karsi-firma-kur-farki")
+            _mutabakatOpen = true;
         else if (path is "/kantar-logo-karsilastirma" or "/mustahsil-karsilastirma")
             _kontrolOpen = true;
         else if (path is "/sabnet-kantar-hareketleri" or "/sabnet-kantar-aktar")
