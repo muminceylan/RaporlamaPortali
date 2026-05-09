@@ -133,6 +133,7 @@ builder.Services.AddSingleton<TarimKrediService>();
 // Malzeme Hareket Listesi — kullanıcı tarafından tanımlanan kodlar için STLINE hareket raporu
 builder.Services.AddScoped<MalzemeHareketService>();
 builder.Services.AddSingleton<MalzemeListeService>();
+builder.Services.AddSingleton<AfyonAmbarService>();
 
 // Finans Raporu — yıllık INF_MD_FINANS_PROJE_RAPORU_211_YYYY view'lerini birleştirir
 builder.Services.AddScoped<FinansRaporService>();

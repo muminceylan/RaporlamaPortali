@@ -3,6 +3,7 @@
 @using RaporlamaPortali.Services
 @inject LogoIslemleriService Logo
 @inject ExcelExportService ExcelExportService
+@inject AfyonAmbarService AfyonAmbar
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
 
@@ -30,6 +31,10 @@
         <MudItem xs="12" md="2" Class="d-flex align-center">
             <MudSwitch T="bool" Value="_afyonSecili" ValueChanged="AfyonToggle"
                        Label="Afyon Ambarları" Color="Color.Success" />
+            <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                           Color="Color.Default" Size="Size.Small"
+                           Title="Afyon ambar listesini düzenle"
+                           OnClick="@(() => _afyonDuzenle = !_afyonDuzenle)" />
         </MudItem>
         <MudItem xs="12" md="2" Class="d-flex align-center">
             <MudSwitch T="bool" @bind-Value="_sifirlariGizle" Label="Sıfırları gizle" Color="Color.Primary" />
@@ -71,6 +76,76 @@
     </MudGrid>
 </MudPaper>
 
+@if (_afyonDuzenle)
+{
+    <MudPaper Class="pa-3 mb-3" Style="border-left:4px solid #2e7d32;">
+        <div class="d-flex align-center mb-2">
+            <MudIcon Icon="@Icons.Material.Filled.Tune" Class="mr-2" Color="Color.Success" />
+            <MudText Typo="Typo.h6">Afyon Ambar Listesi</MudText>
+            <MudSpacer />
+            <MudButton Variant="Variant.Text" Color="Color.Warning" Size="Size.Small"
+                       StartIcon="@Icons.Material.Filled.RestartAlt"
+                       OnClick="AfyonListesiSifirla">
+                Varsayılana Sıfırla
+            </MudButton>
+            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                           OnClick="@(() => _afyonDuzenle = false)" Title="Kapat" />
+        </div>
+
+        <MudGrid>
+            <MudItem xs="12" md="5">
+                <MudSelect T="int" Label="Ambar ekle (firma listesinden seç)"
+                           @bind-Value="_eklenecekAmbar"
+                           Variant="Variant.Outlined" Margin="Margin.Dense"
+                           Dense="true" Strict="true">
+                    <MudSelectItem T="int" Value="0">— seçiniz —</MudSelectItem>
+                    @foreach (var a in _ambarlar.Where(x => !_afyonListe.Contains(x.AmbarNo)).OrderBy(x => x.AmbarNo))
+                    {
+                        <MudSelectItem T="int" Value="@a.AmbarNo">@a.AmbarNo - @a.Ad</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="2" Class="d-flex align-center">
+                <MudButton Color="Color.Success" Variant="Variant.Filled"
+                           StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="AfyonEkleSecili"
+                           Disabled="@(_eklenecekAmbar <= 0)">
+                    Ekle
+                </MudButton>
+            </MudItem>
+            <MudItem xs="12" md="3">
+                <MudNumericField T="int?" @bind-Value="_manuelAmbarNo"
+                                 Label="Veya numara yaz (firmada henüz tanımlı değilse)"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense"
+                                 Min="1" HideSpinButtons="true" />
+            </MudItem>
+            <MudItem xs="12" md="2" Class="d-flex align-center">
+                <MudButton Color="Color.Primary" Variant="Variant.Outlined"
+                           StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="AfyonEkleManuel"
+                           Disabled="@(_manuelAmbarNo is null or <= 0)">
+                    Numara Ekle
+                </MudButton>
+            </MudItem>
+        </MudGrid>
+
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2 mb-1">
+            Mevcut liste (@_afyonListe.Count adet) — kaldırmak için chip'in × tuşuna bas:
+        </MudText>
+        <div class="d-flex flex-wrap gap-1">
+            @foreach (var nr in _afyonListe)
+            {
+                var ad = _ambarlar.FirstOrDefault(a => a.AmbarNo == nr)?.Ad;
+                var etiket = string.IsNullOrEmpty(ad) ? nr.ToString() : $"{nr} – {ad}";
+                <MudChip T="string" Color="Color.Success" Variant="Variant.Filled"
+                         OnClose="@(() => AfyonCikar(nr))" CloseIcon="@Icons.Material.Filled.Close">
+                    @etiket
+                </MudChip>
+            }
+        </div>
+    </MudPaper>
+}
+
 <MudTable Items="FiltreliKayit" Dense="true" Hover="true" Bordered="true" Striped="true"
           FixedHeader="true" Height="calc(100vh - 360px)"
           Breakpoint="Breakpoint.None"
@@ -102,18 +177,13 @@
     private bool _sifirlariGizle = true;
     private bool _yukleniyor = false;
     private bool _afyonSecili = false;
+    private bool _afyonDuzenle = false;
     private string _aramaKod = "";
     private string _aramaAd = "";
 
-    // Afyon Şeker Fabrikası'na ait ambar numaraları (kullanıcı listesi).
-    private static readonly int[] AfyonAmbarNolari =
-    {
-        142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 157, 159,
-        712, 713, 714, 715, 716, 717, 718,
-        750, 752, 753, 754, 755, 756,
-        800, 801, 802, 803, 804, 805, 806, 807, 808, 810,
-        830, 831, 832, 833, 834, 835, 836, 837, 838
-    };
+    private List<int> _afyonListe = new();
+    private int _eklenecekAmbar = 0;
+    private int? _manuelAmbarNo = null;
 
     private IEnumerable<int> _secilenAmbarlar = new HashSet<int>();
 
@@ -130,6 +200,7 @@
     protected override async Task OnInitializedAsync()
     {
         _ambarlar = await Logo.AmbarSecenekleriAsync();
+        _afyonListe = AfyonAmbar.Liste.ToList();
         await VeriYukle();
     }
 
@@ -170,12 +241,62 @@
         {
             // Sadece gerçekten firmada tanımlı olan Afyon ambarlarını seç.
             var tanimli = _ambarlar.Select(a => a.AmbarNo).ToHashSet();
-            _secilenAmbarlar = new HashSet<int>(AfyonAmbarNolari.Where(tanimli.Contains));
+            _secilenAmbarlar = new HashSet<int>(_afyonListe.Where(tanimli.Contains));
         }
         else
         {
             _secilenAmbarlar = new HashSet<int>();
         }
+    }
+
+    private void AfyonEkleSecili()
+    {
+        if (_eklenecekAmbar <= 0) return;
+        if (AfyonAmbar.Ekle(_eklenecekAmbar))
+        {
+            _afyonListe = AfyonAmbar.Liste.ToList();
+            Snackbar.Add($"Ambar {_eklenecekAmbar} listeye eklendi.", Severity.Success);
+            if (_afyonSecili) AfyonToggle(true);
+        }
+        else
+        {
+            Snackbar.Add("Bu ambar zaten listede.", Severity.Warning);
+        }
+        _eklenecekAmbar = 0;
+    }
+
+    private void AfyonEkleManuel()
+    {
+        if (_manuelAmbarNo is not int nr || nr <= 0) return;
+        if (AfyonAmbar.Ekle(nr))
+        {
+            _afyonListe = AfyonAmbar.Liste.ToList();
+            Snackbar.Add($"Ambar {nr} listeye eklendi.", Severity.Success);
+            if (_afyonSecili) AfyonToggle(true);
+        }
+        else
+        {
+            Snackbar.Add("Bu ambar zaten listede.", Severity.Warning);
+        }
+        _manuelAmbarNo = null;
+    }
+
+    private void AfyonCikar(int ambarNo)
+    {
+        if (AfyonAmbar.Cikar(ambarNo))
+        {
+            _afyonListe = AfyonAmbar.Liste.ToList();
+            Snackbar.Add($"Ambar {ambarNo} listeden çıkarıldı.", Severity.Info);
+            if (_afyonSecili) AfyonToggle(true);
+        }
+    }
+
+    private void AfyonListesiSifirla()
+    {
+        AfyonAmbar.Sifirla();
+        _afyonListe = AfyonAmbar.Liste.ToList();
+        Snackbar.Add("Liste varsayılana sıfırlandı.", Severity.Info);
+        if (_afyonSecili) AfyonToggle(true);
     }
 
     private async Task ExcelIndir()

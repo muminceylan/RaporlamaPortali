@@ -13,120 +13,177 @@
     Malzeme Hareket Listesi
 </MudText>
 
-<MudPaper Class="pa-4 mb-4">
-    <MudGrid>
-        <MudItem xs="12" md="6">
-            <MudText Typo="Typo.subtitle2" Class="mb-1">Kayıtlı Liste</MudText>
-            <MudSelect T="string" Value="@_secilenListeAdi" ValueChanged="ListeSec"
-                       Placeholder="— Kayıtlı listeden seç —" Dense="true" Clearable="true">
-                @foreach (var l in _listeler)
-                {
-                    <MudSelectItem Value="@l.Ad">@l.Ad (@l.MalzemeKodlari.Count kalem)</MudSelectItem>
-                }
-            </MudSelect>
-        </MudItem>
-        <MudItem xs="12" md="3">
-            <MudDatePicker Label="Başlangıç Tarihi" @bind-Date="_baslangic"
-                           DateFormat="dd.MM.yyyy" Editable="true" />
-        </MudItem>
-        <MudItem xs="12" md="3">
-            <MudDatePicker Label="Bitiş Tarihi" @bind-Date="_bitis"
-                           DateFormat="dd.MM.yyyy" Editable="true" />
-        </MudItem>
-
-        <MudItem xs="12">
-            <MudText Typo="Typo.subtitle2" Class="mb-1">Malzeme Kodları</MudText>
-            <MudGrid>
-                <MudItem xs="12" md="6">
-                    <MudTextField @bind-Value="_eklenecekKod" Label="Kod ekle"
-                                  Placeholder="örn. S.706.04.0001"
-                                  Adornment="Adornment.End"
-                                  AdornmentIcon="@Icons.Material.Filled.Add"
-                                  OnAdornmentClick="KodEkle"
-                                  OnKeyDown="@KodEkleKey" Immediate="true" />
-                </MudItem>
-                <MudItem xs="12" md="6">
-                    <MudTextField @bind-Value="_topluGiris" Label="Toplu ekle (virgül/yeni satır)"
-                                  Lines="2" HelperText="Birden fazla kod ekle" />
-                    <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="TopluEkle">
-                        Toplu Ekle
-                    </MudButton>
-                </MudItem>
-            </MudGrid>
-
-            @if (_kodlar.Count > 0)
-            {
-                <MudPaper Class="pa-3 mt-2" Elevation="0" Style="background:#f5f7fa;">
-                    <div style="display:flex; flex-wrap:wrap; gap:6px;">
-                        @foreach (var k in _kodlar.ToList())
-                        {
-                            var kod = k;
-                            <MudChip Color="Color.Primary" Size="Size.Small" OnClose="@(() => KodCikar(kod))">@kod</MudChip>
-                        }
-                    </div>
-                    <MudText Typo="Typo.caption" Class="mt-1">
-                        @_kodlar.Count kalem — üstüne tıklayarak çıkarabilirsiniz
-                    </MudText>
-                </MudPaper>
-            }
-        </MudItem>
-
-        <MudItem xs="12" Class="d-flex gap-2 flex-wrap">
-            <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                       StartIcon="@Icons.Material.Filled.Search"
-                       Disabled="@_yukleniyor" OnClick="RaporGetir">
-                @if (_yukleniyor) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
-                Rapor Getir
-            </MudButton>
-            <MudButton Variant="Variant.Filled" Color="Color.Success"
-                       StartIcon="@Icons.Material.Filled.Download"
-                       Disabled="@(_satirlar == null)" OnClick="ExcelIndir">
-                Excel İndir
-            </MudButton>
-            <MudButton Variant="Variant.Outlined" Color="Color.Info"
-                       StartIcon="@Icons.Material.Filled.Save"
-                       OnClick="ListeKaydetPaneliAc">
-                Listeyi Kaydet
-            </MudButton>
-            @if (!string.IsNullOrEmpty(_secilenListeAdi))
-            {
-                <MudButton Variant="Variant.Outlined" Color="Color.Error"
-                           StartIcon="@Icons.Material.Filled.Delete"
-                           OnClick="ListeSil">
-                    "@_secilenListeAdi" listesini sil
-                </MudButton>
-            }
-        </MudItem>
-
-        @* Inline kayıt paneli (MudDialog yerine) *@
-        @if (_kayitPaneliAcik)
-        {
-            <MudItem xs="12">
-                <MudPaper Class="pa-3" Style="background:#E3F2FD; border:1px solid #1976d2;">
-                    <MudText Typo="Typo.subtitle2" Class="mb-2">
-                        <MudIcon Icon="@Icons.Material.Filled.Save" Size="Size.Small" Class="mr-1" />
-                        Listeyi Kaydet (@_kodlar.Count kalem)
-                    </MudText>
-                    <MudGrid>
-                        <MudItem xs="12" md="6">
-                            <MudTextField @bind-Value="_yeniListeAdi" Label="Liste Adı"
-                                          HelperText="Aynı isim varsa üzerine yazılır"
-                                          Immediate="true" AutoFocus="true"
-                                          OnKeyDown="@ListeKaydetKey" />
-                        </MudItem>
-                        <MudItem xs="12" md="6" Class="d-flex align-end gap-2">
-                            <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                                       StartIcon="@Icons.Material.Filled.Check"
-                                       OnClick="ListeKaydet">Kaydet</MudButton>
-                            <MudButton Variant="Variant.Outlined"
-                                       OnClick="@(() => _kayitPaneliAcik = false)">İptal</MudButton>
-                        </MudItem>
-                    </MudGrid>
-                </MudPaper>
-            </MudItem>
-        }
-    </MudGrid>
+<MudPaper Class="pa-2 mb-3" Elevation="0" Style="background:#eceff1;">
+    <MudToggleGroup T="string" SelectionMode="SelectionMode.SingleSelection" @bind-Value="_mod"
+                    Color="Color.Primary" CheckMark="true" Dense="true">
+        <MudToggleItem Value="@("tek")">
+            <MudIcon Icon="@Icons.Material.Filled.QrCode" Size="Size.Small" Class="mr-1" />
+            Tek Malzeme Kodu
+        </MudToggleItem>
+        <MudToggleItem Value="@("liste")">
+            <MudIcon Icon="@Icons.Material.Filled.FormatListBulleted" Size="Size.Small" Class="mr-1" />
+            Liste / Grup
+        </MudToggleItem>
+    </MudToggleGroup>
 </MudPaper>
+
+@if (_mod == "tek")
+{
+    <MudPaper Class="pa-4 mb-4" Style="border-left:4px solid #1976d2;">
+        <MudText Typo="Typo.subtitle2" Class="mb-2">
+            <MudIcon Icon="@Icons.Material.Filled.QrCode" Size="Size.Small" Class="mr-1" />
+            Tek Malzeme Kodu ile Hızlı Sorgula
+        </MudText>
+        <MudGrid>
+            <MudItem xs="12" md="6">
+                <MudTextField @bind-Value="_tekKod" Label="Malzeme Kodu"
+                              Placeholder="örn. S.706.04.0001"
+                              Adornment="Adornment.End"
+                              AdornmentIcon="@Icons.Material.Filled.Search"
+                              OnAdornmentClick="TekKodSorgula"
+                              OnKeyDown="@TekKodKey" Immediate="true" AutoFocus="true" />
+            </MudItem>
+            <MudItem xs="12" md="3">
+                <MudDatePicker Label="Başlangıç Tarihi" @bind-Date="_baslangic"
+                               DateFormat="dd.MM.yyyy" Editable="true" />
+            </MudItem>
+            <MudItem xs="12" md="3">
+                <MudDatePicker Label="Bitiş Tarihi" @bind-Date="_bitis"
+                               DateFormat="dd.MM.yyyy" Editable="true" />
+            </MudItem>
+            <MudItem xs="12" Class="d-flex gap-2 flex-wrap">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Search"
+                           Disabled="@_yukleniyor" OnClick="TekKodSorgula">
+                    @if (_yukleniyor) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+                    Sorgula
+                </MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Success"
+                           StartIcon="@Icons.Material.Filled.Download"
+                           Disabled="@(_satirlar == null)" OnClick="ExcelIndir">
+                    Excel İndir
+                </MudButton>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+}
+else
+{
+    <MudPaper Class="pa-4 mb-4">
+        <MudGrid>
+            <MudItem xs="12" md="6">
+                <MudText Typo="Typo.subtitle2" Class="mb-1">Kayıtlı Liste</MudText>
+                <MudSelect T="string" Value="@_secilenListeAdi" ValueChanged="ListeSec"
+                           Placeholder="— Kayıtlı listeden seç —" Dense="true" Clearable="true">
+                    @foreach (var l in _listeler)
+                    {
+                        <MudSelectItem Value="@l.Ad">@l.Ad (@l.MalzemeKodlari.Count kalem)</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="3">
+                <MudDatePicker Label="Başlangıç Tarihi" @bind-Date="_baslangic"
+                               DateFormat="dd.MM.yyyy" Editable="true" />
+            </MudItem>
+            <MudItem xs="12" md="3">
+                <MudDatePicker Label="Bitiş Tarihi" @bind-Date="_bitis"
+                               DateFormat="dd.MM.yyyy" Editable="true" />
+            </MudItem>
+
+            <MudItem xs="12">
+                <MudText Typo="Typo.subtitle2" Class="mb-1">Malzeme Kodları</MudText>
+                <MudGrid>
+                    <MudItem xs="12" md="6">
+                        <MudTextField @bind-Value="_eklenecekKod" Label="Kod ekle"
+                                      Placeholder="örn. S.706.04.0001"
+                                      Adornment="Adornment.End"
+                                      AdornmentIcon="@Icons.Material.Filled.Add"
+                                      OnAdornmentClick="KodEkle"
+                                      OnKeyDown="@KodEkleKey" Immediate="true" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudTextField @bind-Value="_topluGiris" Label="Toplu ekle (virgül/yeni satır)"
+                                      Lines="2" HelperText="Birden fazla kod ekle" />
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="TopluEkle">
+                            Toplu Ekle
+                        </MudButton>
+                    </MudItem>
+                </MudGrid>
+
+                @if (_kodlar.Count > 0)
+                {
+                    <MudPaper Class="pa-3 mt-2" Elevation="0" Style="background:#f5f7fa;">
+                        <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                            @foreach (var k in _kodlar.ToList())
+                            {
+                                var kod = k;
+                                <MudChip Color="Color.Primary" Size="Size.Small" OnClose="@(() => KodCikar(kod))">@kod</MudChip>
+                            }
+                        </div>
+                        <MudText Typo="Typo.caption" Class="mt-1">
+                            @_kodlar.Count kalem — üstüne tıklayarak çıkarabilirsiniz
+                        </MudText>
+                    </MudPaper>
+                }
+            </MudItem>
+
+            <MudItem xs="12" Class="d-flex gap-2 flex-wrap">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Search"
+                           Disabled="@_yukleniyor" OnClick="RaporGetir">
+                    @if (_yukleniyor) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+                    Rapor Getir
+                </MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Success"
+                           StartIcon="@Icons.Material.Filled.Download"
+                           Disabled="@(_satirlar == null)" OnClick="ExcelIndir">
+                    Excel İndir
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Info"
+                           StartIcon="@Icons.Material.Filled.Save"
+                           OnClick="ListeKaydetPaneliAc">
+                    Listeyi Kaydet
+                </MudButton>
+                @if (!string.IsNullOrEmpty(_secilenListeAdi))
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Error"
+                               StartIcon="@Icons.Material.Filled.Delete"
+                               OnClick="ListeSil">
+                        "@_secilenListeAdi" listesini sil
+                    </MudButton>
+                }
+            </MudItem>
+
+            @* Inline kayıt paneli (MudDialog yerine) *@
+            @if (_kayitPaneliAcik)
+            {
+                <MudItem xs="12">
+                    <MudPaper Class="pa-3" Style="background:#E3F2FD; border:1px solid #1976d2;">
+                        <MudText Typo="Typo.subtitle2" Class="mb-2">
+                            <MudIcon Icon="@Icons.Material.Filled.Save" Size="Size.Small" Class="mr-1" />
+                            Listeyi Kaydet (@_kodlar.Count kalem)
+                        </MudText>
+                        <MudGrid>
+                            <MudItem xs="12" md="6">
+                                <MudTextField @bind-Value="_yeniListeAdi" Label="Liste Adı"
+                                              HelperText="Aynı isim varsa üzerine yazılır"
+                                              Immediate="true" AutoFocus="true"
+                                              OnKeyDown="@ListeKaydetKey" />
+                            </MudItem>
+                            <MudItem xs="12" md="6" Class="d-flex align-end gap-2">
+                                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                           StartIcon="@Icons.Material.Filled.Check"
+                                           OnClick="ListeKaydet">Kaydet</MudButton>
+                                <MudButton Variant="Variant.Outlined"
+                                           OnClick="@(() => _kayitPaneliAcik = false)">İptal</MudButton>
+                            </MudItem>
+                        </MudGrid>
+                    </MudPaper>
+                </MudItem>
+            }
+        </MudGrid>
+    </MudPaper>
+}
 
 @* Excel'den yenileme ipucu *@
 <MudPaper Class="pa-3 mb-4" Elevation="0" Style="background:#fff8e1; border-left:4px solid #f9a825;">
@@ -294,6 +351,8 @@ else if (!_yukleniyor)
     private string _yeniListeAdi    = "";
     private bool   _kayitPaneliAcik = false;
     private bool   _yukleniyor      = false;
+    private string _mod    = "tek"; // "tek" veya "liste"
+    private string _tekKod = "";
     private string? _hata;
     private List<MalzemeHareketSatiri>? _satirlar;
     private List<KayitliMalzemeListesi> _listeler = new();
@@ -387,6 +446,20 @@ else if (!_yukleniyor)
         }
         finally { _yukleniyor = false; }
     }
+
+    private async Task TekKodSorgula()
+    {
+        var k = (_tekKod ?? "").Trim();
+        if (string.IsNullOrEmpty(k))     { Snackbar.Add("Malzeme kodu girin.",  Severity.Warning); return; }
+        if (_baslangic == null || _bitis == null) { Snackbar.Add("Tarih aralığı seçin.", Severity.Warning); return; }
+
+        _kodlar.Clear();
+        _kodlar.Add(k);
+        _secilenListeAdi = "";
+        await RaporGetir();
+    }
+
+    private async Task TekKodKey(KeyboardEventArgs e) { if (e.Key == "Enter") await TekKodSorgula(); }
 
     private async Task ExcelIndir()
     {
