@@ -436,6 +436,7 @@ else if (!_yukleniyor)
         _yukleniyor = true; _hata = null;
         try
         {
+            DonemSiniri.Kirp(ref _bitis);
             _satirlar = await HareketService.GetHareketlerAsync(_kodlar, _baslangic.Value, _bitis.Value);
             Snackbar.Add($"{_satirlar.Count} satır yüklendi.", Severity.Success);
         }

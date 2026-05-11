@@ -207,14 +207,20 @@ client.on('qr', (qr) => {
 
 client.on('loading_screen', (percent, message) => {
     console.log(`[WhatsApp] Yukleniyor: ${percent}% ${message || ''}`);
-    durumYaz('BAGLANIYOR', '');
+    // BAGLI iken sync amaçlı loading_screen tetiklenebiliyor — durumu geri düşürme
+    if (_sonDurum !== 'BAGLI') durumYaz('BAGLANIYOR', '');
 });
 
 client.on('authenticated', () => {
     console.log('[WhatsApp] Kimlik dogrulandi, ready bekleniyor...');
-    durumYaz('BAGLANIYOR', '');
-    // Authentication sonrasi 90 sn icinde ready gelmezse yeniden baslat
-    hazirTimerKur(90, 'authenticated sonrasi ready gelmedi');
+    // BAGLI iken authenticated yeniden firing edebilir (re-auth/sync).
+    // Bu durumda durumu geri düşürme ve "kendini öldür" timerini kurma — yoksa döngüye girer.
+    if (_sonDurum !== 'BAGLI') {
+        durumYaz('BAGLANIYOR', '');
+        hazirTimerKur(90, 'authenticated sonrasi ready gelmedi');
+    } else {
+        console.log('[WhatsApp] Zaten BAGLI iken authenticated — yok sayildi.');
+    }
 });
 
 let _tumSistemHazir = false;
@@ -241,16 +247,20 @@ async function sistemWarmupYap() {
     }
 }
 
-function bagliOlarakIsaretle(kaynak) {
+async function bagliOlarakIsaretle(kaynak) {
     if (_sonDurum === 'BAGLI') return;
     if (_hazirTimer) { clearTimeout(_hazirTimer); _hazirTimer = null; }
     config = configOku();
-    console.log(`[WhatsApp] Baglandi! (kaynak: ${kaynak})`);
+    console.log(`[WhatsApp] Baglandi! (kaynak: ${kaynak}) — warmup baslatiliyor...`);
+    // Önce warmup'ı bitir, sonra BAGLI yaz — ilk tetikleyicide browser takılı kalmasın
+    if (!_tumSistemHazir) {
+        try { await sistemWarmupYap(); } catch (_) {}
+    }
+    console.log('[WhatsApp] Warmup tamam, BAGLI olarak isaretleniyor.');
     durumYaz('BAGLI', '');
-    if (!_tumSistemHazir) sistemWarmupYap();
 }
 
-client.on('ready', () => bagliOlarakIsaretle('ready'));
+client.on('ready', () => { bagliOlarakIsaretle('ready'); });
 
 // LocalAuth ile session restore'da 'ready' bazen atlanır; change_state -> CONNECTED yedek tetikleyici
 client.on('change_state', (state) => {
@@ -266,6 +276,22 @@ setInterval(async () => {
         if (state === 'CONNECTED') bagliOlarakIsaretle('poll');
     } catch (_) { /* henüz hazır değil */ }
 }, 10000);
+
+// HEARTBEAT — BAGLI iken 20sn'de bir status dosyasini tazele.
+// .NET watchdog'i bu zaman damgasina bakarak "kilitli BAGLI" durumlarini tespit edip restart eder.
+setInterval(async () => {
+    if (_sonDurum !== 'BAGLI') return;
+    try {
+        const state = await client.getState();
+        if (state === 'CONNECTED') {
+            durumYaz('BAGLI', '');
+        } else {
+            console.warn('[Heartbeat] state=', state, '— BAGLI degil, durum guncellemesi atlandi');
+        }
+    } catch (e) {
+        console.warn('[Heartbeat] getState hatasi:', e.message);
+    }
+}, 20000);
 
 client.on('disconnected', (reason) => {
     console.log('[WhatsApp] Baglanti kesildi:', reason);

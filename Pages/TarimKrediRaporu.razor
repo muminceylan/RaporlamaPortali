@@ -557,6 +557,7 @@
         _yukleniyor = true;
         try
         {
+            DonemSiniri.Kirp(ref _bit);
             _tumHareketler = await Srv.TarimKrediHareketleriAsync(_bas.Value, _bit.Value, _pekDahil);
             _bolgeler = Srv.BolgeyeGore(_tumHareketler);
             _ilkCekildi = true;

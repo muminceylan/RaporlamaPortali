@@ -336,6 +336,7 @@
         _calisiyor = true;
         try
         {
+            DonemSiniri.Kirp(ref _bitis);
             Snackbar.Add("Ekstre Mümin CEYLAN uygulaması ile parse ediliyor...", Severity.Info);
             var aiHam = await AI.EkstreyiParseEtAsync(_dosyaBytes, _dosyaAdi);
             Snackbar.Add($"{aiHam.Count} satır parse edildi.", Severity.Success);

@@ -1,0 +1,328 @@
+@page "/efatura-logo-kontrol"
+@using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
+@using Microsoft.JSInterop
+@inject EFaturaService Svc
+@inject ExcelExportService Excel
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+
+<PageTitle>Gelen e-Fatura — Logo İşleme Kontrolü</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-2 d-flex align-center">
+    <MudIcon Icon="@Icons.Material.Filled.FactCheck" Class="mr-2" Color="Color.Primary" />
+    Gelen e-Fatura · Logo İşleme Kontrolü
+    <MudChip T="string" Size="Size.Small" Color="Color.Default" Class="ml-3"
+             Icon="@Icons.Material.Filled.Storage">eFatura + Logo Tiger</MudChip>
+</MudText>
+
+@if (!Svc.BaglantiTanimliMi)
+{
+    <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="mb-4">
+        EFaturaDB connection string tanımlı değil.
+    </MudAlert>
+}
+
+<MudPaper Class="pa-3 mb-3" Elevation="3" Style="border-left:4px solid #1976d2;">
+    <MudGrid Spacing="2">
+        <MudItem xs="6" md="2">
+            <MudDatePicker @bind-Date="_bas" Label="Başlangıç" DateFormat="dd.MM.yyyy"
+                           Variant="Variant.Outlined" Margin="Margin.Dense"
+                           PickerVariant="PickerVariant.Dialog" />
+        </MudItem>
+        <MudItem xs="6" md="2">
+            <MudDatePicker @bind-Date="_bit" Label="Bitiş" DateFormat="dd.MM.yyyy"
+                           Variant="Variant.Outlined" Margin="Margin.Dense"
+                           PickerVariant="PickerVariant.Dialog" />
+        </MudItem>
+
+        <MudItem xs="6" md="2">
+            <MudNumericField @bind-Value="_tarihToleransGun" Label="Tarih Toleransı (gün)"
+                             HelperText="Logo işleme gecikmesi"
+                             Variant="Variant.Outlined" Margin="Margin.Dense"
+                             Min="0" Max="365" Step="5" Immediate="true"
+                             Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Schedule" />
+        </MudItem>
+
+        <MudItem xs="6" md="2">
+            <MudSelect T="string" Label="Durum Filtresi" @bind-Value="_durumKodu"
+                       Variant="Variant.Outlined" Margin="Margin.Dense"
+                       Clearable="true" Dense="true">
+                <MudSelectItem T="string" Value="@(null)">— Hepsi —</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Yok")">❌ İşlenmedi (red hariç)</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Red")">🚫 Red/İptal</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Supheli")">⚠️ Şüpheli</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Modifiye")">✅ Modifiye</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Kesin")">✅ Kesin</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+
+        <MudItem xs="6" md="4" Class="d-flex align-center gap-2">
+            <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.Search"
+                       OnClick="Sorgula" Disabled="_yukleniyor" FullWidth="true">
+                @(_yukleniyor ? "Yükleniyor..." : "Sorgula")
+            </MudButton>
+            <MudButton Color="Color.Success" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.FileDownload"
+                       OnClick="ExcelIndir" Disabled="_yukleniyor || _kayitlar.Count == 0"
+                       Title="Listeyi Excel'e aktar">
+                Excel
+            </MudButton>
+            <MudIconButton Icon="@Icons.Material.Filled.RestartAlt" Title="Filtreleri temizle"
+                           Color="Color.Default" OnClick="FiltreSifirla" />
+        </MudItem>
+
+        <MudItem xs="12" md="4">
+            <MudTextField @bind-Value="_filtre.KarsiUnvan" Label="Gönderen Ünvan (LIKE)"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Business"
+                          Clearable="true" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudTextField @bind-Value="_filtre.KarsiVKN" Label="VKN / TCKN"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Badge"
+                          Clearable="true" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudTextField @bind-Value="_filtre.LogoCariKodu" Label="Logo Cari Kod (örn. 320.06)"
+                          HelperText="Bu kodla başlayan cariler"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.AccountTree"
+                          Clearable="true" />
+        </MudItem>
+        <MudItem xs="6" md="2">
+            <MudNumericField @bind-Value="_filtre.MaxKayit" Label="Max kayıt"
+                             Variant="Variant.Outlined" Margin="Margin.Dense"
+                             Min="50" Max="100000" Step="1000" Immediate="true" />
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@if (_kayitlar.Count == 0 && !_yukleniyor)
+{
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3">
+        Kayıt yok. Filtreleri ayarlayıp "Sorgula" tuşuna basın.
+    </MudAlert>
+}
+else
+{
+    <MudPaper Class="pa-2 mb-2" Elevation="0" Style="background:#e3f2fd;">
+        <div class="d-flex align-center flex-wrap" style="gap:12px">
+            <MudText Typo="Typo.body2">
+                <b>@_kayitlar.Count</b> fatura · Tolerans: <b>@_tarihToleransGun</b> gün
+            </MudText>
+            <MudSpacer />
+            <span class="lk-sayac lk-yok @(_durumKodu=="Yok" ? "lk-aktif" : "")" @onclick='() => SayacTikla("Yok")'
+                  title="Logo'da hiç eşleşme yok (red edilenler hariç)">❌ İşlenmedi: <b>@_sayim.Yok</b></span>
+            <span class="lk-sayac lk-red @(_durumKodu=="Red" ? "lk-aktif" : "")" @onclick='() => SayacTikla("Red")'
+                  title="Uygulama Yanıtı 'RED' — alıcı reddetmiş, Logo'ya işlenmemesi normal">🚫 Red/İptal: <b>@_sayim.Red</b></span>
+            <span class="lk-sayac lk-supheli @(_durumKodu=="Supheli" ? "lk-aktif" : "")" @onclick='() => SayacTikla("Supheli")'
+                  title="Tutar+tarih eşleşti, numara hiç tutmadı">⚠️ Şüpheli: <b>@_sayim.Supheli</b></span>
+            <span class="lk-sayac lk-modifiye @(_durumKodu=="Modifiye" ? "lk-aktif" : "")" @onclick='() => SayacTikla("Modifiye")'
+                  title="Son 4 hane + tutar + tarih eşleşti">✅ Modifiye: <b>@_sayim.Modifiye</b></span>
+            <span class="lk-sayac lk-kesin @(_durumKodu=="Kesin" ? "lk-aktif" : "")" @onclick='() => SayacTikla("Kesin")'
+                  title="FICHENO tam eşleşti">✅ Kesin: <b>@_sayim.Kesin</b></span>
+        </div>
+    </MudPaper>
+
+    <MudTable T="EFaturaListItem" Items="FiltreliKayitlar" Dense="true" Hover="true" Bordered="true" Striped="true"
+              FixedHeader="true" Height="calc(100vh - 380px)"
+              Breakpoint="Breakpoint.None" RowsPerPage="100"
+              Class="lk-list-tbl">
+        <HeaderContent>
+            <MudTh Style="width:95px"><MudTableSortLabel SortBy="new Func<EFaturaListItem,object>(x=>x.Tarih)">e-Fatura Tarih</MudTableSortLabel></MudTh>
+            <MudTh Style="width:155px"><MudTableSortLabel SortBy="new Func<EFaturaListItem,object>(x=>x.FaturaNo)">e-Fatura No</MudTableSortLabel></MudTh>
+            <MudTh Style="width:110px">VKN</MudTh>
+            <MudTh Style="width:160px"><MudTableSortLabel SortBy="new Func<EFaturaListItem,object>(x=>x.LogoCariKod)">Logo Cari</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<EFaturaListItem,object>(x=>x.KarsiUnvan)">Gönderen</MudTableSortLabel></MudTh>
+            <MudTh Style="width:110px;text-align:right"><MudTableSortLabel SortBy="new Func<EFaturaListItem,object>(x=>EFaturaService.GosterilecekTutar(x))">Tutar (KDV Dahil)</MudTableSortLabel></MudTh>
+            <MudTh Style="width:130px;text-align:center"><MudTableSortLabel SortBy="new Func<EFaturaListItem,object>(x=>(int)x.LogoDurum)">Logo Durumu</MudTableSortLabel></MudTh>
+            <MudTh Style="width:175px">Logo FICHENO / Tarih</MudTh>
+            <MudTh Style="width:85px;text-align:center">İşlem</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Tarih" Style="white-space:nowrap;">@context.Tarih.ToString("dd.MM.yyyy")</MudTd>
+            <MudTd DataLabel="Fatura No" Style="font-family:'Consolas',monospace; font-size:0.85em;">@context.FaturaNo</MudTd>
+            <MudTd DataLabel="VKN" Style="font-family:'Consolas',monospace; font-size:0.85em;">@context.KarsiVKN</MudTd>
+            <MudTd DataLabel="Logo Cari">
+                @if (!string.IsNullOrEmpty(context.LogoCariKod))
+                {
+                    <div class="ef-code">@context.LogoCariKod</div>
+                    <div class="ef-sub" title="@context.LogoCariUnvan">@context.LogoCariUnvan</div>
+                }
+                else { <span class="ef-dash">—</span> }
+            </MudTd>
+            <MudTd DataLabel="Gönderen" Class="ef-trunc" Title="@context.KarsiUnvan">@context.KarsiUnvan</MudTd>
+            <MudTd DataLabel="Tutar" Class="ef-num" Style="font-weight:600">
+                @EFaturaService.GosterilecekTutar(context).ToString("N2")
+                @if (!string.IsNullOrEmpty(context.Doviz) && context.Doviz != "TRY")
+                { <span class="ef-mini"> @context.Doviz</span> }
+                @if (context.TevkifatTutar > 0)
+                {
+                    <div class="ef-sub" title="Tevkifat tutarı">tvk: @context.TevkifatTutar.ToString("N2")</div>
+                }
+            </MudTd>
+            <MudTd DataLabel="Logo Durumu" Style="text-align:center; white-space:nowrap;">
+                @if (context.RedEdildi)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Dark" Variant="Variant.Filled"
+                             Icon="@Icons.Material.Filled.Block"
+                             Title="@($"Red Tarihi: {context.RedTarihi?.ToString("dd.MM.yyyy")} — {context.RedAciklama}")">
+                        Red/İptal
+                    </MudChip>
+                }
+                else
+                {
+                    var (lbl, ren, ikn) = DurumGorsel(context.LogoDurum);
+                    <MudChip T="string" Size="Size.Small" Color="ren" Variant="Variant.Filled" Icon="@ikn">@lbl</MudChip>
+                }
+            </MudTd>
+            <MudTd DataLabel="Logo FICHENO">
+                @if (!string.IsNullOrEmpty(context.LogoFicheno))
+                {
+                    <div style="font-family:'Consolas',monospace; font-size:0.85em">@context.LogoFicheno</div>
+                    <div class="ef-sub">
+                        @context.LogoTarih?.ToString("dd.MM.yyyy") ·
+                        <span style="color:#0d47a1">@context.LogoTutar.ToString("N2")</span>
+                    </div>
+                }
+                else { <span class="ef-dash">—</span> }
+            </MudTd>
+            <MudTd DataLabel="İşlem" Style="text-align:center; white-space:nowrap;">
+                <MudIconButton Icon="@Icons.Material.Filled.PictureAsPdf" Size="Size.Small"
+                               Color="Color.Error" Title="PDF / Yazdır"
+                               Href="@($"/efatura-pdf?id={context.Id}&vkn={Uri.EscapeDataString(context.KarsiVKN ?? "")}")"
+                               Target="_blank" />
+                <MudIconButton Icon="@Icons.Material.Filled.OpenInNew" Size="Size.Small"
+                               Color="Color.Primary" Title="Tam detay sayfasında aç"
+                               Href="@($"/efatura?id={context.Id}")" Target="_blank" />
+            </MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager PageSizeOptions="new int[] { 50, 100, 250, 500 }" />
+        </PagerContent>
+        <NoRecordsContent>
+            <MudText>Filtreye uyan kayıt yok.</MudText>
+        </NoRecordsContent>
+    </MudTable>
+}
+
+<style>
+    .lk-list-tbl .mud-table-cell { padding: 3px 8px !important; line-height: 1.15 !important; font-size: 0.88em; }
+    .lk-list-tbl .mud-table-cell .mud-icon-button { padding: 3px !important; min-width: 26px; height: 26px; width: 26px; }
+    .ef-mini { color:#999; font-size:0.85em; margin-left:4px; }
+    .ef-dash { color:#bbb; }
+    .ef-num  { text-align:right; white-space:nowrap; font-variant-numeric: tabular-nums; }
+    .ef-code { font-family:'Consolas',monospace; font-weight:600; font-size:0.9em; }
+    .ef-sub  { color:#666; font-size:0.78em; line-height:1.1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:200px; }
+    .ef-trunc{ max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .lk-sayac { padding:3px 10px; border-radius:14px; font-size:0.85em; background:#fff; border:1px solid #ccc; cursor:pointer; user-select:none; transition:transform 0.1s ease; }
+    .lk-sayac:hover { transform:scale(1.05); box-shadow:0 1px 4px rgba(0,0,0,0.15); }
+    .lk-aktif { box-shadow:0 0 0 2px #1976d2 inset; font-weight:700; }
+    .lk-yok      { background:#ffebee; border-color:#e57373; color:#b71c1c; }
+    .lk-red      { background:#eceff1; border-color:#90a4ae; color:#263238; }
+    .lk-supheli  { background:#fff8e1; border-color:#ffb74d; color:#e65100; }
+    .lk-modifiye { background:#e8f5e9; border-color:#81c784; color:#1b5e20; }
+    .lk-kesin    { background:#e3f2fd; border-color:#64b5f6; color:#0d47a1; }
+</style>
+
+@code {
+    private EFaturaFiltre _filtre = new() { Yon = EFaturaYon.Gelen, MaxKayit = 1000 };
+    private DateTime? _bas = DateTime.Today.AddDays(-30);
+    private DateTime? _bit = DateTime.Today;
+    private int _tarihToleransGun = 30;
+    // Filtre kodu: null=Hepsi, "Yok","Supheli","Modifiye","Kesin","Red"
+    private string? _durumKodu;
+    private List<EFaturaListItem> _kayitlar = new();
+    private bool _yukleniyor;
+    private (int Kesin, int Modifiye, int Supheli, int Yok, int Red) _sayim;
+
+    // İşlenmedi filtresi seçildiğinde RED edilenleri DIŞLA (zaten Logo'da olmamaları normal).
+    // Red filtresi seçiliyse SADECE red/iptal olanları getir.
+    private IEnumerable<EFaturaListItem> FiltreliKayitlar =>
+        _durumKodu switch
+        {
+            null or ""  => _kayitlar,
+            "Red"       => _kayitlar.Where(x => x.RedEdildi),
+            "Yok"       => _kayitlar.Where(x => x.LogoDurum == LogoIslemDurumu.Yok      && !x.RedEdildi),
+            "Supheli"   => _kayitlar.Where(x => x.LogoDurum == LogoIslemDurumu.Supheli  && !x.RedEdildi),
+            "Modifiye"  => _kayitlar.Where(x => x.LogoDurum == LogoIslemDurumu.Modifiye && !x.RedEdildi),
+            "Kesin"     => _kayitlar.Where(x => x.LogoDurum == LogoIslemDurumu.Kesin    && !x.RedEdildi),
+            _           => _kayitlar,
+        };
+
+    private async Task Sorgula()
+    {
+        if (_yukleniyor) return;
+        _yukleniyor = true;
+        try
+        {
+            _filtre.Yon       = EFaturaYon.Gelen;  // bu sayfa sadece Gelen kontrol eder
+            _filtre.Baslangic = _bas ?? DateTime.Today.AddDays(-30);
+            _filtre.Bitis     = DonemSiniri.Kirp(_bit ?? DateTime.Today);
+            _kayitlar = await Svc.ListeleAsync(_filtre);
+            await Svc.LogoIslemKontrolAsync(_kayitlar, _tarihToleransGun);
+
+            _sayim = (
+                Kesin:    _kayitlar.Count(x => x.LogoDurum == LogoIslemDurumu.Kesin    && !x.RedEdildi),
+                Modifiye: _kayitlar.Count(x => x.LogoDurum == LogoIslemDurumu.Modifiye && !x.RedEdildi),
+                Supheli:  _kayitlar.Count(x => x.LogoDurum == LogoIslemDurumu.Supheli  && !x.RedEdildi),
+                Yok:      _kayitlar.Count(x => x.LogoDurum == LogoIslemDurumu.Yok      && !x.RedEdildi),
+                Red:      _kayitlar.Count(x => x.RedEdildi));
+
+            Snackbar.Add($"{_kayitlar.Count} fatura · İşlenmedi: {_sayim.Yok} · Red/İptal: {_sayim.Red}", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Hata: " + ex.Message, Severity.Error);
+        }
+        finally { _yukleniyor = false; }
+    }
+
+    private void FiltreSifirla()
+    {
+        _filtre = new EFaturaFiltre { Yon = EFaturaYon.Gelen, MaxKayit = 1000 };
+        _bas = DateTime.Today.AddDays(-30);
+        _bit = DateTime.Today;
+        _tarihToleransGun = 30;
+        _durumKodu = null;
+    }
+
+    // Özet rozetine tıklanınca filtreyi aç/kapat
+    private void SayacTikla(string kod)
+        => _durumKodu = (_durumKodu == kod) ? null : kod;
+
+    private async Task ExcelIndir()
+    {
+        if (_kayitlar.Count == 0) return;
+        try
+        {
+            var liste = FiltreliKayitlar.ToList();
+            var bytes = Excel.EFaturaLogoKontrolExportEt(
+                liste,
+                _filtre.Baslangic,
+                _filtre.Bitis,
+                _tarihToleransGun);
+            var ad = $"eFatura_LogoKontrol_{_filtre.Baslangic:yyyyMMdd}_{_filtre.Bitis:yyyyMMdd}.xlsx";
+            using var stream = new MemoryStream(bytes);
+            using var streamRef = new DotNetStreamReference(stream);
+            await JS.InvokeVoidAsync("downloadFileFromStream", ad, streamRef);
+            Snackbar.Add($"{liste.Count} kayıt Excel'e aktarıldı.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Excel hatası: " + ex.Message, Severity.Error);
+        }
+    }
+
+    private static (string Label, Color Renk, string Ikon) DurumGorsel(LogoIslemDurumu d) => d switch
+    {
+        LogoIslemDurumu.Kesin    => ("İşlendi",       Color.Success, Icons.Material.Filled.CheckCircle),
+        LogoIslemDurumu.Modifiye => ("Modifiye",      Color.Info,    Icons.Material.Filled.Verified),
+        LogoIslemDurumu.Supheli  => ("Şüpheli",       Color.Warning, Icons.Material.Filled.Help),
+        LogoIslemDurumu.Yok      => ("İşlenmedi",     Color.Error,   Icons.Material.Filled.Cancel),
+        _                        => ("?",             Color.Default, Icons.Material.Filled.QuestionMark),
+    };
+}

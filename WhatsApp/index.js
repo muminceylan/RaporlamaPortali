@@ -170,6 +170,9 @@ const client = new Client({
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
+            // Kurumsal SSL inspection / MITM proxy ortamlarinda Chromium'un
+            // dis HTTPS bağlantısı kurabilmesi icin sertifika kontrolünü atla
+            '--ignore-certificate-errors',
             // Headless tab'ın throttle edilmesini engelle — mesaj/ready gecikmesini önler
             '--disable-background-timer-throttling',
             '--disable-backgrounding-occluded-windows',

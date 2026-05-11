@@ -81,6 +81,12 @@
                 <MudNavLink Href="/malzeme-hareket-listesi" Icon="@Icons.Material.Filled.ListAlt" IconColor="Color.Primary">
                     Malzeme Hareket Listesi
                 </MudNavLink>
+                <MudNavLink Href="/efatura" Icon="@Icons.Material.Filled.Receipt" IconColor="Color.Primary">
+                    e-Fatura Görüntüleme
+                </MudNavLink>
+                <MudNavLink Href="/efatura-logo-kontrol" Icon="@Icons.Material.Filled.FactCheck" IconColor="Color.Primary">
+                    e-Fatura Logo Kontrolü
+                </MudNavLink>
             </MudNavGroup>
 
             <MudNavGroup Title="Mutabakat ve Kur Farkı" Icon="@Icons.Material.Filled.CompareArrows"
@@ -214,7 +220,7 @@
         var path = new Uri(uri).AbsolutePath.ToLowerInvariant().TrimEnd('/');
         if (path is "/yan-urunler" or "/pancar-raporu" or "/seker-dairesi" or "/seker-dairesi-yan-urunler" or "/tarim-kredi-raporu" or "/finans-raporu")
             _acikGrup = "raporlar";
-        else if (path is "/kasa-hareketleri" or "/kur-bilgileri" or "/stok-durumu" or "/cari-bakiye" or "/cari-hareket" or "/malzeme-hareket-listesi" or "/kur-farki-calismasi")
+        else if (path is "/kasa-hareketleri" or "/kur-bilgileri" or "/stok-durumu" or "/cari-bakiye" or "/cari-hareket" or "/malzeme-hareket-listesi" or "/efatura" or "/efatura-logo-kontrol" or "/kur-farki-calismasi")
             _acikGrup = "logo";
         else if (path is "/mutabakat" or "/karsi-firma-kur-farki")
             _acikGrup = "mutabakat";

@@ -185,6 +185,7 @@
         _yukleniyor = true;
         try
         {
+            DonemSiniri.Kirp(ref _bitis);
             _bakiyeler = await Logo.CariBakiyeAsync(_baslangic.Value, _bitis.Value, _sadeceBakiyeOlanlar);
             _ozelKodSecenekleri = _bakiyeler
                 .Select(b => b.OzelKod).Where(s => !string.IsNullOrWhiteSpace(s))

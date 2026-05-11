@@ -144,6 +144,9 @@ builder.Services.AddScoped<ClaudeService>();
 builder.Services.AddScoped<MutabakatService>();
 builder.Services.AddScoped<KarsiFirmaKurFarkiService>();
 
+// e-Fatura görüntüleme — eFaturaDogusCayDB POSTBOX/ELEMENTS + UBL XML parse
+builder.Services.AddScoped<EFaturaService>();
+
 // SabNet Kantar — SabNetKANTAR SQL Server'dan SabNet.db SQLite'a aktarım + listeleme
 builder.Services.AddSingleton<SabNetDbService>();
 builder.Services.AddSingleton<SabNetBaglantiService>();
@@ -187,11 +190,82 @@ app.MapPost("/giris-yap", async (HttpContext ctx, GirisAyarlariService girisServ
     return Results.Redirect("/giris?hata=1");
 }).AllowAnonymous();
 
-// Çıkış endpoint'i
-app.MapGet("/cikis", async (HttpContext ctx) =>
+// Çıkış endpoint'i — yedek alabilmek için WhatsApp/Chromium/Node ve programın
+// kendisini tamamen kapatır. Yeniden başlatmaz; kullanıcı .exe'yi elle çalıştırır.
+app.MapGet("/cikis", async (HttpContext ctx,
+    WhatsAppProcessService wa,
+    IHostApplicationLifetime lifetime) =>
 {
     await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-    return Results.Redirect("/giris");
+
+    // Response gönderildikten sonra arka planda her şeyi kapat
+    _ = Task.Run(async () =>
+    {
+        try { await Task.Delay(1000); } catch { }
+
+        // 1) WhatsApp node + puppeteer chromium alt ağacını kapat
+        try { wa.BotDurdur(); } catch { }
+
+        // 2) Defansif: arta kalan node + puppeteer chromium varsa öldür
+        try
+        {
+            foreach (var p in Process.GetProcessesByName("node"))
+            {
+                try { p.Kill(entireProcessTree: true); } catch { }
+            }
+            foreach (var p in Process.GetProcessesByName("chrome"))
+            {
+                try
+                {
+                    var path = p.MainModule?.FileName ?? "";
+                    if (path.IndexOf(@"\.cache\puppeteer\", StringComparison.OrdinalIgnoreCase) >= 0
+                        || path.IndexOf(@"\puppeteer\", StringComparison.OrdinalIgnoreCase) >= 0)
+                        p.Kill(entireProcessTree: true);
+                }
+                catch { }
+            }
+        }
+        catch { }
+
+        // 3) RaporlamaPortali'nin kendisini kapat
+        try { await Task.Delay(500); } catch { }
+        try { lifetime.StopApplication(); } catch { }
+        try { await Task.Delay(2000); } catch { }
+        Environment.Exit(0);
+    });
+
+    const string html = @"<!DOCTYPE html>
+<html lang='tr'>
+<head>
+  <meta charset='utf-8'>
+  <title>Kapatılıyor</title>
+  <style>
+    body{font-family:Segoe UI,Arial,sans-serif;background:#fafafa;color:#222;
+         display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
+    .card{background:#fff;padding:32px 40px;border-radius:8px;
+          box-shadow:0 2px 8px rgba(0,0,0,.08);text-align:center;max-width:560px}
+    h1{color:#c62828;font-size:1.35rem;margin:0 0 12px}
+    p{margin:8px 0;color:#555;line-height:1.55}
+    ul{text-align:left;margin:14px 0;color:#444}
+    .muted{color:#999;font-size:.85rem;margin-top:18px}
+    .ok{color:#2e7d32;font-weight:600}
+  </style>
+</head>
+<body>
+  <div class='card'>
+    <h1>Yedek için sistem kapatılıyor</h1>
+    <p>Yedek almanızı engelleyecek tüm süreçler kapatılıyor:</p>
+    <ul>
+      <li>WhatsApp botu (node.exe)</li>
+      <li>Puppeteer Chromium pencereleri</li>
+      <li>RaporlamaPortali.exe (uygulama)</li>
+    </ul>
+    <p class='ok'>Birkaç saniye içinde tamamlanır — sonra yedeği alabilirsiniz.</p>
+    <p class='muted'>Programı tekrar başlatmak için masaüstündeki <b>RaporlamaPortali</b> kısayolunu çalıştırın.</p>
+  </div>
+</body>
+</html>";
+    return Results.Content(html, "text/html; charset=utf-8");
 }).AllowAnonymous();
 
 // DEBUG: Şeker view'undaki gerçek MALZEME_KODU ve MALZEME_ADI değerlerini göster
@@ -463,6 +537,34 @@ app.MapGet("/api/malzeme-hareket", async (HttpContext ctx,
         await ctx.Response.WriteAsync("Hata: " + ex.Message);
     }
 }).AllowAnonymous();
+
+// e-Fatura XML indir (auth zorunlu)
+app.MapGet("/efatura-xml", async (HttpContext ctx, EFaturaService svc, long id) =>
+{
+    var pair = await svc.XmlGetirAsync(id);
+    if (pair == null) return Results.NotFound();
+    var bytes = System.Text.Encoding.UTF8.GetBytes(pair.Value.Xml);
+    return Results.File(bytes, "application/xml", $"eFatura_{id}_{pair.Value.DosyaAdi}");
+}).RequireAuthorization();
+
+// e-Fatura orijinal ZIP indir
+app.MapGet("/efatura-zip", async (HttpContext ctx, EFaturaService svc, long id) =>
+{
+    var data = await svc.ZipGetirAsync(id);
+    if (data == null) return Results.NotFound();
+    return Results.File(data, "application/zip", $"eFatura_{id}.zip");
+}).RequireAuthorization();
+
+// e-Fatura yazdırılabilir HTML önizleme (Ctrl+P → PDF olarak kaydet)
+app.MapGet("/efatura-pdf", async (HttpContext ctx, EFaturaService svc, long id, string? vkn) =>
+{
+    var detay = await svc.DetayGetirAsync(id, vkn);
+    if (detay == null) return Results.NotFound();
+    var html = EFaturaHtmlBuilder.Build(detay);
+    ctx.Response.ContentType = "text/html; charset=utf-8";
+    await ctx.Response.WriteAsync(html);
+    return Results.Empty;
+}).RequireAuthorization();
 
 // Evrak dosyası indirme / görüntüleme (auth zorunlu)
 // GET /evrak-dosya?kategori=tesis|mustahsil|genel&id=123&inline=true

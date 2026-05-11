@@ -350,6 +350,7 @@ else if (!_yukleniyor)
         _hata = null;
         try
         {
+            DonemSiniri.Kirp(ref _bitisTarihi);
             var bas = _baslangicTarihi.Value;
             var bit = _bitisTarihi.Value;
 

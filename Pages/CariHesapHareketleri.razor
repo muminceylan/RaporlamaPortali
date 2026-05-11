@@ -236,6 +236,7 @@
         _yukleniyor = true;
         try
         {
+            DonemSiniri.Kirp(ref _bitis);
             var (liste, _, _, _) = await Logo.CariHareketListesiAsync(
                 _baslangic.Value, _bitis.Value, _seciliCari.Kod, _seciliCari.Unvan);
             _hareketler = liste;

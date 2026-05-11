@@ -211,9 +211,10 @@ else if (!_yukleniyor)
 
         _yukleniyor = true;
         _hata = null;
-        
+
         try
         {
+            DonemSiniri.Kirp(ref _bitisTarihi);
             var baslangic = _baslangicTarihi.Value;
             var bitis = _bitisTarihi.Value;
             

@@ -168,6 +168,7 @@
         _yukleniyor = true;
         try
         {
+            DonemSiniri.Kirp(ref _bitis);
             _hareketler = await Logo.KasaHareketleriAsync(_baslangic, _bitis, _iptalDahilEt);
             _fisTuruSecenekleri = _hareketler.Select(h => h.FisTuru).Distinct().OrderBy(x => x).ToList();
             _dovizSecenekleri = _hareketler.Select(h => h.DovizTuru).Distinct().OrderBy(x => x).ToList();

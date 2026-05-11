@@ -120,6 +120,7 @@
         _yukleniyor = true;
         try
         {
+            DonemSiniri.Kirp(ref _bitis);
             _kurlar = await Logo.KurlarAsync(_baslangic, _bitis, _crType);
             Snackbar.Add($"{_kurlar.Count} kayıt yüklendi.", Severity.Success);
         }

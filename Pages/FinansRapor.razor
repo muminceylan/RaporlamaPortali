@@ -580,6 +580,7 @@ else if (!_yukleniyor)
         _yukleniyor = true; _hata = null;
         try
         {
+            DonemSiniri.Kirp(ref _bitis);
             _ham = await FinansService.GetHareketlerAsync(_baslangic.Value, _bitis.Value);
             _mevcutModuller = _ham.Select(x => x.Modul).Where(x => !string.IsNullOrEmpty(x))
                                   .Distinct().OrderBy(x => x).ToList();

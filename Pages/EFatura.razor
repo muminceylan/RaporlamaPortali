@@ -1,0 +1,680 @@
+@page "/efatura"
+@using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
+@inject EFaturaService Svc
+@inject ExcelExportService ExcelExportService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>e-Fatura Görüntüleme</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-2 d-flex align-center">
+    <MudIcon Icon="@Icons.Material.Filled.Receipt" Class="mr-2" Color="Color.Primary" />
+    e-Fatura Görüntüleme
+    <MudChip T="string" Size="Size.Small" Color="Color.Default" Class="ml-3"
+             Icon="@Icons.Material.Filled.Storage">eFaturaDogusCayDB</MudChip>
+</MudText>
+
+@if (!Svc.BaglantiTanimliMi)
+{
+    <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="mb-4">
+        EFaturaDB connection string tanımlı değil. appsettings.json içinden ConnectionStrings:EFaturaDB değerini ayarlayın.
+    </MudAlert>
+}
+
+<MudPaper Class="pa-3 mb-3" Elevation="3" Style="border-left:4px solid #1976d2;">
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="3">
+            <MudToggleGroup T="EFaturaYon" SelectionMode="SelectionMode.SingleSelection"
+                            @bind-Value="_filtre.Yon" Color="Color.Primary" CheckMark="true">
+                <MudToggleItem Value="EFaturaYon.Gelen">
+                    <MudIcon Icon="@Icons.Material.Filled.CallReceived" Class="mr-1" />
+                    Gelen
+                </MudToggleItem>
+                <MudToggleItem Value="EFaturaYon.Giden">
+                    <MudIcon Icon="@Icons.Material.Filled.CallMade" Class="mr-1" />
+                    Giden
+                </MudToggleItem>
+            </MudToggleGroup>
+        </MudItem>
+
+        <MudItem xs="6" md="2">
+            <MudDatePicker @bind-Date="_bas" Label="Başlangıç" DateFormat="dd.MM.yyyy"
+                           Variant="Variant.Outlined" Margin="Margin.Dense"
+                           PickerVariant="PickerVariant.Dialog" />
+        </MudItem>
+        <MudItem xs="6" md="2">
+            <MudDatePicker @bind-Date="_bit" Label="Bitiş" DateFormat="dd.MM.yyyy"
+                           Variant="Variant.Outlined" Margin="Margin.Dense"
+                           PickerVariant="PickerVariant.Dialog" />
+        </MudItem>
+
+        <MudItem xs="6" md="2">
+            <MudSelect T="string" Label="Fatura Tipi" @bind-Value="_filtre.Tip"
+                       Variant="Variant.Outlined" Margin="Margin.Dense"
+                       Clearable="true" Dense="true" AnchorOrigin="Origin.BottomCenter">
+                <MudSelectItem T="string" Value="@(null)">— Hepsi —</MudSelectItem>
+                @foreach (var t in _tipler)
+                {
+                    <MudSelectItem T="string" Value="@t">@t</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+
+        <MudItem xs="6" md="3" Class="d-flex align-center gap-2">
+            <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.Search"
+                       OnClick="Sorgula" Disabled="_yukleniyor" FullWidth="true">
+                @(_yukleniyor ? "Yükleniyor..." : "Sorgula")
+            </MudButton>
+            <MudIconButton Icon="@Icons.Material.Filled.RestartAlt" Title="Filtreleri temizle"
+                           Color="Color.Default" OnClick="FiltreSifirla" />
+        </MudItem>
+
+        <MudItem xs="12" md="4">
+            <MudTextField @bind-Value="_filtre.KarsiUnvan"
+                          Label="@(_filtre.Yon == EFaturaYon.Gelen ? "Gönderen Ünvan (LIKE)" : "Alıcı Ünvan (LIKE)")"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Business"
+                          Clearable="true" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudTextField @bind-Value="_filtre.KarsiVKN" Label="VKN / TCKN"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Badge"
+                          Clearable="true" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudTextField @bind-Value="_filtre.FaturaNo" Label="Fatura No (LIKE)"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Tag"
+                          Clearable="true" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudTextField @bind-Value="_filtre.LogoCariKodu"
+                          Label="Logo Cari Kod (örn. 320.06)"
+                          HelperText="Bu kodla başlayan cariler"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.AccountTree"
+                          Clearable="true" />
+        </MudItem>
+        <MudItem xs="6" md="2">
+            <MudNumericField @bind-Value="_filtre.MaxKayit" Label="Max kayıt"
+                             HelperText="Manuel yazabilirsiniz (50–5000)"
+                             Variant="Variant.Outlined" Margin="Margin.Dense"
+                             Min="50" Max="5000" Step="500" Immediate="true" />
+        </MudItem>
+        <MudItem xs="12" md="2" Class="d-flex align-center">
+            <MudCheckBox T="bool" @bind-Value="_filtre.SistemYanitlariniGoster"
+                         Color="Color.Warning" Dense="true"
+                         Label="GİB sistem yanıtlarını da göster" />
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@if (_kayitlar.Count == 0 && !_yukleniyor)
+{
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3">
+        Kayıt yok. Filtreleri ayarlayıp "Sorgula" tuşuna basın.
+    </MudAlert>
+}
+else
+{
+    <MudPaper Class="pa-2 mb-2 d-flex align-center" Elevation="0" Style="background:#e3f2fd;">
+        <MudText Typo="Typo.body2">
+            <b>@_kayitlar.Count</b> kayıt listelendi
+            @if (_kayitlar.Count >= _filtre.MaxKayit)
+            {
+                <span style="color:#d32f2f"> (limit dolu — Max kayıt'ı artırın)</span>
+            }
+            &nbsp;|&nbsp; Tarih: <b>@(_bas?.ToString("dd.MM.yyyy"))</b> – <b>@(_bit?.ToString("dd.MM.yyyy"))</b>
+        </MudText>
+        <MudSpacer />
+        <MudButton Color="Color.Success" Variant="Variant.Filled" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.FileDownload"
+                   OnClick="ExcelIndir" Disabled="_excelYukleniyor || _kayitlar.Count == 0">
+            @(_excelYukleniyor ? "Hazırlanıyor..." : $"Excel'e Aktar ({_kayitlar.Count})")
+        </MudButton>
+    </MudPaper>
+
+    <MudTable T="EFaturaListItem" Items="_kayitlar" Dense="true" Hover="true" Bordered="true" Striped="true"
+              FixedHeader="true" Height="calc(100vh - 420px)"
+              Breakpoint="Breakpoint.None" RowsPerPage="100"
+              Class="efatura-list-tbl">
+        <HeaderContent>
+            <MudTh Style="width:110px"><MudTableSortLabel SortBy="new Func<EFaturaListItem,object>(x=>x.Tarih)">Tarih</MudTableSortLabel></MudTh>
+            <MudTh Style="width:85px">Tip</MudTh>
+            <MudTh Style="width:155px"><MudTableSortLabel SortBy="new Func<EFaturaListItem,object>(x=>x.FaturaNo)">Fatura No</MudTableSortLabel></MudTh>
+            <MudTh Style="width:110px">VKN/TCKN</MudTh>
+            <MudTh Style="width:170px"><MudTableSortLabel SortBy="new Func<EFaturaListItem,object>(x=>x.LogoCariKod)">Logo Cari</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<EFaturaListItem,object>(x=>x.KarsiUnvan)">Karşı Taraf</MudTableSortLabel></MudTh>
+            <MudTh Style="width:200px"><MudTableSortLabel SortBy="new Func<EFaturaListItem,object>(x=>x.IlkKalem)">İlk Kalem</MudTableSortLabel></MudTh>
+            <MudTh Style="width:95px;text-align:right"><MudTableSortLabel SortBy="new Func<EFaturaListItem,object>(x=>x.Matrah)">Matrah</MudTableSortLabel></MudTh>
+            <MudTh Style="width:85px;text-align:right"><MudTableSortLabel SortBy="new Func<EFaturaListItem,object>(x=>x.KdvTutar)">KDV</MudTableSortLabel></MudTh>
+            <MudTh Style="width:105px;text-align:right"><MudTableSortLabel SortBy="new Func<EFaturaListItem,object>(x=>x.ToplamTutar)">Fatura Tutarı</MudTableSortLabel></MudTh>
+            <MudTh Style="width:85px;text-align:right"><MudTableSortLabel SortBy="new Func<EFaturaListItem,object>(x=>x.TevkifatTutar)">Tevkifat</MudTableSortLabel></MudTh>
+            <MudTh Style="width:140px;text-align:center">İşlem</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Tarih" Style="white-space:nowrap;">
+                <span>@context.Tarih.ToString("dd.MM.yyyy")</span>
+                <span class="ef-mini">@context.Tarih.ToString("HH:mm")</span>
+            </MudTd>
+            <MudTd DataLabel="Tip">
+                <MudChip T="string" Size="Size.Small" Color="@RenkTip(context.Tip)" Variant="Variant.Filled">
+                    @context.Tip
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Fatura No" Style="font-family:'Consolas',monospace; font-size:0.85em;" Title="@context.Aciklama">
+                @context.FaturaNo
+            </MudTd>
+            <MudTd DataLabel="VKN" Style="font-family:'Consolas',monospace; font-size:0.85em;">@context.KarsiVKN</MudTd>
+            <MudTd DataLabel="Logo Cari">
+                @if (!string.IsNullOrEmpty(context.LogoCariKod))
+                {
+                    <div class="ef-code">@context.LogoCariKod</div>
+                    <div class="ef-sub" title="@context.LogoCariUnvan">@context.LogoCariUnvan</div>
+                }
+                else { <span class="ef-dash">—</span> }
+            </MudTd>
+            <MudTd DataLabel="Karşı Taraf" Class="ef-trunc" Title="@context.KarsiUnvan">@context.KarsiUnvan</MudTd>
+            <MudTd DataLabel="İlk Kalem" Class="ef-trunc" Style="max-width:200px;" Title="@context.IlkKalem">@context.IlkKalem</MudTd>
+            <MudTd DataLabel="Matrah" Class="ef-num">
+                @if (context.Matrah != 0)
+                {
+                    @context.Matrah.ToString("N2")
+                    @if (!string.IsNullOrEmpty(context.Doviz) && context.Doviz != "TRY")
+                    { <span class="ef-mini"> @context.Doviz</span> }
+                }
+                else { <span class="ef-dash">—</span> }
+            </MudTd>
+            <MudTd DataLabel="KDV" Class="ef-num">
+                @if (context.KdvTutar != 0)
+                { @context.KdvTutar.ToString("N2") }
+                else { <span class="ef-dash">—</span> }
+            </MudTd>
+            <MudTd DataLabel="Fatura Tutarı" Class="ef-num" Style="font-weight:600; color:#0d47a1;">
+                @if (context.ToplamTutar != 0)
+                { @context.ToplamTutar.ToString("N2") }
+                else { <span class="ef-dash">—</span> }
+            </MudTd>
+            <MudTd DataLabel="Tevkifat" Class="ef-num" Style="color:#c62828;">
+                @if (context.TevkifatTutar != 0)
+                { @context.TevkifatTutar.ToString("N2") }
+                else { <span class="ef-dash">—</span> }
+            </MudTd>
+            <MudTd DataLabel="İşlem" Style="text-align:center; white-space:nowrap;">
+                <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
+                               Color="Color.Primary" Title="Detayı göster"
+                               OnClick="@(() => DetayAc(context))" />
+                <MudIconButton Icon="@Icons.Material.Filled.PictureAsPdf" Size="Size.Small"
+                               Color="Color.Error" Title="PDF / Yazdır"
+                               Href="@($"/efatura-pdf?id={context.Id}&vkn={Uri.EscapeDataString(context.KarsiVKN ?? "")}")"
+                               Target="_blank" />
+                <MudIconButton Icon="@Icons.Material.Filled.Code" Size="Size.Small"
+                               Color="Color.Default" Title="XML'i indir"
+                               Href="@($"/efatura-xml?id={context.Id}")" Target="_blank" />
+                <MudIconButton Icon="@Icons.Material.Filled.Archive" Size="Size.Small"
+                               Color="Color.Secondary" Title="ZIP'i indir"
+                               Href="@($"/efatura-zip?id={context.Id}")" Target="_blank" />
+            </MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager PageSizeOptions="new int[] { 50, 100, 250, 500 }" />
+        </PagerContent>
+        <NoRecordsContent>
+            <MudText>Kayıt bulunamadı.</MudText>
+        </NoRecordsContent>
+    </MudTable>
+}
+
+<MudDrawer @bind-Open="_detayAcik" Anchor="Anchor.End" Variant="DrawerVariant.Temporary"
+           Elevation="6" Width="min(96vw, 1280px)" Overlay="true">
+    <MudDrawerHeader Style="background:linear-gradient(90deg,#0d47a1,#1976d2); color:white;">
+        <MudIcon Icon="@Icons.Material.Filled.Receipt" Class="mr-2" />
+        <MudText Typo="Typo.h6">e-Fatura Detayı</MudText>
+        <MudSpacer />
+        @if (_detay != null)
+        {
+            <MudIconButton Icon="@Icons.Material.Filled.PictureAsPdf" Color="Color.Inherit"
+                           Title="PDF / Yazdır"
+                           Href="@($"/efatura-pdf?id={_detay.Id}&vkn={Uri.EscapeDataString(_detayKarsiVkn)}")" Target="_blank" />
+            <MudIconButton Icon="@Icons.Material.Filled.Code" Color="Color.Inherit"
+                           Title="XML'i indir"
+                           Href="@($"/efatura-xml?id={_detay.Id}")" Target="_blank" />
+            <MudIconButton Icon="@Icons.Material.Filled.Archive" Color="Color.Inherit"
+                           Title="ZIP'i indir"
+                           Href="@($"/efatura-zip?id={_detay.Id}")" Target="_blank" />
+        }
+        <MudIconButton Icon="@Icons.Material.Filled.Close" Color="Color.Inherit"
+                       OnClick="@(() => _detayAcik = false)" />
+    </MudDrawerHeader>
+
+    <div class="pa-3" style="overflow-y:auto; height:calc(100vh - 64px);">
+        @if (_detayYukleniyor)
+        {
+            <div class="d-flex justify-center pa-6">
+                <MudProgressCircular Indeterminate="true" Size="Size.Large" />
+            </div>
+        }
+        else if (_detay != null)
+        {
+            @* Üst başlık - taraflar + fatura künyesi *@
+            <MudGrid Spacing="2">
+                <MudItem xs="12" md="6">
+                    <MudCard Elevation="2" Style="border-left:4px solid #2e7d32; height:100%;">
+                        <MudCardContent>
+                            <MudText Typo="Typo.overline" Color="Color.Success" Style="font-weight:700;">
+                                <MudIcon Icon="@Icons.Material.Filled.Store" Class="mr-1" />
+                                SATICI
+                            </MudText>
+                            <MudText Typo="Typo.subtitle1" Style="font-weight:700;">@_detay.SaticiUnvan</MudText>
+                            <MudText Typo="Typo.body2">VKN: <b>@_detay.SaticiVkn</b></MudText>
+                            @if (!string.IsNullOrWhiteSpace(_detay.SaticiVergiDairesi))
+                            {
+                                <MudText Typo="Typo.body2">Vergi Dairesi: @_detay.SaticiVergiDairesi</MudText>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(_detay.SaticiAdres))
+                            {
+                                <MudText Typo="Typo.caption" Style="color:#666">@_detay.SaticiAdres</MudText>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(_detay.SaticiTelefon) || !string.IsNullOrWhiteSpace(_detay.SaticiEposta))
+                            {
+                                <MudText Typo="Typo.caption" Class="mt-1" Style="color:#666">
+                                    @_detay.SaticiTelefon @(string.IsNullOrEmpty(_detay.SaticiEposta) ? "" : " · " + _detay.SaticiEposta)
+                                </MudText>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(_detay.LogoCariKod) && string.Equals(_detayKarsiVkn, _detay.SaticiVkn, StringComparison.OrdinalIgnoreCase))
+                            {
+                                <div class="cari-detay-badge" title="Logo Tiger LG_211_CLCARD eşleşmesi">
+                                    <MudIcon Icon="@Icons.Material.Filled.AccountTree" Style="font-size:14px;vertical-align:-2px" />
+                                    Logo Cari: <b>@_detay.LogoCariKod</b>
+                                    @if (!string.IsNullOrWhiteSpace(_detay.LogoCariUnvan))
+                                    {
+                                        <span style="opacity:.75">— @_detay.LogoCariUnvan</span>
+                                    }
+                                </div>
+                            }
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudCard Elevation="2" Style="border-left:4px solid #1976d2; height:100%;">
+                        <MudCardContent>
+                            <MudText Typo="Typo.overline" Color="Color.Primary" Style="font-weight:700;">
+                                <MudIcon Icon="@Icons.Material.Filled.Person" Class="mr-1" />
+                                ALICI
+                            </MudText>
+                            <MudText Typo="Typo.subtitle1" Style="font-weight:700;">@_detay.AliciUnvan</MudText>
+                            <MudText Typo="Typo.body2">VKN: <b>@_detay.AliciVkn</b></MudText>
+                            @if (!string.IsNullOrWhiteSpace(_detay.AliciVergiDairesi))
+                            {
+                                <MudText Typo="Typo.body2">Vergi Dairesi: @_detay.AliciVergiDairesi</MudText>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(_detay.AliciAdres))
+                            {
+                                <MudText Typo="Typo.caption" Style="color:#666">@_detay.AliciAdres</MudText>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(_detay.LogoCariKod) && string.Equals(_detayKarsiVkn, _detay.AliciVkn, StringComparison.OrdinalIgnoreCase))
+                            {
+                                <div class="cari-detay-badge" title="Logo Tiger LG_211_CLCARD eşleşmesi">
+                                    <MudIcon Icon="@Icons.Material.Filled.AccountTree" Style="font-size:14px;vertical-align:-2px" />
+                                    Logo Cari: <b>@_detay.LogoCariKod</b>
+                                    @if (!string.IsNullOrWhiteSpace(_detay.LogoCariUnvan))
+                                    {
+                                        <span style="opacity:.75">— @_detay.LogoCariUnvan</span>
+                                    }
+                                </div>
+                            }
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+
+                <MudItem xs="12">
+                    <MudPaper Class="pa-3" Style="background:#f5f5f5;">
+                        <MudGrid Spacing="2">
+                            <MudItem xs="6" md="3">
+                                <MudText Typo="Typo.overline" Style="color:#666">Fatura No</MudText>
+                                <MudText Typo="Typo.h6" Style="font-family:'Consolas',monospace;">@_detay.FaturaNo</MudText>
+                            </MudItem>
+                            <MudItem xs="6" md="3">
+                                <MudText Typo="Typo.overline" Style="color:#666">Tarih / Saat</MudText>
+                                <MudText Typo="Typo.h6">@_detay.Tarih?.ToString("dd.MM.yyyy") <span style="font-size:0.7em;color:#888">@_detay.Saat</span></MudText>
+                            </MudItem>
+                            <MudItem xs="6" md="2">
+                                <MudText Typo="Typo.overline" Style="color:#666">Fatura Tipi</MudText>
+                                <MudChip T="string" Size="Size.Small" Color="@RenkTip(_detay.Tip)" Variant="Variant.Filled">
+                                    @_detay.Tip
+                                </MudChip>
+                            </MudItem>
+                            <MudItem xs="6" md="2">
+                                <MudText Typo="Typo.overline" Style="color:#666">Senaryo</MudText>
+                                <MudText Typo="Typo.body1">@_detay.ProfileId</MudText>
+                            </MudItem>
+                            <MudItem xs="6" md="2">
+                                <MudText Typo="Typo.overline" Style="color:#666">Döviz</MudText>
+                                <MudText Typo="Typo.h6">@_detay.Doviz @if (_detay.DovizKuru > 0) { <span style="font-size:0.6em;color:#888"> · kur @_detay.DovizKuru.ToString("N4")</span> }</MudText>
+                            </MudItem>
+                            <MudItem xs="12">
+                                <MudText Typo="Typo.caption" Style="color:#666">
+                                    ETTN: <span style="font-family:'Consolas',monospace;">@_detay.Uuid</span>
+                                </MudText>
+                            </MudItem>
+                        </MudGrid>
+                    </MudPaper>
+                </MudItem>
+            </MudGrid>
+
+            @* Kalemler tablosu *@
+            <MudText Typo="Typo.h6" Class="mt-4 mb-2 d-flex align-center">
+                <MudIcon Icon="@Icons.Material.Filled.ShoppingCart" Class="mr-2" Color="Color.Primary" />
+                Kalemler (@_detay.Kalemler.Count satır)
+            </MudText>
+
+            <MudTable T="EFaturaKalem" Items="_detay.Kalemler" Dense="true" Hover="true" Bordered="true" Striped="true"
+                      Breakpoint="Breakpoint.None">
+                <HeaderContent>
+                    <MudTh Style="width:40px">#</MudTh>
+                    <MudTh>Mal / Hizmet</MudTh>
+                    <MudTh Style="width:120px">Stok Kodu</MudTh>
+                    <MudTh Style="width:110px;text-align:right">Miktar</MudTh>
+                    <MudTh Style="width:130px;text-align:right">Birim Fiyat</MudTh>
+                    <MudTh Style="width:130px;text-align:right">Net Tutar</MudTh>
+                    <MudTh Style="width:75px;text-align:center">KDV %</MudTh>
+                    <MudTh Style="width:120px;text-align:right">KDV Tutar</MudTh>
+                    <MudTh Style="width:75px;text-align:center">Tevkifat %</MudTh>
+                    <MudTh Style="width:130px;text-align:right">Tevkifat Tutar</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.Sira</MudTd>
+                    <MudTd>
+                        <MudText Typo="Typo.body2" Style="font-weight:600;">@context.Aciklama</MudText>
+                        @if (!string.IsNullOrWhiteSpace(context.StokAdi) && context.StokAdi != context.Aciklama)
+                        {
+                            <MudText Typo="Typo.caption" Style="color:#888">↳ @context.StokAdi</MudText>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(context.IstisnaKodu))
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined" Class="mt-1">
+                                İstisna: @context.IstisnaKodu @context.IstisnaSebep
+                            </MudChip>
+                        }
+                    </MudTd>
+                    <MudTd Style="font-family:'Consolas',monospace; font-size:0.85em">@context.StokKodu</MudTd>
+                    <MudTd Style="text-align:right">@context.Miktar.ToString("N2") <span style="color:#888;font-size:0.85em">@context.Birim</span></MudTd>
+                    <MudTd Style="text-align:right">@context.BirimFiyat.ToString("N2") @context.Doviz</MudTd>
+                    <MudTd Style="text-align:right;font-weight:600">@context.NetTutar.ToString("N2")</MudTd>
+                    <MudTd Style="text-align:center">@(context.KdvOran == 0 ? "" : $"%{context.KdvOran:N0}")</MudTd>
+                    <MudTd Style="text-align:right">@(context.KdvTutar == 0 ? "" : context.KdvTutar.ToString("N2"))</MudTd>
+                    <MudTd Style="text-align:center">@(context.TevkifatOran == 0 ? "" : $"%{context.TevkifatOran:N0}")</MudTd>
+                    <MudTd Style="text-align:right;color:#b71c1c;font-weight:600">@(context.TevkifatTutar == 0 ? "" : context.TevkifatTutar.ToString("N2"))</MudTd>
+                </RowTemplate>
+            </MudTable>
+
+            @* Tevkifat kodları (alt-paneli) *@
+            @if (_detay.Kalemler.Any(k => !string.IsNullOrWhiteSpace(k.TevkifatKodu)))
+            {
+                <MudPaper Class="pa-2 mt-2" Style="background:#fff3e0; border-left:4px solid #f57c00;">
+                    <MudText Typo="Typo.subtitle2">
+                        <MudIcon Icon="@Icons.Material.Filled.Gavel" Class="mr-1" />
+                        Tevkifat Kodları:
+                    </MudText>
+                    @foreach (var grp in _detay.Kalemler.Where(k => !string.IsNullOrWhiteSpace(k.TevkifatKodu))
+                                  .GroupBy(k => new { k.TevkifatKodu, k.TevkifatAdi }))
+                    {
+                        <MudText Typo="Typo.body2" Class="ml-3">
+                            <b>@grp.Key.TevkifatKodu</b> — @grp.Key.TevkifatAdi
+                        </MudText>
+                    }
+                </MudPaper>
+            }
+
+            <MudGrid Spacing="2" Class="mt-3">
+                @* Sol: Açıklamalar *@
+                <MudItem xs="12" md="6">
+                    @if (_detay.FaturaNotlari.Count > 0)
+                    {
+                        <MudCard Elevation="2" Style="border-left:4px solid #6a1b9a; height:100%;">
+                            <MudCardContent>
+                                <MudText Typo="Typo.subtitle1" Class="mb-2" Color="Color.Secondary" Style="font-weight:700;">
+                                    <MudIcon Icon="@Icons.Material.Filled.Notes" Class="mr-1" />
+                                    Fatura Açıklamaları
+                                </MudText>
+                                @foreach (var n in _detay.FaturaNotlari)
+                                {
+                                    <MudText Typo="Typo.body2">• @n</MudText>
+                                }
+                            </MudCardContent>
+                        </MudCard>
+                    }
+                </MudItem>
+
+                @* Sağ: Toplamlar tablosu *@
+                <MudItem xs="12" md="6">
+                    <MudCard Elevation="3" Style="border:2px solid #1976d2; background:linear-gradient(135deg,#f8fbff,#e3f2fd);">
+                        <MudCardContent>
+                            <MudText Typo="Typo.subtitle1" Class="mb-2" Style="font-weight:700; color:#0d47a1">
+                                <MudIcon Icon="@Icons.Material.Filled.Calculate" Class="mr-1" />
+                                Mali Özet
+                            </MudText>
+                            <table class="totals-tbl">
+                                <tr><td>Mal/Hizmet Toplamı</td><td class="num">@_detay.LineExtensionAmount.ToString("N2") @_detay.Doviz</td></tr>
+                                @if (_detay.AllowanceTotalAmount > 0)
+                                {
+                                    <tr><td>Toplam İskonto</td><td class="num">@_detay.AllowanceTotalAmount.ToString("N2") @_detay.Doviz</td></tr>
+                                }
+                                @foreach (var v in _detay.VergiOzetleri)
+                                {
+                                    <tr>
+                                        <td>@v.Adi @(v.Oran > 0 ? $"(%{v.Oran:N0})" : "")</td>
+                                        <td class="num">@v.Tutar.ToString("N2") @_detay.Doviz</td>
+                                    </tr>
+                                }
+                                @foreach (var t in _detay.TevkifatOzetleri)
+                                {
+                                    <tr style="color:#b71c1c">
+                                        <td>↓ Tevkifat @(t.Oran > 0 ? $"(%{t.Oran:N0})" : "")</td>
+                                        <td class="num">-@t.Tutar.ToString("N2") @_detay.Doviz</td>
+                                    </tr>
+                                }
+                                <tr><td>Vergiler Dahil Toplam</td><td class="num">@_detay.TaxInclusiveAmount.ToString("N2") @_detay.Doviz</td></tr>
+                                <tr class="payable"><td>ÖDENECEK TUTAR</td><td class="num">@_detay.PayableAmount.ToString("N2") @_detay.Doviz</td></tr>
+                            </table>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            </MudGrid>
+
+            @* Vergi istisnaları (varsa) *@
+            @if (_detay.VergiOzetleri.Any(v => !string.IsNullOrWhiteSpace(v.IstisnaKodu) || !string.IsNullOrWhiteSpace(v.IstisnaSebep)))
+            {
+                <MudPaper Class="pa-2 mt-2" Style="background:#fce4ec; border-left:4px solid #c2185b;">
+                    <MudText Typo="Typo.subtitle2">
+                        <MudIcon Icon="@Icons.Material.Filled.GppMaybe" Class="mr-1" />
+                        KDV İstisna Açıklamaları:
+                    </MudText>
+                    @foreach (var v in _detay.VergiOzetleri.Where(x => !string.IsNullOrWhiteSpace(x.IstisnaKodu) || !string.IsNullOrWhiteSpace(x.IstisnaSebep)))
+                    {
+                        <MudText Typo="Typo.body2" Class="ml-3">
+                            <b>@v.IstisnaKodu</b> — @v.IstisnaSebep
+                        </MudText>
+                    }
+                </MudPaper>
+            }
+        }
+        else
+        {
+            <MudAlert Severity="Severity.Warning">Detay yüklenemedi.</MudAlert>
+        }
+    </div>
+</MudDrawer>
+
+<style>
+    .totals-tbl { width:100%; border-collapse:collapse; font-size:0.92em; }
+    .totals-tbl td { padding:5px 8px; border-bottom:1px dashed #cfd8dc; }
+    .totals-tbl td.num { text-align:right; font-variant-numeric:tabular-nums; font-weight:500; }
+    .totals-tbl tr.payable td { background:#0d47a1; color:#fff; font-weight:700; font-size:1.05em; border-bottom:none; }
+    .totals-tbl tr.payable td.num { color:#fff; }
+    .cari-detay-badge { display:inline-block; margin-top:6px; padding:3px 8px; background:#fff3cd; border:1px solid #f6c243;
+                        border-radius:3px; color:#7a5a00; font-family:'Consolas',monospace; font-size:0.78rem; }
+
+    /* e-Fatura listesi — kompakt satır görünümü */
+    .efatura-list-tbl .mud-table-cell { padding: 3px 8px !important; line-height: 1.15 !important; vertical-align: middle; font-size: 0.88em; }
+    .efatura-list-tbl .mud-table-head .mud-table-cell { padding: 6px 8px !important; font-size: 0.82em; }
+    .efatura-list-tbl .mud-table-cell .mud-icon-button { padding: 3px !important; min-width: 26px; height: 26px; width: 26px; }
+    .efatura-list-tbl .mud-table-cell .mud-icon-button .mud-icon-root { font-size: 1rem; }
+    .efatura-list-tbl .mud-chip-small { height: 20px; font-size: 0.72em; padding: 0 8px; }
+    .efatura-list-tbl .ef-mini { color:#999; font-size:0.8em; margin-left:4px; }
+    .efatura-list-tbl .ef-dash { color:#cfd8dc; }
+    .efatura-list-tbl .ef-num { text-align:right; font-family:'Consolas',monospace; white-space:nowrap; }
+    .efatura-list-tbl .ef-code { font-family:'Consolas',monospace; font-weight:600; color:#7a5a00; font-size:0.92em; }
+    .efatura-list-tbl .ef-sub { color:#999; font-size:0.78em; max-width:160px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .efatura-list-tbl .ef-trunc { max-width:280px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+</style>
+
+@code {
+    private EFaturaFiltre _filtre = new() { Yon = EFaturaYon.Gelen };
+    private DateTime?     _bas    = DateTime.Today.AddDays(-30);
+    private DateTime?     _bit    = DateTime.Today;
+    private List<string>  _tipler = new();
+    private List<EFaturaListItem> _kayitlar = new();
+    private bool _yukleniyor = false;
+
+    private bool          _detayAcik       = false;
+    private bool          _detayYukleniyor = false;
+    private EFaturaDetay? _detay;
+    private string        _detayKarsiVkn   = "";
+    private bool          _excelYukleniyor = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Svc.BaglantiTanimliMi)
+        {
+            try
+            {
+                _tipler = await Svc.InvoiceTiplerAsync();
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Bağlantı hatası: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task Sorgula()
+    {
+        if (!Svc.BaglantiTanimliMi)
+        {
+            Snackbar.Add("EFaturaDB connection string tanımlı değil.", Severity.Error);
+            return;
+        }
+        if (_bas == null || _bit == null)
+        {
+            Snackbar.Add("Tarih aralığı seçin.", Severity.Warning);
+            return;
+        }
+        if (_bit < _bas)
+        {
+            Snackbar.Add("Bitiş tarihi başlangıçtan önce olamaz.", Severity.Warning);
+            return;
+        }
+
+        _yukleniyor = true;
+        try
+        {
+            DonemSiniri.Kirp(ref _bit);
+            _filtre.Baslangic = _bas.Value;
+            _filtre.Bitis     = _bit!.Value;
+            _kayitlar = await Svc.ListeleAsync(_filtre);
+            if (_kayitlar.Count == 0)
+                Snackbar.Add("Filtreye uyan kayıt bulunamadı.", Severity.Info);
+            else
+                Snackbar.Add($"{_kayitlar.Count} kayıt listelendi.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Sorgu hatası: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _yukleniyor = false;
+        }
+    }
+
+    private void FiltreSifirla()
+    {
+        _filtre = new EFaturaFiltre { Yon = _filtre.Yon };
+        _bas = DateTime.Today.AddDays(-30);
+        _bit = DateTime.Today;
+        _kayitlar.Clear();
+    }
+
+    private async Task DetayAc(EFaturaListItem r)
+    {
+        _detayAcik = true;
+        _detayYukleniyor = true;
+        _detay = null;
+        _detayKarsiVkn = r.KarsiVKN ?? "";
+        StateHasChanged();
+        try
+        {
+            _detay = await Svc.DetayGetirAsync(r.Id, r.KarsiVKN);
+            if (_detay == null)
+                Snackbar.Add("XML ayrıştırılamadı.", Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Detay hatası: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _detayYukleniyor = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ExcelIndir()
+    {
+        if (_kayitlar.Count == 0) return;
+        _excelYukleniyor = true;
+        try
+        {
+            _filtre.Baslangic = _bas ?? DateTime.Today.AddDays(-30);
+            _filtre.Bitis     = _bit ?? DateTime.Today;
+            var bytes = ExcelExportService.ExportEFaturaListesi(_kayitlar, _filtre);
+            var fileName = $"eFatura_{_filtre.Yon}_{_filtre.Baslangic:yyyyMMdd}_{_filtre.Bitis:yyyyMMdd}.xlsx";
+            await JS.InvokeVoidAsync("downloadFile", fileName, Convert.ToBase64String(bytes),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            Snackbar.Add($"{_kayitlar.Count} kayıt Excel'e aktarıldı.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Excel hatası: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _excelYukleniyor = false;
+        }
+    }
+
+    private static string FormatBoyut(long b)
+    {
+        if (b < 1024) return $"{b} B";
+        if (b < 1024 * 1024) return $"{b / 1024.0:N1} KB";
+        return $"{b / (1024.0 * 1024.0):N2} MB";
+    }
+
+    private static Color RenkTip(string tip) => (tip ?? "").ToUpperInvariant() switch
+    {
+        "SATIS"        => Color.Success,
+        "IADE"         => Color.Error,
+        "TEVKIFAT"     => Color.Warning,
+        "ISTISNA"      => Color.Secondary,
+        "IHRACKAYITLI" => Color.Tertiary,
+        "OZELMATRAH"   => Color.Info,
+        "SEVK"         => Color.Default,
+        "KABUL"        => Color.Primary,
+        "RED"          => Color.Error,
+        _              => Color.Default,
+    };
+}
