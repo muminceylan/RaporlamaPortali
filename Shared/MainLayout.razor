@@ -35,7 +35,9 @@
                 Ana Sayfa
             </MudNavLink>
 
-            <MudNavGroup Title="Raporlar" Icon="@Icons.Material.Filled.Assessment" @bind-Expanded="_raporlarOpen"
+            <MudNavGroup Title="Raporlar" Icon="@Icons.Material.Filled.Assessment"
+                         Expanded="@(_acikGrup == "raporlar")"
+                         ExpandedChanged="@((bool v) => GrupAc("raporlar", v))"
                          IconColor="Color.Success">
                 <MudNavLink Href="/yan-urunler" Icon="@Icons.Material.Filled.Assessment" IconColor="Color.Success">
                     Özet Rapor (Ürünler)
@@ -57,7 +59,9 @@
                 </MudNavLink>
             </MudNavGroup>
 
-            <MudNavGroup Title="Logo İşlemleri" Icon="@Icons.Material.Filled.Business" @bind-Expanded="_logoOpen"
+            <MudNavGroup Title="Logo İşlemleri" Icon="@Icons.Material.Filled.Business"
+                         Expanded="@(_acikGrup == "logo")"
+                         ExpandedChanged="@((bool v) => GrupAc("logo", v))"
                          IconColor="Color.Primary">
                 <MudNavLink Href="/kasa-hareketleri" Icon="@Icons.Material.Filled.AccountBalanceWallet" IconColor="Color.Primary">
                     Kasa Hareketleri
@@ -79,7 +83,9 @@
                 </MudNavLink>
             </MudNavGroup>
 
-            <MudNavGroup Title="Mutabakat ve Kur Farkı" Icon="@Icons.Material.Filled.CompareArrows" @bind-Expanded="_mutabakatOpen"
+            <MudNavGroup Title="Mutabakat ve Kur Farkı" Icon="@Icons.Material.Filled.CompareArrows"
+                         Expanded="@(_acikGrup == "mutabakat")"
+                         ExpandedChanged="@((bool v) => GrupAc("mutabakat", v))"
                          IconColor="Color.Error">
                 <MudNavLink Href="/mutabakat" Icon="@Icons.Material.Filled.CompareArrows" IconColor="Color.Error">
                     Cari Mutabakatı (Mümin CEYLAN Uygulaması)
@@ -89,7 +95,9 @@
                 </MudNavLink>
             </MudNavGroup>
 
-            <MudNavGroup Title="Kontrol Menüsü" Icon="@Icons.Material.Filled.Rule" @bind-Expanded="_kontrolOpen"
+            <MudNavGroup Title="Kontrol Menüsü" Icon="@Icons.Material.Filled.Rule"
+                         Expanded="@(_acikGrup == "kontrol")"
+                         ExpandedChanged="@((bool v) => GrupAc("kontrol", v))"
                          IconColor="Color.Warning">
                 <MudNavLink Href="/kantar-logo-karsilastirma" Icon="@Icons.Material.Filled.CompareArrows" IconColor="Color.Warning">
                     Kantar - Logo Karşılaştırması
@@ -99,7 +107,9 @@
                 </MudNavLink>
             </MudNavGroup>
 
-            <MudNavGroup Title="SabNet Kantar" Icon="@Icons.Material.Filled.Scale" @bind-Expanded="_sabnetOpen"
+            <MudNavGroup Title="SabNet Kantar" Icon="@Icons.Material.Filled.Scale"
+                         Expanded="@(_acikGrup == "sabnet")"
+                         ExpandedChanged="@((bool v) => GrupAc("sabnet", v))"
                          IconColor="Color.Secondary">
                 <MudNavLink Href="/sabnet-kantar-hareketleri" Icon="@Icons.Material.Filled.ViewList" IconColor="Color.Secondary">
                     Kantar Hareketleri
@@ -109,7 +119,9 @@
                 </MudNavLink>
             </MudNavGroup>
 
-            <MudNavGroup Title="Evrak Arşivi" Icon="@Icons.Material.Filled.FolderOpen" @bind-Expanded="_evrakOpen"
+            <MudNavGroup Title="Evrak Arşivi" Icon="@Icons.Material.Filled.FolderOpen"
+                         Expanded="@(_acikGrup == "evrak")"
+                         ExpandedChanged="@((bool v) => GrupAc("evrak", v))"
                          IconColor="Color.Tertiary">
                 <MudNavLink Href="/evrak-arsivi" Icon="@Icons.Material.Filled.FolderOpen" IconColor="Color.Tertiary">
                     Evrak Arşivi
@@ -125,7 +137,9 @@
                 </MudNavLink>
             </MudNavGroup>
 
-            <MudNavGroup Title="Ayarlar" Icon="@Icons.Material.Filled.Settings" @bind-Expanded="_ayarlarOpen"
+            <MudNavGroup Title="Ayarlar" Icon="@Icons.Material.Filled.Settings"
+                         Expanded="@(_acikGrup == "ayarlar")"
+                         ExpandedChanged="@((bool v) => GrupAc("ayarlar", v))"
                          IconColor="Color.Info">
                 <MudNavLink Href="/mail-ayarlari" Icon="@Icons.Material.Filled.Email" IconColor="Color.Info">
                     Mail Ayarları
@@ -177,14 +191,8 @@
 </style>
 
 @code {
-    private bool _drawerOpen = true;
-    private bool _raporlarOpen = true;
-    private bool _logoOpen;
-    private bool _mutabakatOpen;
-    private bool _kontrolOpen;
-    private bool _sabnetOpen;
-    private bool _evrakOpen;
-    private bool _ayarlarOpen;
+    private bool    _drawerOpen = true;
+    private string? _acikGrup   = "raporlar"; // accordion: tek seferde sadece tek grup açık
 
     [Inject]
     private NavigationManager NavigationManager { get; set; } = default!;
@@ -205,19 +213,26 @@
     {
         var path = new Uri(uri).AbsolutePath.ToLowerInvariant().TrimEnd('/');
         if (path is "/yan-urunler" or "/pancar-raporu" or "/seker-dairesi" or "/seker-dairesi-yan-urunler" or "/tarim-kredi-raporu" or "/finans-raporu")
-            _raporlarOpen = true;
+            _acikGrup = "raporlar";
         else if (path is "/kasa-hareketleri" or "/kur-bilgileri" or "/stok-durumu" or "/cari-bakiye" or "/cari-hareket" or "/malzeme-hareket-listesi" or "/kur-farki-calismasi")
-            _logoOpen = true;
+            _acikGrup = "logo";
         else if (path is "/mutabakat" or "/karsi-firma-kur-farki")
-            _mutabakatOpen = true;
+            _acikGrup = "mutabakat";
         else if (path is "/kantar-logo-karsilastirma" or "/mustahsil-karsilastirma")
-            _kontrolOpen = true;
+            _acikGrup = "kontrol";
         else if (path is "/sabnet-kantar-hareketleri" or "/sabnet-kantar-aktar")
-            _sabnetOpen = true;
+            _acikGrup = "sabnet";
         else if (path is "/evrak-arsivi" or "/evrak-ekle" or "/tesisler" or "/belge-tipleri")
-            _evrakOpen = true;
+            _acikGrup = "evrak";
         else if (path is "/mail-ayarlari" or "/whatsapp-ayarlari" or "/ayarlar" or "/sirlar")
-            _ayarlarOpen = true;
+            _acikGrup = "ayarlar";
+    }
+
+    // Accordion: açılan grubu işaretle, kapatma istendiğinde sadece o grubu boşalt.
+    private void GrupAc(string ad, bool acildi)
+    {
+        if (acildi)             _acikGrup = ad;
+        else if (_acikGrup == ad) _acikGrup = null;
     }
 
     private void ToggleDrawer()
