@@ -59,6 +59,30 @@
                 </MudNavLink>
             </MudNavGroup>
 
+            <MudNavGroup Title="Avans İşlemleri" Icon="@Icons.Material.Filled.Payments"
+                         Expanded="@(_acikGrup == "avans")"
+                         ExpandedChanged="@((bool v) => GrupAc("avans", v))"
+                         IconColor="Color.Tertiary">
+                <MudNavLink Href="/odeme-karsilastir" Icon="@Icons.Material.Filled.CompareArrows" IconColor="Color.Tertiary">
+                    Ödeme ↔ Logo Karşılaştır
+                </MudNavLink>
+                <MudNavLink Href="/sabnet-logo-karsilastir" Icon="@Icons.Material.Filled.CompareArrows" IconColor="Color.Tertiary">
+                    Sabnet ↔ Logo Karşılaştır
+                </MudNavLink>
+                <MudNavLink Href="/odeme-kontrol" Icon="@Icons.Material.Filled.VerifiedUser" IconColor="Color.Tertiary">
+                    Ödeme Dosyası Kontrol
+                </MudNavLink>
+                <MudNavLink Href="/odeme-dosyasi" Icon="@Icons.Material.Filled.AccountBalance" IconColor="Color.Tertiary">
+                    Ödeme Dosyası Hazırla
+                </MudNavLink>
+                <MudNavLink Href="/satis-faturasi-aktar" Icon="@Icons.Material.Filled.ReceiptLong" IconColor="Color.Tertiary">
+                    Satış Faturası → Logo
+                </MudNavLink>
+                <MudNavLink Href="/banka-hesap-ayarlari" Icon="@Icons.Material.Filled.Settings" IconColor="Color.Tertiary">
+                    Banka Hesap Ayarları
+                </MudNavLink>
+            </MudNavGroup>
+
             <MudNavGroup Title="Logo İşlemleri" Icon="@Icons.Material.Filled.Business"
                          Expanded="@(_acikGrup == "logo")"
                          ExpandedChanged="@((bool v) => GrupAc("logo", v))"
@@ -72,6 +96,15 @@
                 <MudNavLink Href="/stok-durumu" Icon="@Icons.Material.Filled.Inventory2" IconColor="Color.Primary">
                     Stok Durumu
                 </MudNavLink>
+                <MudNavLink Href="/gubre-stok" Icon="@Icons.Material.Filled.Grass" IconColor="Color.Primary">
+                    Gübre Stok Raporu
+                </MudNavLink>
+                <MudNavLink Href="/gubre-ciro" Icon="@Icons.Material.Filled.PriceChange" IconColor="Color.Primary">
+                    Gübre Ciro Raporu
+                </MudNavLink>
+                <MudNavLink Href="/cay-durum" Icon="@Icons.Material.Filled.EmojiFoodBeverage" IconColor="Color.Primary">
+                    Çay Durum Raporu
+                </MudNavLink>
                 <MudNavLink Href="/cari-bakiye" Icon="@Icons.Material.Filled.AccountBalance" IconColor="Color.Primary">
                     Cari Hesap Bakiye Sorgulama
                 </MudNavLink>
@@ -83,6 +116,9 @@
                 </MudNavLink>
                 <MudNavLink Href="/efatura" Icon="@Icons.Material.Filled.Receipt" IconColor="Color.Primary">
                     e-Fatura Görüntüleme
+                </MudNavLink>
+                <MudNavLink Href="/efatura-aktar" Icon="@Icons.Material.Filled.CloudUpload" IconColor="Color.Success">
+                    e-Fatura Aktar
                 </MudNavLink>
                 <MudNavLink Href="/efatura-logo-kontrol" Icon="@Icons.Material.Filled.FactCheck" IconColor="Color.Primary">
                     e-Fatura Logo Kontrolü
@@ -220,7 +256,9 @@
         var path = new Uri(uri).AbsolutePath.ToLowerInvariant().TrimEnd('/');
         if (path is "/yan-urunler" or "/pancar-raporu" or "/seker-dairesi" or "/seker-dairesi-yan-urunler" or "/tarim-kredi-raporu" or "/finans-raporu")
             _acikGrup = "raporlar";
-        else if (path is "/kasa-hareketleri" or "/kur-bilgileri" or "/stok-durumu" or "/cari-bakiye" or "/cari-hareket" or "/malzeme-hareket-listesi" or "/efatura" or "/efatura-logo-kontrol" or "/kur-farki-calismasi")
+        else if (path is "/odeme-karsilastir" or "/sabnet-logo-karsilastir" or "/odeme-kontrol" or "/odeme-dosyasi" or "/satis-faturasi-aktar" or "/banka-hesap-ayarlari")
+            _acikGrup = "avans";
+        else if (path is "/kasa-hareketleri" or "/kur-bilgileri" or "/stok-durumu" or "/gubre-stok" or "/gubre-ciro" or "/cay-durum" or "/cari-bakiye" or "/cari-hareket" or "/malzeme-hareket-listesi" or "/efatura" or "/efatura-aktar" or "/efatura-logo-kontrol" or "/kur-farki-calismasi")
             _acikGrup = "logo";
         else if (path is "/mutabakat" or "/karsi-firma-kur-farki")
             _acikGrup = "mutabakat";

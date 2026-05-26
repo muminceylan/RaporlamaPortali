@@ -9,6 +9,25 @@ public class LogoIslemleriService
 
     public LogoIslemleriService(DatabaseService db) => _db = db;
 
+    // Gübre raporlarinda listelenecek malzeme kodlari (kullanici tanimli whitelist)
+    private static readonly string[] GubreMalzemeKodlari = new[]
+    {
+        "A.G.01.01.0001", "A.G.03.01.0002", "A.G.03.01.0003", "S.707.03.0003",
+        "S.707.03.0006", "S.707.03.0012", "S.707.03.0018", "A.G.01.01.0012",
+        "A.G.01.01.0006", "A.G.01.01.0009", "S.707.03.0004", "C.G.01.03",
+        "S.707.03.0001"
+    };
+
+    // Gübre raporlarinda HARIC tutulacak cari kodlari (AK YAKIT firmalari)
+    private static readonly string[] GubreHaricCariKodlari = new[]
+    {
+        "120.04.7430", "120.40.20.4578", "120.40.30.5098", "320.03.00.1946",
+        "320.06.2038", "320.03.00.1146", "120.81.00.00.040"
+    };
+
+    private static string SqlInListe(string[] kodlar) =>
+        string.Join(",", kodlar.Select(k => "'" + k.Replace("'", "''") + "'"));
+
     // Logo Tiger KSLINES.TRCODE → insan okunabilir fiş türü
     private static readonly Dictionary<int, string> FisTuruMap = new()
     {
@@ -259,6 +278,147 @@ ORDER BY GNT.INVENNO, ITM.CODE";
             });
         }
         return list;
+    }
+
+    // Çay Durum Raporu — Malzeme kodu C.D.1./C.D.2. ile başlayan, belirli ambarlar hariç, stok>=1
+    public async Task<List<StokSatiri>> CayDurumuAsync(CancellationToken ct = default)
+    {
+        var gntView = _db.GetViewName("GNTOTST");
+        var itTbl = _db.GetTableName("ITEMS");
+        var sql = $@"
+SELECT
+    GNT.INVENNO            AS AmbarNo,
+    ISNULL(WHO.NAME,'')    AS Ambar,
+    ISNULL(ITM.CODE,'')    AS MalzemeKodu,
+    ISNULL(ITM.NAME,'')    AS MalzemeAdi,
+    ROUND(GNT.ONHAND,2)    AS Stok
+FROM {gntView} GNT WITH(NOLOCK)
+LEFT JOIN {itTbl} ITM WITH(NOLOCK) ON ITM.LOGICALREF = GNT.STOCKREF
+LEFT JOIN L_CAPIWHOUSE WHO WITH(NOLOCK) ON WHO.FIRMNR = @firma AND WHO.NR = GNT.INVENNO
+WHERE (ITM.CODE LIKE 'C.D.1.%' OR ITM.CODE LIKE 'C.D.2.%')
+  AND GNT.INVENNO NOT IN (-1, 0, 2, 4, 8, 10, 11, 32, 35, 36, 79, 92, 93,
+                          106, 108, 113, 114, 142, 147, 152, 260)
+  AND GNT.INVENNO < 500
+  AND ROUND(GNT.ONHAND,2) >= 1
+ORDER BY ITM.CODE, GNT.INVENNO";
+
+        using var conn = _db.CreateConnection();
+        var rows = (await conn.QueryAsync<dynamic>(new CommandDefinition(sql,
+            new { firma = _db.FirmaNo }, commandTimeout: 180, cancellationToken: ct))).ToList();
+
+        var list = new List<StokSatiri>(rows.Count);
+        foreach (var r in rows)
+        {
+            list.Add(new StokSatiri
+            {
+                AmbarNo = Convert.ToInt32(r.AmbarNo),
+                Ambar = (string)r.Ambar,
+                MalzemeKodu = (string)r.MalzemeKodu,
+                MalzemeAdi = (string)r.MalzemeAdi,
+                Stok = Convert.ToDecimal(r.Stok ?? 0),
+            });
+        }
+        return list;
+    }
+
+    // Gübre Ciro Raporu — INVOICE.TRCODE=8 (toptan satış fatura), TRCODE=3 (iade) iade düşülmüş net satış
+    public async Task<List<GubreCiroMalzeme>> GubreCiroMalzemeAsync(
+        DateTime baslangic, CancellationToken ct = default)
+    {
+        var stlineTbl = _db.GetPeriodTableName("STLINE");
+        var invTbl = _db.GetPeriodTableName("INVOICE");
+        var itemsTbl = _db.GetTableName("ITEMS");
+        var clTbl = _db.GetTableName("CLCARD");
+        var malzemeListe = SqlInListe(GubreMalzemeKodlari);
+        var haricCariListe = SqlInListe(GubreHaricCariKodlari);
+        var sql = $@"
+SELECT ITM.CODE AS MalzemeKodu,
+       ISNULL(ITM.NAME,'') AS MalzemeAdi,
+       SUM(CASE WHEN INV.TRCODE = 3 THEN -ST.AMOUNT  ELSE ST.AMOUNT  END) AS NetMiktar,
+       SUM(CASE WHEN INV.TRCODE = 3 THEN -ST.LINENET ELSE ST.LINENET END) AS NetCiro
+FROM {stlineTbl} ST WITH(NOLOCK)
+INNER JOIN {invTbl} INV WITH(NOLOCK) ON INV.LOGICALREF = ST.INVOICEREF
+INNER JOIN {itemsTbl} ITM WITH(NOLOCK) ON ITM.LOGICALREF = ST.STOCKREF
+LEFT JOIN {clTbl} CL WITH(NOLOCK) ON CL.LOGICALREF = INV.CLIENTREF
+WHERE ST.LINETYPE = 0 AND ST.CANCELLED = 0 AND INV.CANCELLED = 0
+  AND INV.TRCODE IN (8, 3)
+  AND INV.DATE_ >= @bas
+  AND ITM.CODE IN ({malzemeListe})
+  AND (CL.CODE IS NULL OR CL.CODE NOT IN ({haricCariListe}))
+GROUP BY ITM.CODE, ITM.NAME
+ORDER BY ITM.CODE";
+        using var conn = _db.CreateConnection();
+        return (await conn.QueryAsync<GubreCiroMalzeme>(
+            new CommandDefinition(sql, new { bas = baslangic },
+                commandTimeout: 300, cancellationToken: ct))).ToList();
+    }
+
+    public async Task<List<GubreCiroMusteriAy>> GubreCiroMusteriAyAsync(
+        DateTime baslangic, CancellationToken ct = default)
+    {
+        var stlineTbl = _db.GetPeriodTableName("STLINE");
+        var invTbl = _db.GetPeriodTableName("INVOICE");
+        var itemsTbl = _db.GetTableName("ITEMS");
+        var clTbl = _db.GetTableName("CLCARD");
+        var malzemeListe = SqlInListe(GubreMalzemeKodlari);
+        var haricCariListe = SqlInListe(GubreHaricCariKodlari);
+        var sql = $@"
+SELECT ITM.CODE AS MalzemeKodu,
+       ISNULL(ITM.NAME,'') AS MalzemeAdi,
+       ISNULL(CL.CODE,'') AS MusteriKodu,
+       ISNULL(CL.DEFINITION_,'') AS MusteriUnvan,
+       CAST(YEAR(INV.DATE_) AS varchar(4)) + '-' + RIGHT('0' + CAST(MONTH(INV.DATE_) AS varchar(2)),2) AS Donem,
+       SUM(CASE WHEN INV.TRCODE = 3 THEN -ST.AMOUNT  ELSE ST.AMOUNT  END) AS NetMiktar,
+       SUM(CASE WHEN INV.TRCODE = 3 THEN -ST.LINENET ELSE ST.LINENET END) AS NetCiro
+FROM {stlineTbl} ST WITH(NOLOCK)
+INNER JOIN {invTbl} INV WITH(NOLOCK) ON INV.LOGICALREF = ST.INVOICEREF
+INNER JOIN {itemsTbl} ITM WITH(NOLOCK) ON ITM.LOGICALREF = ST.STOCKREF
+LEFT JOIN {clTbl} CL WITH(NOLOCK) ON CL.LOGICALREF = INV.CLIENTREF
+WHERE ST.LINETYPE = 0 AND ST.CANCELLED = 0 AND INV.CANCELLED = 0
+  AND INV.TRCODE IN (8, 3)
+  AND INV.DATE_ >= @bas
+  AND ITM.CODE IN ({malzemeListe})
+  AND (CL.CODE IS NULL OR CL.CODE NOT IN ({haricCariListe}))
+GROUP BY ITM.CODE, ITM.NAME, CL.CODE, CL.DEFINITION_, YEAR(INV.DATE_), MONTH(INV.DATE_)
+ORDER BY ITM.CODE, CL.CODE, YEAR(INV.DATE_), MONTH(INV.DATE_)";
+        using var conn = _db.CreateConnection();
+        return (await conn.QueryAsync<GubreCiroMusteriAy>(
+            new CommandDefinition(sql, new { bas = baslangic },
+                commandTimeout: 300, cancellationToken: ct))).ToList();
+    }
+
+    public async Task<List<GubreAlimFaturaSatiri>> GubreAlimFaturalariAsync(
+        DateTime baslangic, CancellationToken ct = default)
+    {
+        var stlineTbl = _db.GetPeriodTableName("STLINE");
+        var invTbl = _db.GetPeriodTableName("INVOICE");
+        var itemsTbl = _db.GetTableName("ITEMS");
+        var clTbl = _db.GetTableName("CLCARD");
+        var malzemeListe = SqlInListe(GubreMalzemeKodlari);
+        var haricCariListe = SqlInListe(GubreHaricCariKodlari);
+        var sql = $@"
+SELECT INV.FICHENO AS FaturaNo,
+       CONVERT(date, INV.DATE_) AS Tarih,
+       ISNULL(CL.CODE,'') AS TedarikciKodu,
+       ISNULL(CL.DEFINITION_,'') AS TedarikciUnvan,
+       ITM.CODE AS MalzemeKodu,
+       ISNULL(ITM.NAME,'') AS MalzemeAdi,
+       ST.AMOUNT AS Miktar,
+       ST.LINENET AS NetTutar
+FROM {stlineTbl} ST WITH(NOLOCK)
+INNER JOIN {invTbl} INV WITH(NOLOCK) ON INV.LOGICALREF = ST.INVOICEREF
+INNER JOIN {itemsTbl} ITM WITH(NOLOCK) ON ITM.LOGICALREF = ST.STOCKREF
+LEFT JOIN {clTbl} CL WITH(NOLOCK) ON CL.LOGICALREF = INV.CLIENTREF
+WHERE ST.LINETYPE = 0 AND ST.CANCELLED = 0 AND INV.CANCELLED = 0
+  AND INV.TRCODE = 1
+  AND INV.DATE_ >= @bas
+  AND ITM.CODE IN ({malzemeListe})
+  AND (CL.CODE IS NULL OR CL.CODE NOT IN ({haricCariListe}))
+ORDER BY INV.DATE_, INV.FICHENO, ITM.CODE";
+        using var conn = _db.CreateConnection();
+        return (await conn.QueryAsync<GubreAlimFaturaSatiri>(
+            new CommandDefinition(sql, new { bas = baslangic },
+                commandTimeout: 300, cancellationToken: ct))).ToList();
     }
 
     public async Task<List<AmbarSecenek>> AmbarSecenekleriAsync()
@@ -535,6 +695,7 @@ ORDER BY C.CODE, F.DATE_, F.LOGICALREF";
 
         var sql = $@"
 SELECT
+    LOGICALREF = F.LOGICALREF,
     TARIH    = F.DATE_,
     TRCODE   = F.TRCODE,
     AMOUNT   = F.AMOUNT,
@@ -593,7 +754,7 @@ ORDER BY F.DATE_, F.LOGICALREF";
 
             list.Add(new FinansRaporSatiri
             {
-                LogicalRef           = 0,
+                LogicalRef           = Convert.ToInt32(r.LOGICALREF),
                 Tarih                = tarih,
                 Yil                  = tarih.Year,
                 Ay                   = tarih.Month,
@@ -1128,6 +1289,494 @@ ORDER BY EDATE DESC";
         public CariHareket Hareket { get; set; } = null!;
         public decimal KalanTl { get; set; }
         public decimal KalanFc { get; set; }
+    }
+
+    // ============================================================
+    // FİŞ DETAY (Finans Raporu — satıra çift tıklama)
+    // ============================================================
+
+    private static string TrCodeAdiBN(int trcode) => trcode switch
+    {
+        1  => "Gelen Havale (eski)",
+        2  => "Gönderilen Havale (eski)",
+        3  => "Gelen Havale",
+        4  => "Gönderilen Havale",
+        5  => "Virman",
+        12 => "Banka Açılış Fişi",
+        13 => "Banka Açılış (alacak)",
+        14 => "Banka İşlem Bordrosu (borç)",
+        15 => "Banka İşlem Bordrosu (alacak)",
+        20 => "Gelen Havaleler / EFT",
+        21 => "Gönderilen Havale / EFT",
+        22 => "Banka Geri Ödeme",
+        23 => "Borçlu Cari Hesap Fişi",
+        24 => "Alacaklı Cari Hesap Fişi",
+        25 => "Banka Vergi Stopaj",
+        26 => "Banka Komisyon",
+        37 => "Banka Hesap İşlem Fişi",
+        38 => "Banka Hesap İşlem Fişi (alacak)",
+        _  => $"TRCODE {trcode}"
+    };
+
+    private static string TrCodeAdiKS(int trcode) => trcode switch
+    {
+        1  => "Nakit Tahsilat",
+        2  => "Nakit Ödeme",
+        10 => "Kasa Açılış",
+        11 => "Müşteriden Nakit",
+        12 => "Satıcıya Nakit",
+        20 => "Bankadan Çekilen (Kasa)",
+        21 => "Bankaya Yatırılan (Kasa)",
+        30 => "Kasa Çeki Tahsil",
+        50 => "Virman (Kasalar arası)",
+        _  => $"TRCODE {trcode}"
+    };
+
+    private static string TrCodeAdiCLF(int trcode) => trcode switch
+    {
+        1  => "Nakit Tahsilat",
+        2  => "Nakit Ödeme",
+        3  => "Borç Dekontu",
+        4  => "Alacak Dekontu",
+        5  => "Virman",
+        6  => "Kur Farkı",
+        12 => "Açılış Fişi",
+        14 => "Verilen Vade Farkı",
+        20 => "Kredi Kartı Fişi",
+        21 => "Kredi Kartı İade",
+        31 => "Kapanış Fişi",
+        37 => "Cari Hesap Fişi (borç)",
+        38 => "Cari Hesap Fişi (alacak)",
+        70 => "Kredi Kartı Fişi",
+        71 => "Kredi Kartı İade Fişi",
+        _  => $"TRCODE {trcode}"
+    };
+
+    /// <summary>
+    /// Finans raporundaki bir satıra çift tıklandığında Logo'dan fiş + tüm satırlarını
+    /// çekip karşı hesap bilgileriyle birlikte döner. Modül BANKA / KASA / KREDİ KARTI /
+    /// CARI olabilir (view'den BANKA+KASA, lokal CLFLINE'dan CARI/KK gelir).
+    /// </summary>
+    public async Task<FisDetay?> FisDetayAsync(int logicalRef, string modul, CancellationToken ct = default)
+    {
+        if (logicalRef <= 0) return null;
+        var m = (modul ?? "").Trim().ToUpperInvariant();
+
+        if (m == "BANKA")
+            return await FisDetayBankaAsync(logicalRef, ct);
+        if (m == "KASA")
+            return await FisDetayKasaAsync(logicalRef, ct);
+        // CARI / KK / KREDİ KARTI / TRCODE x → CLFLINE
+        return await FisDetayClfAsync(logicalRef, ct);
+    }
+
+    private async Task<FisDetay?> FisDetayBankaAsync(int logicalRef, CancellationToken ct)
+    {
+        var bnfL = _db.GetPeriodTableName("BNFLINE");
+        var bnfH = _db.GetPeriodTableName("BNFICHE");
+        var clc  = _db.GetTableName("CLCARD");
+        var ban  = _db.GetTableName("BANKACC");
+        var muh  = _db.GetTableName("EMUHACC");
+        var prj  = _db.GetTableName("PROJECT");
+        var usr  = "L_CAPIUSER";
+
+        // Hangi BNFICHE'e bağlı? (BNFLINE.SOURCEFREF → BNFICHE.LOGICALREF)
+        var ficheSql = $@"
+SELECT TOP 1
+    L.SOURCEFREF      AS FicheRef,
+    L.TRCODE          AS TrCode,
+    L.DATE_           AS Tarih
+FROM {bnfL} L WITH(NOLOCK)
+WHERE L.LOGICALREF = @ref";
+
+        using var conn = _db.CreateConnection();
+        var basic = await conn.QueryFirstOrDefaultAsync<dynamic>(
+            new CommandDefinition(ficheSql, new { @ref = logicalRef }, cancellationToken: ct));
+        if (basic == null) return null;
+
+        int ficheRef = basic.FicheRef == null ? 0 : Convert.ToInt32(basic.FicheRef);
+
+        var header = new FisDetay
+        {
+            Modul      = "BANKA",
+            LogicalRef = logicalRef,
+            FicheRef   = ficheRef,
+            TrCode     = basic.TrCode == null ? 0 : Convert.ToInt32(basic.TrCode),
+            Tarih      = basic.Tarih == null ? DateTime.MinValue : Convert.ToDateTime(basic.Tarih)
+        };
+        header.FisTuru = TrCodeAdiBN(header.TrCode);
+
+        // BNFICHE başlığı (eğer varsa)
+        if (ficheRef > 0)
+        {
+            var headSql = $@"
+SELECT TOP 1
+    H.FICHENO, H.DATE_, H.TRCODE, H.GENEXP1, H.GENEXP2, H.GENEXP3,
+    H.DEBITTOT, H.CREDITTOT, H.CANCELLED,
+    H.CAPIBLOCK_CREATEDBY,
+    H.CAPIBLOCK_CREADEDDATE,
+    H.CAPIBLOCK_CREATEDHOUR, H.CAPIBLOCK_CREATEDMIN, H.CAPIBLOCK_CREATEDSEC,
+    H.CAPIBLOCK_MODIFIEDBY,
+    H.CAPIBLOCK_MODIFIEDDATE,
+    H.CAPIBLOCK_MODIFIEDHOUR, H.CAPIBLOCK_MODIFIEDMIN, H.CAPIBLOCK_MODIFIEDSEC,
+    CU.NAME AS CRENAME, MU.NAME AS MODNAME
+FROM {bnfH} H WITH(NOLOCK)
+LEFT JOIN {usr} CU WITH(NOLOCK) ON CU.NR = H.CAPIBLOCK_CREATEDBY
+LEFT JOIN {usr} MU WITH(NOLOCK) ON MU.NR = H.CAPIBLOCK_MODIFIEDBY
+WHERE H.LOGICALREF = @fr";
+            var h = await conn.QueryFirstOrDefaultAsync<dynamic>(
+                new CommandDefinition(headSql, new { fr = ficheRef }, cancellationToken: ct));
+            if (h != null)
+            {
+                header.FisNo               = ((string)(h.FICHENO ?? "")).Trim();
+                header.Tarih               = h.DATE_ == null ? header.Tarih : Convert.ToDateTime(h.DATE_);
+                header.TrCode              = h.TRCODE == null ? header.TrCode : Convert.ToInt32(h.TRCODE);
+                header.FisTuru             = TrCodeAdiBN(header.TrCode);
+                header.Aciklama1           = ((string)(h.GENEXP1 ?? "")).Trim();
+                header.Aciklama2           = ((string)(h.GENEXP2 ?? "")).Trim();
+                header.Aciklama3           = ((string)(h.GENEXP3 ?? "")).Trim();
+                header.BorcToplam          = h.DEBITTOT  == null ? 0 : Convert.ToDecimal(h.DEBITTOT);
+                header.AlacakToplam        = h.CREDITTOT == null ? 0 : Convert.ToDecimal(h.CREDITTOT);
+                header.Iptal               = h.CANCELLED != null && Convert.ToInt32(h.CANCELLED) != 0;
+                header.KullaniciOlusturan  = ((string)(h.CRENAME ?? "")).Trim();
+                header.KullaniciDegistiren = ((string)(h.MODNAME ?? "")).Trim();
+                header.OlusturmaZamani     = OlusturmaTarihi(h.CAPIBLOCK_CREADEDDATE,
+                    h.CAPIBLOCK_CREATEDHOUR, h.CAPIBLOCK_CREATEDMIN, h.CAPIBLOCK_CREATEDSEC);
+                header.DegistirmeZamani    = OlusturmaTarihi(h.CAPIBLOCK_MODIFIEDDATE,
+                    h.CAPIBLOCK_MODIFIEDHOUR, h.CAPIBLOCK_MODIFIEDMIN, h.CAPIBLOCK_MODIFIEDSEC);
+            }
+        }
+
+        // Tüm satırlar (aynı fişin BNFLINE kayıtları)
+        var lineSql = $@"
+SELECT
+    L.LOGICALREF,
+    L.LINENR, L.LINEEXP, L.AMOUNT, L.SIGN,
+    L.TRCURR, L.TRRATE, L.TRNET,
+    L.TRANNO, L.SPECODE,
+    CL.CODE   AS CARI_KOD,  CL.DEFINITION_ AS CARI_AD,
+    BA.CODE   AS BANKA_KOD, BA.DEFINITION_ AS BANKA_AD,
+    EM.CODE   AS MUH_KOD,   EM.DEFINITION_ AS MUH_AD,
+    PR.CODE   AS PRJ_KOD,   PR.NAME        AS PRJ_AD
+FROM {bnfL} L WITH(NOLOCK)
+LEFT JOIN {clc} CL WITH(NOLOCK) ON CL.LOGICALREF = L.CLIENTREF
+LEFT JOIN {ban} BA WITH(NOLOCK) ON BA.LOGICALREF = L.BNACCREF
+LEFT JOIN {muh} EM WITH(NOLOCK) ON EM.LOGICALREF = L.ACCOUNTREF
+LEFT JOIN {prj} PR WITH(NOLOCK) ON PR.LOGICALREF = L.PROJECTREF
+WHERE (@fr > 0 AND L.SOURCEFREF = @fr) OR (@fr = 0 AND L.LOGICALREF = @ref)
+ORDER BY L.LINENR, L.LOGICALREF";
+
+        var lines = (await conn.QueryAsync<dynamic>(
+            new CommandDefinition(lineSql, new { fr = ficheRef, @ref = logicalRef }, cancellationToken: ct))).ToList();
+
+        int sira = 0;
+        foreach (var l in lines)
+        {
+            sira++;
+            int ref_ = Convert.ToInt32(l.LOGICALREF);
+            int sign = l.SIGN == null ? 0 : Convert.ToInt32(l.SIGN);
+            header.Satirlar.Add(new FisDetaySatir
+            {
+                LogicalRef   = ref_,
+                SecilenSatir = ref_ == logicalRef,
+                Sira         = sira,
+                Aciklama     = ((string)(l.LINEEXP ?? "")).Trim(),
+                IslemTipi    = sign == 0 ? "BORÇ" : "ALACAK",
+                Tutar        = l.AMOUNT == null ? 0 : Convert.ToDecimal(l.AMOUNT),
+                DovizKodu    = DovizAdi(l.TRCURR),
+                DovizKuru    = l.TRRATE == null ? 0 : Convert.ToDecimal(l.TRRATE),
+                DovizTutari  = l.TRNET  == null ? 0 : Convert.ToDecimal(l.TRNET),
+                CariKodu     = ((string)(l.CARI_KOD  ?? "")).Trim(),
+                CariUnvani   = ((string)(l.CARI_AD   ?? "")).Trim(),
+                BankaKodu    = ((string)(l.BANKA_KOD ?? "")).Trim(),
+                BankaAdi     = ((string)(l.BANKA_AD  ?? "")).Trim(),
+                MuhasebeKodu = ((string)(l.MUH_KOD   ?? "")).Trim(),
+                MuhasebeAdi  = ((string)(l.MUH_AD    ?? "")).Trim(),
+                ProjeKodu    = ((string)(l.PRJ_KOD   ?? "")).Trim(),
+                ProjeAdi     = ((string)(l.PRJ_AD    ?? "")).Trim(),
+                OzelKod      = ((string)(l.SPECODE   ?? "")).Trim(),
+                IslemNo      = ((string)(l.TRANNO is null ? "" : Convert.ToString(l.TRANNO)) ?? "").Trim()
+            });
+        }
+        return header;
+    }
+
+    private async Task<FisDetay?> FisDetayKasaAsync(int logicalRef, CancellationToken ct)
+    {
+        var ksL = _db.GetPeriodTableName("KSLINES");
+        var clc = _db.GetTableName("CLCARD");
+        var ks  = _db.GetTableName("KSCARD");
+        var ban = _db.GetTableName("BANKACC");
+        var muh = _db.GetTableName("EMUHACC");
+        var prj = _db.GetTableName("PROJECT");
+        var usr = "L_CAPIUSER";
+
+        // Önce tıklanan satırı oku — FICHENO + DATE_ + TRCODE eşleşmesi grupluyor
+        var pivotSql = $@"
+SELECT TOP 1
+    P.FICHENO, P.DATE_, P.TRCODE, P.CANCELLED,
+    P.CAPIBLOCK_CREATEDBY,
+    P.CAPIBLOCK_CREADEDDATE,
+    P.CAPIBLOCK_CREATEDHOUR, P.CAPIBLOCK_CREATEDMIN, P.CAPIBLOCK_CREATEDSEC,
+    P.CAPIBLOCK_MODIFIEDBY,
+    P.CAPIBLOCK_MODIFIEDDATE,
+    P.CAPIBLOCK_MODIFIEDHOUR, P.CAPIBLOCK_MODIFIEDMIN, P.CAPIBLOCK_MODIFIEDSEC,
+    P.LINEEXP, CU.NAME AS CRENAME, MU.NAME AS MODNAME
+FROM {ksL} P WITH(NOLOCK)
+LEFT JOIN {usr} CU WITH(NOLOCK) ON CU.NR = P.CAPIBLOCK_CREATEDBY
+LEFT JOIN {usr} MU WITH(NOLOCK) ON MU.NR = P.CAPIBLOCK_MODIFIEDBY
+WHERE P.LOGICALREF = @ref";
+
+        using var conn = _db.CreateConnection();
+        var p = await conn.QueryFirstOrDefaultAsync<dynamic>(
+            new CommandDefinition(pivotSql, new { @ref = logicalRef }, cancellationToken: ct));
+        if (p == null) return null;
+
+        var header = new FisDetay
+        {
+            Modul      = "KASA",
+            LogicalRef = logicalRef,
+            FicheRef   = 0,
+            FisNo      = ((string)(p.FICHENO ?? "")).Trim(),
+            TrCode     = p.TRCODE == null ? 0 : Convert.ToInt32(p.TRCODE),
+            Tarih      = p.DATE_  == null ? DateTime.MinValue : Convert.ToDateTime(p.DATE_),
+            Aciklama1  = ((string)(p.LINEEXP ?? "")).Trim(),
+            Iptal      = p.CANCELLED != null && Convert.ToInt32(p.CANCELLED) != 0,
+            KullaniciOlusturan  = ((string)(p.CRENAME ?? "")).Trim(),
+            KullaniciDegistiren = ((string)(p.MODNAME ?? "")).Trim(),
+            OlusturmaZamani     = OlusturmaTarihi(p.CAPIBLOCK_CREADEDDATE,
+                p.CAPIBLOCK_CREATEDHOUR, p.CAPIBLOCK_CREATEDMIN, p.CAPIBLOCK_CREATEDSEC),
+            DegistirmeZamani    = OlusturmaTarihi(p.CAPIBLOCK_MODIFIEDDATE,
+                p.CAPIBLOCK_MODIFIEDHOUR, p.CAPIBLOCK_MODIFIEDMIN, p.CAPIBLOCK_MODIFIEDSEC)
+        };
+        header.FisTuru = TrCodeAdiKS(header.TrCode);
+
+        // Aynı fişin tüm KSLINES satırları (FICHENO + DATE_ + TRCODE)
+        var lineSql = $@"
+SELECT
+    L.LOGICALREF,
+    L.LINEEXP, L.AMOUNT, L.SIGN,
+    L.TRCURR, L.TRRATE, L.TRNET,
+    L.TRANNO, L.SPECODE,
+    KS.CODE   AS KASA_KOD,  KS.NAME        AS KASA_AD,
+    CL.CODE   AS CARI_KOD,  CL.DEFINITION_ AS CARI_AD,
+    EM.CODE   AS MUH_KOD,   EM.DEFINITION_ AS MUH_AD,
+    PR.CODE   AS PRJ_KOD,   PR.NAME        AS PRJ_AD
+FROM {ksL} L WITH(NOLOCK)
+LEFT JOIN {ks}  KS WITH(NOLOCK) ON KS.LOGICALREF = L.CARDREF
+LEFT JOIN {clc} CL WITH(NOLOCK) ON CL.LOGICALREF = L.VCARDREF
+LEFT JOIN {muh} EM WITH(NOLOCK) ON EM.LOGICALREF = L.ACCREF
+LEFT JOIN {prj} PR WITH(NOLOCK) ON PR.LOGICALREF = L.PROJECTREF
+WHERE L.FICHENO = @fno AND L.DATE_ = @dt AND L.TRCODE = @tc
+ORDER BY L.LOGICALREF";
+
+        var lines = (await conn.QueryAsync<dynamic>(
+            new CommandDefinition(lineSql,
+                new { fno = header.FisNo, dt = header.Tarih, tc = header.TrCode },
+                cancellationToken: ct))).ToList();
+
+        int sira = 0; decimal toplamBorc = 0, toplamAlacak = 0;
+        foreach (var l in lines)
+        {
+            sira++;
+            int ref_ = Convert.ToInt32(l.LOGICALREF);
+            int sign = l.SIGN == null ? 0 : Convert.ToInt32(l.SIGN);
+            decimal tutar = l.AMOUNT == null ? 0 : Convert.ToDecimal(l.AMOUNT);
+            if (sign == 0) toplamBorc += tutar; else toplamAlacak += tutar;
+
+            header.Satirlar.Add(new FisDetaySatir
+            {
+                LogicalRef   = ref_,
+                SecilenSatir = ref_ == logicalRef,
+                Sira         = sira,
+                Aciklama     = ((string)(l.LINEEXP ?? "")).Trim(),
+                IslemTipi    = sign == 0 ? "BORÇ" : "ALACAK",
+                Tutar        = tutar,
+                DovizKodu    = DovizAdi(l.TRCURR),
+                DovizKuru    = l.TRRATE == null ? 0 : Convert.ToDecimal(l.TRRATE),
+                DovizTutari  = l.TRNET  == null ? 0 : Convert.ToDecimal(l.TRNET),
+                KasaKodu     = ((string)(l.KASA_KOD ?? "")).Trim(),
+                KasaAdi      = ((string)(l.KASA_AD  ?? "")).Trim(),
+                CariKodu     = ((string)(l.CARI_KOD ?? "")).Trim(),
+                CariUnvani   = ((string)(l.CARI_AD  ?? "")).Trim(),
+                MuhasebeKodu = ((string)(l.MUH_KOD  ?? "")).Trim(),
+                MuhasebeAdi  = ((string)(l.MUH_AD   ?? "")).Trim(),
+                ProjeKodu    = ((string)(l.PRJ_KOD  ?? "")).Trim(),
+                ProjeAdi     = ((string)(l.PRJ_AD   ?? "")).Trim(),
+                OzelKod      = ((string)(l.SPECODE  ?? "")).Trim(),
+                IslemNo      = ((string)(l.TRANNO is null ? "" : Convert.ToString(l.TRANNO)) ?? "").Trim()
+            });
+        }
+        header.BorcToplam   = toplamBorc;
+        header.AlacakToplam = toplamAlacak;
+        return header;
+    }
+
+    private async Task<FisDetay?> FisDetayClfAsync(int logicalRef, CancellationToken ct)
+    {
+        var clfL = _db.GetPeriodTableName("CLFLINE");
+        var clfH = _db.GetPeriodTableName("CLFICHE");
+        var clc  = _db.GetTableName("CLCARD");
+        var ban  = _db.GetTableName("BANKACC");
+        var muh  = _db.GetTableName("EMUHACC");
+        var prj  = _db.GetTableName("PROJECT");
+        var usr  = "L_CAPIUSER";
+
+        // CLFLINE satırı + parent fişi (varsa)
+        var pivotSql = $@"
+SELECT TOP 1
+    L.LOGICALREF, L.SOURCEFREF, L.MODULENR, L.TRCODE, L.DATE_, L.CANCELLED
+FROM {clfL} L WITH(NOLOCK)
+WHERE L.LOGICALREF = @ref";
+
+        using var conn = _db.CreateConnection();
+        var p = await conn.QueryFirstOrDefaultAsync<dynamic>(
+            new CommandDefinition(pivotSql, new { @ref = logicalRef }, cancellationToken: ct));
+        if (p == null) return null;
+
+        int sourceRef = p.SOURCEFREF == null ? 0 : Convert.ToInt32(p.SOURCEFREF);
+        int modulenr  = p.MODULENR   == null ? 0 : Convert.ToInt32(p.MODULENR);
+
+        var header = new FisDetay
+        {
+            Modul      = "CARİ",
+            LogicalRef = logicalRef,
+            FicheRef   = (modulenr == 5) ? sourceRef : 0,
+            TrCode     = p.TRCODE == null ? 0 : Convert.ToInt32(p.TRCODE),
+            Tarih      = p.DATE_  == null ? DateTime.MinValue : Convert.ToDateTime(p.DATE_),
+            Iptal      = p.CANCELLED != null && Convert.ToInt32(p.CANCELLED) != 0
+        };
+        header.FisTuru = TrCodeAdiCLF(header.TrCode);
+        if (header.TrCode == 70 || header.TrCode == 71) header.Modul = "KREDİ KARTI";
+        if (header.TrCode == 1  || header.TrCode == 2 ) header.Modul = "KASA";
+        if (header.TrCode == 20 || header.TrCode == 21) header.Modul = "BANKA";
+
+        // MODULENR=5 ise CLFICHE'e bağlı (cari hesap fişi). Aksi halde satır kendi başına.
+        if (modulenr == 5 && sourceRef > 0)
+        {
+            var hSql = $@"
+SELECT TOP 1
+    H.FICHENO, H.DATE_, H.TRCODE, H.GENEXP1, H.GENEXP2, H.GENEXP3,
+    H.DEBIT, H.CREDIT, H.CANCELLED,
+    H.CAPIBLOCK_CREATEDBY,
+    H.CAPIBLOCK_CREADEDDATE,
+    H.CAPIBLOCK_CREATEDHOUR, H.CAPIBLOCK_CREATEDMIN, H.CAPIBLOCK_CREATEDSEC,
+    H.CAPIBLOCK_MODIFIEDBY,
+    H.CAPIBLOCK_MODIFIEDDATE,
+    H.CAPIBLOCK_MODIFIEDHOUR, H.CAPIBLOCK_MODIFIEDMIN, H.CAPIBLOCK_MODIFIEDSEC,
+    CU.NAME AS CRENAME, MU.NAME AS MODNAME
+FROM {clfH} H WITH(NOLOCK)
+LEFT JOIN {usr} CU WITH(NOLOCK) ON CU.NR = H.CAPIBLOCK_CREATEDBY
+LEFT JOIN {usr} MU WITH(NOLOCK) ON MU.NR = H.CAPIBLOCK_MODIFIEDBY
+WHERE H.LOGICALREF = @fr";
+            var h = await conn.QueryFirstOrDefaultAsync<dynamic>(
+                new CommandDefinition(hSql, new { fr = sourceRef }, cancellationToken: ct));
+            if (h != null)
+            {
+                header.FisNo               = ((string)(h.FICHENO ?? "")).Trim();
+                header.Aciklama1           = ((string)(h.GENEXP1 ?? "")).Trim();
+                header.Aciklama2           = ((string)(h.GENEXP2 ?? "")).Trim();
+                header.Aciklama3           = ((string)(h.GENEXP3 ?? "")).Trim();
+                header.BorcToplam          = h.DEBIT  == null ? 0 : Convert.ToDecimal(h.DEBIT);
+                header.AlacakToplam        = h.CREDIT == null ? 0 : Convert.ToDecimal(h.CREDIT);
+                header.KullaniciOlusturan  = ((string)(h.CRENAME ?? "")).Trim();
+                header.KullaniciDegistiren = ((string)(h.MODNAME ?? "")).Trim();
+                header.OlusturmaZamani     = OlusturmaTarihi(h.CAPIBLOCK_CREADEDDATE,
+                    h.CAPIBLOCK_CREATEDHOUR, h.CAPIBLOCK_CREATEDMIN, h.CAPIBLOCK_CREATEDSEC);
+                header.DegistirmeZamani    = OlusturmaTarihi(h.CAPIBLOCK_MODIFIEDDATE,
+                    h.CAPIBLOCK_MODIFIEDHOUR, h.CAPIBLOCK_MODIFIEDMIN, h.CAPIBLOCK_MODIFIEDSEC);
+            }
+        }
+
+        // Satırlar — fiş varsa tüm satırlar; yoksa sadece tıklanan
+        var lineSql = $@"
+SELECT
+    L.LOGICALREF, L.LINENR, L.LINEEXP, L.AMOUNT, L.SIGN,
+    L.TRCURR, L.TRRATE, L.TRNET,
+    L.TRANNO, L.SPECODE,
+    CL.CODE  AS CARI_KOD,  CL.DEFINITION_ AS CARI_AD,
+    BA.CODE  AS BANKA_KOD, BA.DEFINITION_ AS BANKA_AD,
+    EM.CODE  AS MUH_KOD,   EM.DEFINITION_ AS MUH_AD,
+    PR.CODE  AS PRJ_KOD,   PR.NAME        AS PRJ_AD
+FROM {clfL} L WITH(NOLOCK)
+LEFT JOIN {clc} CL WITH(NOLOCK) ON CL.LOGICALREF = L.CLIENTREF
+LEFT JOIN {ban} BA WITH(NOLOCK) ON BA.LOGICALREF = L.BNACCREF
+LEFT JOIN {muh} EM WITH(NOLOCK) ON EM.LOGICALREF = L.CLACCREF
+LEFT JOIN {prj} PR WITH(NOLOCK) ON PR.LOGICALREF = L.CLPRJREF
+WHERE (@fr > 0 AND L.SOURCEFREF = @fr AND L.MODULENR = 5)
+   OR (@fr = 0 AND L.LOGICALREF = @ref)
+ORDER BY L.LINENR, L.LOGICALREF";
+
+        var lines = (await conn.QueryAsync<dynamic>(
+            new CommandDefinition(lineSql, new { fr = sourceRef, @ref = logicalRef }, cancellationToken: ct))).ToList();
+
+        int sira = 0; decimal toplamBorc = 0, toplamAlacak = 0;
+        foreach (var l in lines)
+        {
+            sira++;
+            int ref_ = Convert.ToInt32(l.LOGICALREF);
+            int sign = l.SIGN == null ? 0 : Convert.ToInt32(l.SIGN);
+            decimal tutar = l.AMOUNT == null ? 0 : Convert.ToDecimal(l.AMOUNT);
+            if (sign == 0) toplamBorc += tutar; else toplamAlacak += tutar;
+
+            header.Satirlar.Add(new FisDetaySatir
+            {
+                LogicalRef   = ref_,
+                SecilenSatir = ref_ == logicalRef,
+                Sira         = sira,
+                Aciklama     = ((string)(l.LINEEXP ?? "")).Trim(),
+                IslemTipi    = sign == 0 ? "BORÇ" : "ALACAK",
+                Tutar        = tutar,
+                DovizKodu    = DovizAdi(l.TRCURR),
+                DovizKuru    = l.TRRATE == null ? 0 : Convert.ToDecimal(l.TRRATE),
+                DovizTutari  = l.TRNET  == null ? 0 : Convert.ToDecimal(l.TRNET),
+                CariKodu     = ((string)(l.CARI_KOD  ?? "")).Trim(),
+                CariUnvani   = ((string)(l.CARI_AD   ?? "")).Trim(),
+                BankaKodu    = ((string)(l.BANKA_KOD ?? "")).Trim(),
+                BankaAdi     = ((string)(l.BANKA_AD  ?? "")).Trim(),
+                MuhasebeKodu = ((string)(l.MUH_KOD   ?? "")).Trim(),
+                MuhasebeAdi  = ((string)(l.MUH_AD    ?? "")).Trim(),
+                ProjeKodu    = ((string)(l.PRJ_KOD   ?? "")).Trim(),
+                ProjeAdi     = ((string)(l.PRJ_AD    ?? "")).Trim(),
+                OzelKod      = ((string)(l.SPECODE   ?? "")).Trim(),
+                IslemNo      = ((string)(l.TRANNO is null ? "" : Convert.ToString(l.TRANNO)) ?? "").Trim()
+            });
+        }
+        if (header.BorcToplam == 0 && header.AlacakToplam == 0)
+        {
+            header.BorcToplam   = toplamBorc;
+            header.AlacakToplam = toplamAlacak;
+        }
+        return header;
+    }
+
+    private static DateTime? OlusturmaTarihi(dynamic? date, dynamic? hour, dynamic? minute, dynamic? second)
+    {
+        try
+        {
+            if (date == null) return null;
+            var d = Convert.ToDateTime(date);
+            int h = hour   == null ? 0 : Convert.ToInt32(hour);
+            int m = minute == null ? 0 : Convert.ToInt32(minute);
+            int s = second == null ? 0 : Convert.ToInt32(second);
+            if (h > 23) h = 0; if (m > 59) m = 0; if (s > 59) s = 0;
+            return new DateTime(d.Year, d.Month, d.Day, h, m, s);
+        }
+        catch { return null; }
+    }
+
+    private static string DovizAdi(dynamic? trcurr)
+    {
+        if (trcurr == null) return "TL";
+        int c = Convert.ToInt32(trcurr);
+        return c switch
+        {
+            0  => "TL",
+            1  => "USD",
+            17 => "USD",
+            20 => "EUR",
+            _  => $"#{c}"
+        };
     }
 
     /// <summary>Döviz filtresi: Excel USD (1) ve EUR (20) sabitleri.</summary>

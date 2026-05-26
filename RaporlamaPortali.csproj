@@ -23,6 +23,11 @@
     
     <!-- Konsol penceresi gizle (Windows uygulaması gibi) -->
     <OutputType>WinExe</OutputType>
+
+    <!-- Logo Tiger Unity COM (late-bound dynamic) için .NET 8 zorunlu ayarları.
+         Olmadan: "Cannot perform runtime binding on a null reference" hatası alınır. -->
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <EnableComHosting>false</EnableComHosting>
   </PropertyGroup>
 
   <ItemGroup>

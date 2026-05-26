@@ -1,0 +1,150 @@
+@page "/banka-hesap-ayarlari"
+@using RaporlamaPortali.Services
+@inject ISnackbar Snackbar
+
+<PageTitle>Banka Hesap Ayarları</PageTitle>
+
+<MudPaper Class="pa-4" Elevation="1">
+    <MudText Typo="Typo.h5" Class="mb-2">
+        <MudIcon Icon="@Icons.Material.Filled.AccountBalanceWallet" Class="mr-2"/>
+        Banka Hesap Ayarları
+    </MudText>
+    <MudText Typo="Typo.body2" Class="mb-4" Color="Color.Secondary">
+        Ödeme dosyalarının şablonlarına yazılan banka hesap bilgileri.
+        Banka şubesi değişirse veya hesap güncellenirse buradan değiştirin —
+        bir sonraki dosya üretiminden itibaren bu değerler kullanılır.
+    </MudText>
+
+    <MudGrid Spacing="3">
+        @* --- Garanti --- *@
+        <MudItem xs="12">
+            <MudCard Outlined="true">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6" Color="Color.Primary">
+                            <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Class="mr-1"/>
+                            Garanti BBVA
+                        </MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudGrid>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField @bind-Value="_ayar.GarantiBorcluSube"
+                                          Label="Borçlu Şube Kodu (A sütunu)"
+                                          HelperText="örn: 1685"
+                                          Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField @bind-Value="_ayar.GarantiBorcluHesap"
+                                          Label="Borçlu Hesap No (B sütunu)"
+                                          HelperText="örn: 6297391"
+                                          Variant="Variant.Outlined" />
+                        </MudItem>
+                    </MudGrid>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        @* --- İş Bankası --- *@
+        <MudItem xs="12">
+            <MudCard Outlined="true">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6" Color="Color.Primary">
+                            <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Class="mr-1"/>
+                            İş Bankası
+                        </MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudGrid>
+                        <MudItem xs="12" sm="4">
+                            <MudTextField @bind-Value="_ayar.IsGondernSube"
+                                          Label="Gönderen Şube Kodu (C sütunu)"
+                                          HelperText="örn: 1256"
+                                          Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="12" sm="4">
+                            <MudTextField @bind-Value="_ayar.IsGondernHesap"
+                                          Label="Gönderen Hesap No (D sütunu)"
+                                          HelperText="örn: 228393"
+                                          Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="12" sm="4">
+                            <MudTextField @bind-Value="_ayar.IsGondernIban"
+                                          Label="Gönderen IBAN (E sütunu)"
+                                          HelperText="TR... ile başlayan 26 karakter"
+                                          Variant="Variant.Outlined" />
+                        </MudItem>
+                    </MudGrid>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        @* --- Ziraat --- *@
+        <MudItem xs="12">
+            <MudCard Outlined="true">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6" Color="Color.Primary">
+                            <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Class="mr-1"/>
+                            Ziraat Bankası
+                        </MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudGrid>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField @bind-Value="_ayar.ZiraatKurumKodu"
+                                          Label="Kurum Kodu (D5 hücresi)"
+                                          HelperText="örn: 12025"
+                                          Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField @bind-Value="_ayar.ZiraatKurumHesapNo"
+                                          Label="Kurum Hesap No (D11 hücresi)"
+                                          HelperText="örn: 1795-43297028-5077"
+                                          Variant="Variant.Outlined" />
+                        </MudItem>
+                    </MudGrid>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        @* --- Kaydet --- *@
+        <MudItem xs="12" Class="d-flex justify-end">
+            <MudButton Color="Color.Success" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.Save"
+                       OnClick="Kaydet"
+                       Disabled="_kaydediliyor">
+                @(_kaydediliyor ? "Kaydediliyor…" : "AYARLARI KAYDET")
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@code {
+    private BankaHesapAyarlari _ayar = new();
+    private bool _kaydediliyor;
+
+    protected override void OnInitialized()
+    {
+        _ayar = BankaHesapAyarlari.Yukle();
+    }
+
+    private async Task Kaydet()
+    {
+        _kaydediliyor = true;
+        try
+        {
+            await Task.Run(() => _ayar.Kaydet());
+            Snackbar.Add("Banka hesap ayarları kaydedildi.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Kaydedilemedi: " + ex.Message, Severity.Error);
+        }
+        finally { _kaydediliyor = false; }
+    }
+}

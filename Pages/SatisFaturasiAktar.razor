@@ -1,0 +1,230 @@
+@page "/satis-faturasi-aktar"
+@using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
+@using RaporlamaPortali.Services.Logo
+@inject SatisFaturaService SatisSvc
+@inject ISnackbar Snackbar
+
+<PageTitle>Toptan Satış Faturası → Logo</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-3">
+    <MudIcon Icon="@Icons.Material.Filled.ReceiptLong" Class="mr-2" />
+    Ayni Avans → Toptan Satış Faturası (Logo'ya Aktar)
+</MudText>
+
+<MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3">
+    Seçilen avans için <b>2026 dönemi</b> ayni avans satırları listelenir, her satır <b>ayrı bir Toptan Satış Faturası</b> olarak Logo'ya post edilir.
+    Logo fatura numarası: <code>"B " + (Başlangıç ERP No + index)</code>. KDV Dahil/Hariç AvansTanımı'ndan; KDV=0 (gübre/istisnalı) durum desteklenir.
+</MudAlert>
+
+<MudPaper Class="pa-3 mb-3">
+    <MudGrid AlignItems="Center">
+        <MudItem xs="12" md="3">
+            <MudSelect T="int" Label="Avans (Ad)" @bind-Value="_avansNo" Variant="Variant.Outlined" Margin="Margin.Dense">
+                <MudSelectItem T="int" Value="0">(Tümü)</MudSelectItem>
+                @foreach (var a in _avansAdlari.OrderBy(x => x.Value))
+                {
+                    <MudSelectItem T="int" Value="@a.Key">@a.Value (#@a.Key)</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="2">
+            <MudDatePicker @bind-Date="_faturaTarihi" Label="Fatura Tarihi"
+                           DateFormat="dd.MM.yyyy" Editable="true"
+                           Mask="@(new DateMask("dd.MM.yyyy"))"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="2">
+            <MudTextField T="long?" @bind-Value="_erpBaslangic" Label="ERP No (Başlangıç)"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          HelperText="Örn. 1305260001" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudButton Color="Color.Primary" Variant="Variant.Outlined"
+                       StartIcon="@Icons.Material.Filled.Search"
+                       OnClick="ListeleAsync" Disabled="_yukleniyor">
+                @(_yukleniyor ? "Yükleniyor..." : "Listele")
+            </MudButton>
+            <MudCheckBox T="bool" @bind-Value="_sadeceBasilmamis" Label="Sadece basılmamış" Class="ml-2" />
+        </MudItem>
+        <MudItem xs="12" md="2" Class="d-flex justify-end">
+            <MudButton Color="Color.Success" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.Send"
+                       OnClick="LogoyaAktarAsync"
+                       Disabled="_aktariyor || SeciliSayisi == 0">
+                @(_aktariyor ? "Aktarılıyor..." : $"Logo'ya Aktar ({SeciliSayisi})")
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@if (_satirlar.Count > 0)
+{
+    <MudPaper Class="pa-2 mb-2">
+        <MudText Typo="Typo.body2">
+            Toplam: <b>@_satirlar.Count</b> satır · Seçili: <b>@SeciliSayisi</b> ·
+            Toplam Tutar (seçili): <b>@SeciliTutar.ToString("N2")</b> ₺
+            <MudButton Size="Size.Small" OnClick="TumunuSec" Class="ml-3">Tümünü Seç</MudButton>
+            <MudButton Size="Size.Small" OnClick="TumSecimiTemizle">Seçimi Temizle</MudButton>
+            <MudButton Size="Size.Small" OnClick="ErpNolariUret" Disabled="_erpBaslangic == null" Class="ml-2">
+                ERP No Otomatik Doldur
+            </MudButton>
+        </MudText>
+    </MudPaper>
+
+    <MudTable Items="_satirlar" Dense="true" Hover="true" Striped="true" Bordered="true"
+              FixedHeader="true" Height="calc(100vh - 360px)" Breakpoint="Breakpoint.None"
+              RowsPerPage="200" Class="mt-2">
+        <HeaderContent>
+            <MudTh Style="width:40px">
+                <MudCheckBox T="bool" Value="@TumuSecili" ValueChanged="@((bool v) => { if (v) TumunuSec(); else TumSecimiTemizle(); })" />
+            </MudTh>
+            <MudTh>Form No</MudTh>
+            <MudTh>TCKN</MudTh>
+            <MudTh>Ad Soyad</MudTh>
+            <MudTh>Bölge</MudTh>
+            <MudTh>Avans</MudTh>
+            <MudTh>Stok Kod</MudTh>
+            <MudTh Style="text-align:right">Miktar</MudTh>
+            <MudTh Style="text-align:right">Birim Fiyat</MudTh>
+            <MudTh Style="text-align:right">Tutar</MudTh>
+            <MudTh>KDV</MudTh>
+            <MudTh>ERP No</MudTh>
+            <MudTh>Durum</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd><MudCheckBox T="bool" @bind-Value="@context.Secili" /></MudTd>
+            <MudTd>@context.FormNo</MudTd>
+            <MudTd>@context.TcKimlikNo</MudTd>
+            <MudTd>@context.AdSoyad</MudTd>
+            <MudTd>@context.KaynakBolge</MudTd>
+            <MudTd>@context.AvansAdi (#@context.AvansNo)</MudTd>
+            <MudTd>@context.AvansStokKodu</MudTd>
+            <MudTd Style="text-align:right">@context.Miktar.ToString("N2")</MudTd>
+            <MudTd Style="text-align:right">@context.BirimFiyat.ToString("N4")</MudTd>
+            <MudTd Style="text-align:right">@context.Tutar.ToString("N2")</MudTd>
+            <MudTd>@(context.KdvOrani.ToString("0.##"))% @context.KdvDahilHaric</MudTd>
+            <MudTd>@context.AtanmisErpNo</MudTd>
+            <MudTd>
+                @if (!string.IsNullOrEmpty(context.ErpEvrakNo))
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Warning">@context.ErpEvrakNo</MudChip>
+                }
+            </MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager PageSizeOptions="new int[] {50, 100, 200, 500}" />
+        </PagerContent>
+        <NoRecordsContent><MudText>Kayıt bulunamadı.</MudText></NoRecordsContent>
+    </MudTable>
+}
+
+@if (_aktarimSonuc != null)
+{
+    <MudPaper Class="pa-3 mt-3" Style="@($"border-left:6px solid {(_aktarimSonuc.HataliSayisi == 0 ? "#2E7D32" : "#C62828")};")">
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@(_aktarimSonuc.HataliSayisi == 0 ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.ErrorOutline)"
+                     Color="@(_aktarimSonuc.HataliSayisi == 0 ? Color.Success : Color.Error)" Class="mr-1" />
+            Logo Aktarım Sonucu — Başarılı: @_aktarimSonuc.BasariliSayisi / Hatalı: @_aktarimSonuc.HataliSayisi
+        </MudText>
+        @if (!_aktarimSonuc.LoginBasarili)
+        {
+            <MudAlert Severity="Severity.Error">Login hatası: @_aktarimSonuc.LoginHata</MudAlert>
+        }
+        <MudTable Items="_aktarimSonuc.Faturalar" Dense="true" Hover="true" Class="mt-2">
+            <HeaderContent>
+                <MudTh>Form No</MudTh><MudTh>Fatura No</MudTh><MudTh>Logo Ref</MudTh>
+                <MudTh>Durum</MudTh><MudTh>Hata / Validate</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.FormNo</MudTd>
+                <MudTd>@context.FaturaNo</MudTd>
+                <MudTd>@(context.LogoRef > 0 ? context.LogoRef.ToString() : "")</MudTd>
+                <MudTd>
+                    @if (context.Basarili)
+                    { <MudChip T="string" Color="Color.Success" Size="Size.Small">OK</MudChip> }
+                    else
+                    { <MudChip T="string" Color="Color.Error" Size="Size.Small">HATA</MudChip> }
+                </MudTd>
+                <MudTd>
+                    @context.Hata
+                    @if (context.ValidateErrors.Count > 0)
+                    {
+                        <br /><small>@string.Join(" | ", context.ValidateErrors)</small>
+                    }
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudPaper>
+}
+
+@code {
+    private int _avansNo = 0;
+    private DateTime? _faturaTarihi = DateTime.Today;
+    private long? _erpBaslangic;
+    private bool _sadeceBasilmamis = true;
+    private bool _yukleniyor = false;
+    private bool _aktariyor = false;
+    private Dictionary<int, string> _avansAdlari = new();
+    private List<AyniAvansSatiri> _satirlar = new();
+    private LogoSatisAktarimSonuc? _aktarimSonuc;
+
+    private int SeciliSayisi => _satirlar.Count(s => s.Secili);
+    private decimal SeciliTutar => _satirlar.Where(s => s.Secili).Sum(s => s.Tutar);
+    private bool TumuSecili => _satirlar.Count > 0 && _satirlar.All(s => s.Secili);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _avansAdlari = await SatisSvc.GetAvansAdlariAsync(); }
+        catch (Exception ex) { Snackbar.Add($"Avans listesi okuma hatası: {ex.Message}", Severity.Error); }
+    }
+
+    private async Task ListeleAsync()
+    {
+        _yukleniyor = true; _aktarimSonuc = null;
+        try
+        {
+            IEnumerable<int>? filtre = _avansNo > 0 ? new[] { _avansNo } : null;
+            _satirlar = await SatisSvc.GetAyniAvanslarAsync(filtre, 2026, _sadeceBasilmamis);
+            Snackbar.Add($"{_satirlar.Count} satır listelendi.", Severity.Info);
+        }
+        catch (Exception ex) { Snackbar.Add($"Listeleme hatası: {ex.Message}", Severity.Error); }
+        finally { _yukleniyor = false; }
+    }
+
+    private void TumunuSec()        { foreach (var s in _satirlar) s.Secili = true; }
+    private void TumSecimiTemizle() { foreach (var s in _satirlar) s.Secili = false; }
+
+    private void ErpNolariUret()
+    {
+        if (_erpBaslangic == null) return;
+        long no = _erpBaslangic.Value;
+        foreach (var s in _satirlar.Where(x => x.Secili))
+        {
+            s.AtanmisErpNo = no.ToString();
+            no++;
+        }
+        Snackbar.Add($"ERP No atandı: {_erpBaslangic} → {no - 1}", Severity.Info);
+    }
+
+    private async Task LogoyaAktarAsync()
+    {
+        if (_erpBaslangic == null) { Snackbar.Add("ERP No başlangıç gerekli.", Severity.Warning); return; }
+        if (_faturaTarihi == null) { Snackbar.Add("Fatura tarihi gerekli.", Severity.Warning); return; }
+        var secili = _satirlar.Where(s => s.Secili).ToList();
+        if (secili.Count == 0) { Snackbar.Add("En az 1 satır seçin.", Severity.Warning); return; }
+
+        _aktariyor = true; _aktarimSonuc = null;
+        try
+        {
+            _aktarimSonuc = await SatisSvc.LogoyaAktarAsync(secili, _faturaTarihi.Value, _erpBaslangic.Value);
+            if (_aktarimSonuc.LoginBasarili)
+                Snackbar.Add($"Aktarım tamamlandı: {_aktarimSonuc.BasariliSayisi} başarı, {_aktarimSonuc.HataliSayisi} hata.",
+                             _aktarimSonuc.HataliSayisi == 0 ? Severity.Success : Severity.Warning);
+            else
+                Snackbar.Add($"Login hatası: {_aktarimSonuc.LoginHata}", Severity.Error);
+        }
+        catch (Exception ex) { Snackbar.Add($"Aktarım hatası: {ex.Message}", Severity.Error); }
+        finally { _aktariyor = false; }
+    }
+}

@@ -98,6 +98,10 @@ builder.Services.AddScoped<SekerSatisService>();
 builder.Services.AddScoped<SekerDairesiService>();
 builder.Services.AddScoped<PancarOdemeService>();
 builder.Services.AddScoped<ExcelExportService>();
+builder.Services.AddScoped<OdemeService>();
+builder.Services.AddScoped<OdemeKontrolService>();
+builder.Services.AddScoped<OdemeKarsilastirService>();
+builder.Services.AddScoped<SatisFaturaService>();
 builder.Services.AddScoped<HtmlRaporService>();
 builder.Services.AddScoped<PancarRaporService>();
 
@@ -146,6 +150,16 @@ builder.Services.AddScoped<KarsiFirmaKurFarkiService>();
 
 // e-Fatura görüntüleme — eFaturaDogusCayDB POSTBOX/ELEMENTS + UBL XML parse
 builder.Services.AddScoped<EFaturaService>();
+
+// e-Fatura → Logo Tiger Unity COM aktarımı
+builder.Services.AddSingleton<RaporlamaPortali.Services.Logo.LogoUnityComService>();
+builder.Services.AddSingleton<RaporlamaPortali.Services.Logo.LogoOrgLookupService>();
+builder.Services.AddScoped<RaporlamaPortali.Services.Logo.LogoCariLookupService>();
+builder.Services.AddScoped<RaporlamaPortali.Services.Logo.LogoMasterKartLookupService>();
+builder.Services.AddScoped<RaporlamaPortali.Services.Logo.LogoBirimSetiLookupService>();
+builder.Services.AddScoped<RaporlamaPortali.Services.Logo.LogoAccCodesLookupService>();
+builder.Services.AddSingleton<EFaturaAktarimGecmisiService>();
+builder.Services.AddScoped<RaporlamaPortali.Services.Logo.LogoAktarimService>();
 
 // SabNet Kantar — SabNetKANTAR SQL Server'dan SabNet.db SQLite'a aktarım + listeleme
 builder.Services.AddSingleton<SabNetDbService>();
@@ -361,6 +375,79 @@ app.MapGet("/api/pancar-raporu", async (HttpContext context) =>
             t1.Result, t2.Result, DateTime.Today, t3.Result, t4.Result, t5.Result, t6.Result, bulanik, kompakt: true);
         context.Response.ContentType = "text/html; charset=utf-8";
         await context.Response.WriteAsync(html);
+    }
+    catch (Exception ex)
+    {
+        context.Response.StatusCode = 500;
+        await context.Response.WriteAsync("Hata: " + ex.Message);
+    }
+}).AllowAnonymous();
+
+// GET /api/cay-durum-raporu → Çay Durum HTML (WhatsApp PNG için)
+app.MapGet("/api/cay-durum-raporu", async (HttpContext context) =>
+{
+    try
+    {
+        using var scope = context.RequestServices.CreateScope();
+        var logo = scope.ServiceProvider.GetRequiredService<LogoIslemleriService>();
+        var html = scope.ServiceProvider.GetRequiredService<HtmlRaporService>();
+
+        var veriler = await logo.CayDurumuAsync();
+        bool bulanik = context.Request.Query["bulanik"] == "true";
+        var output = html.CayDurumHtmlOlustur(veriler, bulanik);
+        context.Response.ContentType = "text/html; charset=utf-8";
+        await context.Response.WriteAsync(output);
+    }
+    catch (Exception ex)
+    {
+        context.Response.StatusCode = 500;
+        await context.Response.WriteAsync("Hata: " + ex.Message);
+    }
+}).AllowAnonymous();
+
+// GET /api/gubre-stok-raporu → Gübre Stok HTML (WhatsApp PNG için)
+app.MapGet("/api/gubre-stok-raporu", async (HttpContext context) =>
+{
+    try
+    {
+        using var scope = context.RequestServices.CreateScope();
+        var logo = scope.ServiceProvider.GetRequiredService<LogoIslemleriService>();
+        var html = scope.ServiceProvider.GetRequiredService<HtmlRaporService>();
+
+        var hepsi = await logo.StokDurumuAsync(null, sifirlariGizle: true);
+        var onEkler = new[] { "A.G.", "S.707.03" };
+        var filtreli = hepsi.Where(s => s.AmbarNo != -1
+            && onEkler.Any(ek => (s.MalzemeKodu ?? "").StartsWith(ek, StringComparison.OrdinalIgnoreCase))).ToList();
+
+        bool bulanik = context.Request.Query["bulanik"] == "true";
+        var output = html.GubreStokHtmlOlustur(filtreli, bulanik);
+        context.Response.ContentType = "text/html; charset=utf-8";
+        await context.Response.WriteAsync(output);
+    }
+    catch (Exception ex)
+    {
+        context.Response.StatusCode = 500;
+        await context.Response.WriteAsync("Hata: " + ex.Message);
+    }
+}).AllowAnonymous();
+
+// GET /api/gubre-ciro-raporu → Gübre Ciro HTML (WhatsApp PNG için)
+app.MapGet("/api/gubre-ciro-raporu", async (HttpContext context) =>
+{
+    try
+    {
+        using var scope = context.RequestServices.CreateScope();
+        var logo = scope.ServiceProvider.GetRequiredService<LogoIslemleriService>();
+        var html = scope.ServiceProvider.GetRequiredService<HtmlRaporService>();
+
+        var bas = new DateTime(2026, 1, 1);
+        var malzeme = await logo.GubreCiroMalzemeAsync(bas);
+
+        bool bulanik = context.Request.Query["bulanik"] == "true";
+        // WhatsApp sadece Malzeme Ciro sayfasini istiyor — pivot sorgusunu yapmaya gerek yok
+        var output = html.GubreCiroHtmlOlustur(malzeme, new(), bas, bulanik, sadeceMalzeme: true);
+        context.Response.ContentType = "text/html; charset=utf-8";
+        await context.Response.WriteAsync(output);
     }
     catch (Exception ex)
     {

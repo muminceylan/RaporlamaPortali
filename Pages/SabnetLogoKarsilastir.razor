@@ -1,0 +1,245 @@
+@page "/sabnet-logo-karsilastir"
+@using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
+@inject OdemeKarsilastirService _karsilastir
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Sabnet ↔ Logo Karşılaştırma</PageTitle>
+
+<MudPaper Class="pa-4" Elevation="1">
+    <MudText Typo="Typo.h5" Class="mb-2">
+        <MudIcon Icon="@Icons.Material.Filled.CompareArrows" Class="mr-2"/>
+        Sabnet Avans Listesi ↔ Logo Finans Karşılaştırma
+    </MudText>
+    <MudText Typo="Typo.body2" Class="mb-4" Color="Color.Secondary">
+        Sabnet'teki seçilen avans için kayıtlı müstahsil listesini, Logo'daki gerçekleşen
+        ödemelerle karşılaştırır. <b>Ödenmeyenler</b> Sabnet'te fazladan kalan kayıtlardır
+        (ödeme dönmüş ya da hiç gönderilmemiş olabilir).
+    </MudText>
+
+    <MudGrid>
+        <MudItem xs="12" md="3">
+            <MudSelect T="int" Label="Avans" @bind-Value="_avansNo" Variant="Variant.Outlined" Dense="true">
+                @foreach (var kv in OdemeService.AvansAdlari)
+                {
+                    <MudSelectItem Value="kv.Key">@kv.Value</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+
+        <MudItem xs="12" md="2">
+            <MudNumericField T="int" Label="Sözleşme Yılı" @bind-Value="_sozlesmeYili"
+                             Variant="Variant.Outlined" Min="2020" Max="2099"/>
+        </MudItem>
+
+        <MudItem xs="12" md="5">
+            <MudDateRangePicker Label="Logo'da Taranacak Tarih Aralığı" @bind-DateRange="_dateRange"
+                                Variant="Variant.Outlined"
+                                DateFormat="dd.MM.yyyy"
+                                Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.CalendarMonth"/>
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                Seçilen avansa ait ödemelerin yapıldığı tarih aralığı ± birkaç gün.
+            </MudText>
+        </MudItem>
+
+        <MudItem xs="12" md="2" Class="d-flex align-end">
+            <MudButton Color="Color.Success" Variant="Variant.Filled" FullWidth="true"
+                       StartIcon="@Icons.Material.Filled.CompareArrows"
+                       OnClick="Karsilastir" Disabled="_calisiyor" Size="Size.Large">
+                @(_calisiyor ? "Çalışıyor…" : "KARŞILAŞTIR")
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@if (_sonuc != null)
+{
+    <MudPaper Class="pa-4 mt-4" Elevation="1">
+        <div class="d-flex justify-space-between align-center mb-2">
+            <MudText Typo="Typo.h6">
+                @_avansAdiBaslik — Logo: @(_sonuc.LogoBaslangic.ToString("dd.MM.yyyy")) → @(_sonuc.LogoBitis.ToString("dd.MM.yyyy"))
+            </MudText>
+            <MudButton Color="Color.Success" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.FileDownload"
+                       OnClick="ExcelAktar" Disabled="_indiriliyor">
+                @(_indiriliyor ? "Hazırlanıyor…" : "EXCEL'E AKTAR")
+            </MudButton>
+        </div>
+        <MudGrid>
+            <MudItem xs="12" md="3">
+                <MudCard Class="pa-3" Style="background:#E3F2FD;">
+                    <MudText Typo="Typo.body2" Color="Color.Info">Sabnet Avans Listesi</MudText>
+                    <MudText Typo="Typo.h5">@_sonuc.DosyaSatirSayisi kişi</MudText>
+                    <MudText Typo="Typo.body1">@_sonuc.DosyaToplam.ToString("N2") ₺</MudText>
+                </MudCard>
+            </MudItem>
+            <MudItem xs="12" md="3">
+                <MudCard Class="pa-3" Style="background:#E8F5E9;">
+                    <MudText Typo="Typo.body2" Color="Color.Success">Logo Finans (Gerçekleşen)</MudText>
+                    <MudText Typo="Typo.h5">@_sonuc.LogoSatirSayisi ödeme</MudText>
+                    <MudText Typo="Typo.body1">@_sonuc.LogoToplam.ToString("N2") ₺</MudText>
+                </MudCard>
+            </MudItem>
+            <MudItem xs="12" md="3">
+                <MudCard Class="pa-3" Style="background:#FFEBEE;">
+                    <MudText Typo="Typo.body2" Color="Color.Error">Sabnet'te FAZLA (Logo'da yok)</MudText>
+                    <MudText Typo="Typo.h5">@_sonuc.Odenmedi.Count kişi</MudText>
+                    <MudText Typo="Typo.body1">@_sonuc.OdenmediToplam.ToString("N2") ₺</MudText>
+                </MudCard>
+            </MudItem>
+            <MudItem xs="12" md="3">
+                <MudCard Class="pa-3" Style="background:#FFF3E0;">
+                    <MudText Typo="Typo.body2" Color="Color.Warning">MÜKERRER (Logo'da fazla)</MudText>
+                    <MudText Typo="Typo.h5">@_sonuc.Mukerrer.Count kişi</MudText>
+                    <MudText Typo="Typo.body1">@_sonuc.MukerrerToplam.ToString("N2") ₺</MudText>
+                </MudCard>
+            </MudItem>
+        </MudGrid>
+
+        @if (_sonuc.Hatalar.Count > 0)
+        {
+            <MudAlert Severity="Severity.Warning" Class="mt-3">
+                @foreach (var h in _sonuc.Hatalar) { <div>@h</div> }
+            </MudAlert>
+        }
+    </MudPaper>
+
+    @if (_sonuc.Odenmedi.Count > 0)
+    {
+        <MudPaper Class="pa-4 mt-4" Elevation="1">
+            <MudText Typo="Typo.h6" Color="Color.Error" Class="mb-2">
+                <MudIcon Icon="@Icons.Material.Filled.ErrorOutline" Class="mr-1"/>
+                Sabnet'te FAZLA — Logo'da bu kişiye bu dönemde ödeme yok (@_sonuc.Odenmedi.Count kişi)
+            </MudText>
+            <MudTable Items="_sonuc.Odenmedi" Dense="true" Hover="true" Bordered="true" Striped="true">
+                <HeaderContent>
+                    <MudTh>Ad Soyad</MudTh>
+                    <MudTh>TC</MudTh>
+                    <MudTh>IBAN</MudTh>
+                    <MudTh Style="text-align:right">Sabnet Tutar</MudTh>
+                    <MudTh>Açıklama</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.AdSoyad</MudTd>
+                    <MudTd>@context.TcKimlikNo</MudTd>
+                    <MudTd>@context.IBAN</MudTd>
+                    <MudTd Style="text-align:right">@context.DosyaTutar.ToString("N2")</MudTd>
+                    <MudTd>@context.Aciklama</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+    }
+
+    @if (_sonuc.Mukerrer.Count > 0)
+    {
+        <MudPaper Class="pa-4 mt-4" Elevation="1">
+            <MudText Typo="Typo.h6" Color="Color.Warning" Class="mb-2">
+                <MudIcon Icon="@Icons.Material.Filled.Warning" Class="mr-1"/>
+                MÜKERRER — Aynı kişiye Logo'da birden fazla ödeme (@_sonuc.Mukerrer.Count kişi)
+            </MudText>
+            <MudTable Items="_sonuc.Mukerrer" Dense="true" Hover="true" Bordered="true" Striped="true">
+                <HeaderContent>
+                    <MudTh>Ad Soyad</MudTh>
+                    <MudTh>TC</MudTh>
+                    <MudTh>Logo Cari</MudTh>
+                    <MudTh>İlk Tarih</MudTh>
+                    <MudTh Style="text-align:right">Tek Tutar</MudTh>
+                    <MudTh Style="text-align:center">Adet</MudTh>
+                    <MudTh>Açıklama</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.AdSoyad</MudTd>
+                    <MudTd>@context.TcKimlikNo</MudTd>
+                    <MudTd>@context.LogoCariKod</MudTd>
+                    <MudTd>@(context.LogoTarih?.ToString("dd.MM.yyyy") ?? "-")</MudTd>
+                    <MudTd Style="text-align:right">@context.LogoTutar.ToString("N2")</MudTd>
+                    <MudTd Style="text-align:center">@context.LogoAdet</MudTd>
+                    <MudTd>@context.Aciklama</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+    }
+
+    @if (_sonuc.Eslesen.Count > 0)
+    {
+        <MudExpansionPanels Class="mt-4">
+            <MudExpansionPanel Text="@($"Eşleşen ödemeler ({_sonuc.Eslesen.Count} kayıt) — detay için aç")">
+                <MudTable Items="_sonuc.Eslesen" Dense="true" Hover="true">
+                    <HeaderContent>
+                        <MudTh>Ad Soyad</MudTh>
+                        <MudTh>TC</MudTh>
+                        <MudTh>Logo Cari</MudTh>
+                        <MudTh>Logo Tarih</MudTh>
+                        <MudTh Style="text-align:right">Tutar</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.AdSoyad</MudTd>
+                        <MudTd>@context.TcKimlikNo</MudTd>
+                        <MudTd>@context.LogoCariKod</MudTd>
+                        <MudTd>@(context.LogoTarih?.ToString("dd.MM.yyyy") ?? "-")</MudTd>
+                        <MudTd Style="text-align:right">@context.LogoTutar.ToString("N2")</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudExpansionPanel>
+        </MudExpansionPanels>
+    }
+}
+
+@code {
+    private int _avansNo = 37;            // 1. Avans
+    private int _sozlesmeYili = DateTime.Today.Year;
+    private DateRange? _dateRange = new(DateTime.Today.AddDays(-60), DateTime.Today);
+    private OdemeKarsilastirSonuc? _sonuc;
+    private bool _calisiyor;
+    private bool _indiriliyor;
+    private string _avansAdiBaslik = "";
+
+    private async Task Karsilastir()
+    {
+        if (_dateRange?.Start == null || _dateRange?.End == null)
+        {
+            Snackbar.Add("Logo tarama tarih aralığı zorunlu.", Severity.Warning);
+            return;
+        }
+        _calisiyor = true; _sonuc = null;
+        try
+        {
+            _sonuc = await _karsilastir.SabnetIleKarsilastirAsync(
+                _avansNo, _sozlesmeYili,
+                _dateRange.Start.Value.Date, _dateRange.End.Value.Date);
+
+            _avansAdiBaslik = OdemeService.AvansAdlari.TryGetValue(_avansNo, out var ad)
+                ? $"{ad} ({_sozlesmeYili})" : $"Avans {_avansNo}";
+
+            Snackbar.Add($"Karşılaştırma tamamlandı. Sabnet'te fazla: {_sonuc.Odenmedi.Count}, Mükerrer: {_sonuc.Mukerrer.Count}",
+                _sonuc.Odenmedi.Count > 0 || _sonuc.Mukerrer.Count > 0 ? Severity.Warning : Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Hata: " + ex.Message, Severity.Error);
+        }
+        finally { _calisiyor = false; }
+    }
+
+    private async Task ExcelAktar()
+    {
+        if (_sonuc == null) return;
+        _indiriliyor = true;
+        try
+        {
+            var bytes = _karsilastir.ExportToExcel(_sonuc);
+            var b64 = Convert.ToBase64String(bytes);
+            var ad = OdemeService.AvansAdlari.TryGetValue(_avansNo, out var a) ? a.Replace(" ", "_") : $"Avans{_avansNo}";
+            var dosya = $"SabnetLogoKarsilastirma_{ad}_{_sozlesmeYili}_{_sonuc.LogoBaslangic:yyyyMMdd}_{_sonuc.LogoBitis:yyyyMMdd}.xlsx";
+            await JS.InvokeVoidAsync("downloadFile", dosya, b64,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            Snackbar.Add("Excel dosyası indirildi.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Excel oluşturulamadı: " + ex.Message, Severity.Error);
+        }
+        finally { _indiriliyor = false; }
+    }
+}

@@ -1060,4 +1060,195 @@ public class HtmlRaporService
 
         return html.Replace("</head>", blurScript + "\n</head>", StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>Çay Durum Raporu HTML — WhatsApp PNG için.</summary>
+    public string CayDurumHtmlOlustur(List<StokSatiri> veriler, bool bulanik = false)
+    {
+        var tr = new CultureInfo("tr-TR");
+        string N2(decimal v) => v.ToString("N2", tr);
+
+        var sirali = veriler.OrderBy(x => x.MalzemeKodu).ThenBy(x => x.AmbarNo).ToList();
+        decimal toplam = sirali.Sum(x => x.Stok);
+
+        var sb = new StringBuilder();
+        sb.AppendLine(@"<!DOCTYPE html><html><head><meta charset='UTF-8'><style>
+body{font-family:'Segoe UI',Tahoma,sans-serif;margin:18px;background:#f5f5f5;}
+.container{background:white;padding:18px;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.08);max-width:1100px;}
+h1{color:#4E342E;margin:0 0 4px;font-size:22px;}
+h2{color:#4a5568;margin:0 0 14px;font-size:14px;font-weight:normal;}
+.bilgi{color:#666;font-size:13px;margin-bottom:14px;padding:8px 12px;background:#EFEBE9;border-left:4px solid #4E342E;border-radius:4px;}
+table{border-collapse:collapse;width:100%;font-size:12px;}
+th{background:#4E342E;color:white;padding:9px 8px;border:1px solid #3E2723;text-align:right;}
+th:first-child,th:nth-child(2),th:nth-child(3),th:nth-child(4){text-align:left;}
+td{padding:6px 8px;border:1px solid #e2e8f0;}
+td:nth-child(5){text-align:right;font-family:Consolas,monospace;}
+tr:nth-child(even){background:#f8fafc;}
+.toplam{background:#D7CCC8 !important;font-weight:700;}
+.toplam td{border-color:#A1887F;color:#3E2723;}
+</style></head><body><div class='container'>");
+
+        sb.AppendLine($@"<h1>ÇAY DURUM RAPORU</h1>
+<h2>Doğuş Çay - Afyon Şeker Fabrikası</h2>
+<div class='bilgi'><b>Filtre:</b> Malzeme kodu C.D.1. veya C.D.2. ile başlayanlar · Stok ≥ 1 · Belirli ambarlar hariç<br>
+<b>Oluşturma:</b> {DateTime.Now:dd.MM.yyyy HH:mm} · <b>Kayıt sayısı:</b> {sirali.Count}</div>");
+
+        sb.AppendLine("<table><thead><tr><th>Ambar No</th><th>Ambar</th><th>Malzeme Kodu</th><th>Malzeme Adı</th><th>Stok</th></tr></thead><tbody>");
+        foreach (var s in sirali)
+        {
+            sb.Append("<tr><td>").Append(s.AmbarNo).Append("</td><td>").Append(System.Net.WebUtility.HtmlEncode(s.Ambar))
+              .Append("</td><td>").Append(System.Net.WebUtility.HtmlEncode(s.MalzemeKodu))
+              .Append("</td><td>").Append(System.Net.WebUtility.HtmlEncode(s.MalzemeAdi))
+              .Append("</td><td>").Append(N2(s.Stok)).AppendLine("</td></tr>");
+        }
+        sb.Append("<tr class='toplam'><td colspan='4' style='text-align:right'>TOPLAM</td><td>")
+          .Append(N2(toplam)).AppendLine("</td></tr>");
+        sb.AppendLine("</tbody></table></div></body></html>");
+        return UygulaBlur(sb.ToString(), bulanik);
+    }
+
+    /// <summary>Gübre Stok Raporu HTML — WhatsApp PNG için.</summary>
+    public string GubreStokHtmlOlustur(List<StokSatiri> veriler, bool bulanik = false)
+    {
+        var tr = new CultureInfo("tr-TR");
+        string N2(decimal v) => v.ToString("N2", tr);
+
+        var sirali = veriler.OrderBy(x => x.MalzemeKodu).ThenBy(x => x.AmbarNo).ToList();
+        decimal toplam = sirali.Sum(x => x.Stok);
+
+        var sb = new StringBuilder();
+        sb.AppendLine(@"<!DOCTYPE html><html><head><meta charset='UTF-8'><style>
+body{font-family:'Segoe UI',Tahoma,sans-serif;margin:18px;background:#f5f5f5;}
+.container{background:white;padding:18px;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.08);max-width:1100px;}
+h1{color:#2E7D32;margin:0 0 4px;font-size:22px;}
+h2{color:#4a5568;margin:0 0 14px;font-size:14px;font-weight:normal;}
+.bilgi{color:#666;font-size:13px;margin-bottom:14px;padding:8px 12px;background:#E8F5E9;border-left:4px solid #2E7D32;border-radius:4px;}
+table{border-collapse:collapse;width:100%;font-size:12px;}
+th{background:#2E7D32;color:white;padding:9px 8px;border:1px solid #1B5E20;text-align:right;}
+th:first-child,th:nth-child(2),th:nth-child(3),th:nth-child(4){text-align:left;}
+td{padding:6px 8px;border:1px solid #e2e8f0;}
+td:nth-child(5){text-align:right;font-family:Consolas,monospace;}
+tr:nth-child(even){background:#f8fafc;}
+.toplam{background:#FDD835 !important;font-weight:700;}
+.toplam td{border-color:#F9A825;color:#1B5E20;}
+</style></head><body><div class='container'>");
+
+        sb.AppendLine($@"<h1>GÜBRE STOK RAPORU</h1>
+<h2>Doğuş Çay - Afyon Şeker Fabrikası</h2>
+<div class='bilgi'><b>Filtre:</b> Malzeme kodu A.G. veya S.707.03 ile başlayanlar · Ambar -1 hariç<br>
+<b>Oluşturma:</b> {DateTime.Now:dd.MM.yyyy HH:mm} · <b>Kayıt sayısı:</b> {sirali.Count}</div>");
+
+        sb.AppendLine("<table><thead><tr><th>Ambar No</th><th>Ambar</th><th>Malzeme Kodu</th><th>Malzeme Adı</th><th>Stok</th></tr></thead><tbody>");
+        foreach (var s in sirali)
+        {
+            sb.Append("<tr><td>").Append(s.AmbarNo).Append("</td><td>").Append(System.Net.WebUtility.HtmlEncode(s.Ambar))
+              .Append("</td><td>").Append(System.Net.WebUtility.HtmlEncode(s.MalzemeKodu))
+              .Append("</td><td>").Append(System.Net.WebUtility.HtmlEncode(s.MalzemeAdi))
+              .Append("</td><td>").Append(N2(s.Stok)).AppendLine("</td></tr>");
+        }
+        sb.Append("<tr class='toplam'><td colspan='4' style='text-align:right'>TOPLAM</td><td>")
+          .Append(N2(toplam)).AppendLine("</td></tr>");
+        sb.AppendLine("</tbody></table></div></body></html>");
+        return UygulaBlur(sb.ToString(), bulanik);
+    }
+
+    /// <summary>Gübre Ciro Raporu HTML — Malzeme bazlı (+ opsiyonel Müşteri×Ay pivotu). WhatsApp PNG için.</summary>
+    public string GubreCiroHtmlOlustur(
+        List<GubreCiroMalzeme> malzeme,
+        List<GubreCiroMusteriAy> musteriAy,
+        DateTime baslangic,
+        bool bulanik = false,
+        bool sadeceMalzeme = false)
+    {
+        var tr = new CultureInfo("tr-TR");
+        string N2(decimal v) => v.ToString("N2", tr);
+
+        var sb = new StringBuilder();
+        sb.AppendLine(@"<!DOCTYPE html><html><head><meta charset='UTF-8'><style>
+body{font-family:'Segoe UI',Tahoma,sans-serif;margin:18px;background:#f5f5f5;}
+.container{background:white;padding:18px;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.08);max-width:1400px;}
+h1{color:#0D47A1;margin:0 0 4px;font-size:22px;}
+h2{color:#4a5568;margin:0 0 14px;font-size:14px;font-weight:normal;}
+h3{color:#0D47A1;margin:20px 0 8px;font-size:16px;border-bottom:2px solid #0D47A1;padding-bottom:4px;}
+.bilgi{color:#666;font-size:13px;margin-bottom:14px;padding:8px 12px;background:#E3F2FD;border-left:4px solid #0D47A1;border-radius:4px;}
+table{border-collapse:collapse;width:100%;font-size:12px;margin-bottom:18px;}
+th{background:#0D47A1;color:white;padding:9px 8px;border:1px solid #002171;text-align:right;}
+th:first-child,th:nth-child(2){text-align:left;}
+td{padding:6px 8px;border:1px solid #e2e8f0;}
+td.t{text-align:right;font-family:Consolas,monospace;}
+tr:nth-child(even){background:#f8fafc;}
+.toplam{background:#FDD835 !important;font-weight:700;}
+.toplam td{border-color:#F9A825;color:#0D47A1;}
+.ciro{color:#0D47A1;font-weight:600;}
+</style></head><body><div class='container'>");
+
+        sb.AppendLine($@"<h1>GÜBRE CİRO RAPORU</h1>
+<h2>Doğuş Çay - Afyon Şeker Fabrikası</h2>
+<div class='bilgi'><b>Dönem:</b> {baslangic:dd.MM.yyyy} – {DateTime.Today:dd.MM.yyyy} · <b>NET</b> (iade düşülmüş) · A.G. + S.707.03<br>
+<b>Oluşturma:</b> {DateTime.Now:dd.MM.yyyy HH:mm}</div>");
+
+        // 1) Malzeme bazlı
+        sb.AppendLine("<h3>1. Malzeme Bazlı Ciro</h3>");
+        sb.AppendLine("<table><thead><tr><th>Malzeme Kodu</th><th>Malzeme Adı</th><th>Net Miktar</th><th>Net Ciro (₺)</th></tr></thead><tbody>");
+        decimal tMik = 0, tCir = 0;
+        foreach (var m in malzeme.OrderByDescending(x => x.NetCiro))
+        {
+            tMik += m.NetMiktar;
+            tCir += m.NetCiro;
+            sb.Append("<tr><td>").Append(System.Net.WebUtility.HtmlEncode(m.MalzemeKodu))
+              .Append("</td><td>").Append(System.Net.WebUtility.HtmlEncode(m.MalzemeAdi))
+              .Append("</td><td class='t'>").Append(N2(m.NetMiktar))
+              .Append("</td><td class='t ciro'>").Append(N2(m.NetCiro)).AppendLine("</td></tr>");
+        }
+        sb.Append("<tr class='toplam'><td colspan='2' style='text-align:right'>TOPLAM</td><td class='t'>")
+          .Append(N2(tMik)).Append("</td><td class='t'>").Append(N2(tCir)).AppendLine("</td></tr>");
+        sb.AppendLine("</tbody></table>");
+
+        if (sadeceMalzeme)
+        {
+            sb.AppendLine("</div></body></html>");
+            return UygulaBlur(sb.ToString(), bulanik);
+        }
+
+        // 2) Müşteri × Ay pivot — müşteri başına aylar yatay
+        var aylar = musteriAy.Select(x => x.Donem).Distinct().OrderBy(x => x).ToList();
+        var musteriler = musteriAy
+            .GroupBy(x => new { x.MusteriKodu, x.MusteriUnvan })
+            .Select(g => new { g.Key.MusteriKodu, g.Key.MusteriUnvan, Toplam = g.Sum(x => x.NetCiro) })
+            .OrderByDescending(x => x.Toplam)
+            .ToList();
+
+        var pivot = musteriAy
+            .GroupBy(x => new { x.MusteriKodu, x.Donem })
+            .ToDictionary(g => (g.Key.MusteriKodu, g.Key.Donem), g => g.Sum(x => x.NetCiro));
+
+        sb.AppendLine("<h3>2. Müşteri × Ay (Net Ciro ₺)</h3>");
+        sb.AppendLine("<table><thead><tr><th>Cari Kodu</th><th>Ünvan</th>");
+        foreach (var ay in aylar) sb.Append("<th>").Append(ay).Append("</th>");
+        sb.AppendLine("<th>TOPLAM</th></tr></thead><tbody>");
+
+        var ayToplam = new Dictionary<string, decimal>();
+        foreach (var ay in aylar) ayToplam[ay] = 0m;
+        decimal genelToplam = 0m;
+
+        foreach (var m in musteriler)
+        {
+            sb.Append("<tr><td>").Append(System.Net.WebUtility.HtmlEncode(m.MusteriKodu))
+              .Append("</td><td>").Append(System.Net.WebUtility.HtmlEncode(m.MusteriUnvan)).Append("</td>");
+            decimal satirToplam = 0m;
+            foreach (var ay in aylar)
+            {
+                var v = pivot.TryGetValue((m.MusteriKodu, ay), out var x) ? x : 0m;
+                satirToplam += v;
+                ayToplam[ay] += v;
+                sb.Append("<td class='t'>").Append(v == 0 ? "-" : N2(v)).Append("</td>");
+            }
+            genelToplam += satirToplam;
+            sb.Append("<td class='t ciro'>").Append(N2(satirToplam)).AppendLine("</td></tr>");
+        }
+        sb.Append("<tr class='toplam'><td colspan='2' style='text-align:right'>TOPLAM</td>");
+        foreach (var ay in aylar) sb.Append("<td class='t'>").Append(N2(ayToplam[ay])).Append("</td>");
+        sb.Append("<td class='t'>").Append(N2(genelToplam)).AppendLine("</td></tr>");
+        sb.AppendLine("</tbody></table></div></body></html>");
+        return UygulaBlur(sb.ToString(), bulanik);
+    }
 }

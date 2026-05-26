@@ -68,6 +68,37 @@
         </MudPaper>
     </MudItem>
 
+    @* Logo Unity COM (e-Fatura → Logo aktarımı) *@
+    <MudItem xs="12">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.h6" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.SyncAlt" Class="mr-2" />
+                Logo Unity COM (e-Fatura Aktarımı)
+            </MudText>
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudTextField T="string"
+                                  Label="Kullanıcı Adı"
+                                  @bind-Value="_logoUnityKullanici"
+                                  Placeholder="Mümin CEYLAN"
+                                  Adornment="Adornment.Start"
+                                  AdornmentIcon="@Icons.Material.Filled.Person"
+                                  HelperText="Logo Tiger'a giriş yaptığınız kullanıcı adı." />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField T="string"
+                                  Label="Şifre"
+                                  @bind-Value="_logoUnitySifre"
+                                  InputType="@(_logoSifreGoster ? InputType.Text : InputType.Password)"
+                                  Adornment="Adornment.End"
+                                  AdornmentIcon="@(_logoSifreGoster ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                                  OnAdornmentClick="@(() => _logoSifreGoster = !_logoSifreGoster)"
+                                  HelperText="Logo Tiger şifresi." />
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+    </MudItem>
+
     <MudItem xs="12">
         <MudPaper Class="pa-4">
             <div class="d-flex justify-end gap-2">
@@ -108,12 +139,15 @@
     private SecretsService.ConnectionParts _logo   = new();
     private SecretsService.ConnectionParts _kantar = new();
     private SecretsService.ConnectionParts _pmhs   = new();
-    private string _mailPassword  = "";
-    private string _anthropicKey  = "";
+    private string _mailPassword       = "";
+    private string _anthropicKey       = "";
+    private string _logoUnityKullanici = "";
+    private string _logoUnitySifre     = "";
 
-    private bool _mailGoster = false;
-    private bool _apiGoster  = false;
-    private bool _kaydediliyor = false;
+    private bool _mailGoster     = false;
+    private bool _apiGoster      = false;
+    private bool _logoSifreGoster = false;
+    private bool _kaydediliyor    = false;
 
     // her bağlantı için bağımsız test/şifre toggle state
     private readonly Dictionary<string, bool> _showPwd = new() { ["logo"] = false, ["kantar"] = false, ["pmhs"] = false };
@@ -128,8 +162,10 @@
         _logo   = SecretsService.ConnectionParts.Parse(s.LogoConnectionString);
         _kantar = SecretsService.ConnectionParts.Parse(s.KantarConnectionString);
         _pmhs   = SecretsService.ConnectionParts.Parse(s.PmhsConnectionString);
-        _mailPassword = s.MailPassword;
-        _anthropicKey = s.AnthropicApiKey;
+        _mailPassword       = s.MailPassword;
+        _anthropicKey       = s.AnthropicApiKey;
+        _logoUnityKullanici = s.LogoUnityKullanici;
+        _logoUnitySifre     = s.LogoUnitySifre;
         foreach (var k in _testSonuc.Keys.ToList()) _testSonuc[k] = null;
     }
 
@@ -176,8 +212,10 @@
                 LogoConnectionString   = _logo.Build(),
                 KantarConnectionString = _kantar.Build(),
                 PmhsConnectionString   = _pmhs.Build(),
-                MailPassword           = _mailPassword ?? "",
-                AnthropicApiKey        = _anthropicKey ?? "",
+                MailPassword           = _mailPassword       ?? "",
+                AnthropicApiKey        = _anthropicKey       ?? "",
+                LogoUnityKullanici     = _logoUnityKullanici ?? "",
+                LogoUnitySifre         = _logoUnitySifre     ?? "",
             };
             SecretsService.Save(m);
             Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", m.AnthropicApiKey);

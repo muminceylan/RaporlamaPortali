@@ -35,10 +35,10 @@ public class EFaturaService
 
     public bool BaglantiTanimliMi => !string.IsNullOrWhiteSpace(_connStr);
 
-    // VKN/TCKN → (CariKod, CariUnvan) — LG_xxx_CLCARD üzerinden lookup
-    public async Task<Dictionary<string, (string Kod, string Unvan)>> CariEslestirAsync(IEnumerable<string> vknler)
+    // VKN/TCKN → (CariKod, CariUnvan, OzelKod) — LG_xxx_CLCARD üzerinden lookup
+    public async Task<Dictionary<string, (string Kod, string Unvan, string OzelKod)>> CariEslestirAsync(IEnumerable<string> vknler)
     {
-        var sonuc = new Dictionary<string, (string, string)>(StringComparer.OrdinalIgnoreCase);
+        var sonuc = new Dictionary<string, (string, string, string)>(StringComparer.OrdinalIgnoreCase);
         var set = vknler.Where(x => !string.IsNullOrWhiteSpace(x))
                         .Select(x => x.Trim())
                         .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -51,7 +51,7 @@ public class EFaturaService
             await using var con = _db.CreateConnection();
             await con.OpenAsync();
             var rows = await con.QueryAsync($@"
-                SELECT TAXNR, TCKNO, CODE, DEFINITION_
+                SELECT TAXNR, TCKNO, CODE, DEFINITION_, SPECODE
                 FROM {tbl} WITH (NOLOCK)
                 WHERE (TAXNR IN @set OR TCKNO IN @set)", new { set });
 
@@ -59,10 +59,11 @@ public class EFaturaService
             {
                 string kod = ((string?)r.CODE ?? "").Trim();
                 string unvan = ((string?)r.DEFINITION_ ?? "").Trim();
+                string ozelKod = ((string?)r.SPECODE ?? "").Trim();
                 string vn = ((string?)r.TAXNR ?? "").Trim();
                 string tc = ((string?)r.TCKNO ?? "").Trim();
-                if (!string.IsNullOrEmpty(vn) && !sonuc.ContainsKey(vn)) sonuc[vn] = (kod, unvan);
-                if (!string.IsNullOrEmpty(tc) && !sonuc.ContainsKey(tc)) sonuc[tc] = (kod, unvan);
+                if (!string.IsNullOrEmpty(vn) && !sonuc.ContainsKey(vn)) sonuc[vn] = (kod, unvan, ozelKod);
+                if (!string.IsNullOrEmpty(tc) && !sonuc.ContainsKey(tc)) sonuc[tc] = (kod, unvan, ozelKod);
             }
         }
         catch (Exception ex)
@@ -136,13 +137,35 @@ public class EFaturaService
 
         // Performans: Fatura No filtresi yoksa POSTBOX ile ELEMENTS'i ayrı sorgu yap.
         // (OUTER APPLY her satır için ELEMENTS'a ayrı seek yapıyor, yavaş.)
-        bool faturaNoFilter = !string.IsNullOrWhiteSpace(f.FaturaNo);
+        var faturaNoListesi = f.FaturaNolariCoz();
+        bool faturaNoFilter = !string.IsNullOrWhiteSpace(f.FaturaNo) || faturaNoListesi.Length > 0;
 
+        // ELEMENTS-driven sorgu: tarih filtresi GERÇEK fatura tarihine (ELEMENTS.ISSUEDATE)
+        // uygulanır. ELEMENTS.ISSUEDATE indexsiz, ama tablo verimli — direkt ELEMENTS'ten
+        // başlayıp POSTBOX'a JOIN yapınca 25 sn → 0.5 sn'ye düşüyor (test edildi).
+        //
+        // Bir POSTBOX'a birden fazla ELEMENT bağlı olabiliyor (sistem yanıt zarflarında
+        // 6-9 adede kadar) → INNER JOIN duplicate üretir. Filtresiz durumda ROW_NUMBER ile
+        // POSTBOX başına ilk ELEMENT alınır. Fatura no filtresi varsa her eşleşen ELEMENT
+        // zaten kullanıcının kastettiği fatura olduğu için dedup'a gerek yok.
+        //
+        // Edge case: ELEMENTS.ISSUEDATE NULL → fatura bu listeye girmez (UBL e-fatura için
+        // ISSUEDATE her zaman dolu olmalı; aksi şikayet gelirse fallback eklenir).
         var sql = new StringBuilder();
+        if (!faturaNoFilter)
+        {
+            sql.Append(@";WITH BaseE AS (
+    SELECT POSTBOXREF, ELEMENTID, UUID, ISSUEDATE,
+           ROW_NUMBER() OVER (PARTITION BY POSTBOXREF ORDER BY ID) AS rn
+    FROM ELEMENTS WITH (NOLOCK)
+    WHERE ISSUEDATE >= @Bas AND ISSUEDATE < @Bit
+)
+");
+        }
         sql.Append(@"
             SELECT TOP (@Top)
                 p.ID                AS Id,
-                p.DATETIME          AS Tarih,
+                e.ISSUEDATE         AS Tarih,
                 p.INVOICETYPE       AS Tip,
                 p.PROFILEID         AS ProfileId,
                 p.ENVELOPETYPE      AS EnvelopeType,
@@ -153,25 +176,27 @@ public class EFaturaService
                 p.DESCRIPTION       AS Aciklama,
                 p.FILENAME          AS DosyaAdi,
                 p.FILESIZE          AS DataSize,
-                p.STATUS            AS Status");
-
-        if (faturaNoFilter)
-        {
-            sql.Append(@",
+                p.STATUS            AS Status,
                 e.ELEMENTID         AS FaturaNo,
                 e.UUID              AS Uuid
-            FROM POSTBOX p WITH (NOLOCK)
-            INNER JOIN ELEMENTS e WITH (NOLOCK) ON e.POSTBOXREF = p.ID
-            WHERE p.ENVELOPETYPE = @EnvType
-              AND p.DATETIME >= @Bas AND p.DATETIME < @Bit
-              AND e.ELEMENTID LIKE @FaturaNo");
+            ");
+        if (faturaNoFilter)
+        {
+            sql.Append(@"FROM ELEMENTS e WITH (NOLOCK)
+            INNER JOIN POSTBOX p WITH (NOLOCK) ON p.ID = e.POSTBOXREF
+            WHERE e.ISSUEDATE >= @Bas AND e.ISSUEDATE < @Bit
+              AND p.ENVELOPETYPE = @EnvType");
+            if (!string.IsNullOrWhiteSpace(f.FaturaNo))
+                sql.Append(" AND e.ELEMENTID LIKE @FaturaNo");
+            if (faturaNoListesi.Length > 0)
+                sql.Append(" AND e.ELEMENTID IN (SELECT value FROM STRING_SPLIT(@FaturaNoListesiCsv, '|'))");
         }
         else
         {
-            sql.Append(@"
-            FROM POSTBOX p WITH (NOLOCK)
-            WHERE p.ENVELOPETYPE = @EnvType
-              AND p.DATETIME >= @Bas AND p.DATETIME < @Bit");
+            sql.Append(@"FROM BaseE e
+            INNER JOIN POSTBOX p WITH (NOLOCK) ON p.ID = e.POSTBOXREF
+            WHERE e.rn = 1
+              AND p.ENVELOPETYPE = @EnvType");
         }
 
         // Eğer kullanıcı zaten bir fatura tipi seçtiyse, INVOICETYPE = @Tip
@@ -220,7 +245,7 @@ public class EFaturaService
                 ? " AND p.RECEIVER_VKNTCKN = @VKN"
                 : " AND p.SENDER_VKNTCKN = @VKN");
 
-        sql.Append(" ORDER BY p.DATETIME DESC");
+        sql.Append(" ORDER BY e.ISSUEDATE DESC");
 
         await using var con = new SqlConnection(_connStr);
         await con.OpenAsync();
@@ -237,6 +262,7 @@ public class EFaturaService
             FaturaNo  = "%" + (f.FaturaNo ?? "") + "%",
             BizimVkn   = _bizimVknler,
             CariVknCsv = cariVknleri == null ? "" : string.Join(",", cariVknleri),
+            FaturaNoListesiCsv = faturaNoListesi.Length == 0 ? "" : string.Join("|", faturaNoListesi),
         }, commandTimeout: 180);
 
         var liste = new List<EFaturaListItem>();
@@ -248,8 +274,8 @@ public class EFaturaService
             {
                 Id           = Convert.ToInt64(r.Id),
                 Tarih        = (DateTime)r.Tarih,
-                FaturaNo     = faturaNoFilter ? ((string?)r.FaturaNo ?? "") : "",
-                Uuid         = faturaNoFilter ? ((string?)r.Uuid ?? "")     : "",
+                FaturaNo     = (string?)r.FaturaNo ?? "",
+                Uuid         = (string?)r.Uuid     ?? "",
                 Tip          = (string?)r.Tip ?? "",
                 ProfileId    = (string?)r.ProfileId ?? "",
                 EnvelopeType = envT,
@@ -263,37 +289,7 @@ public class EFaturaService
             });
         }
 
-        // FaturaNo/UUID toplu yükle (FaturaNo filtresi yoksa)
-        if (!faturaNoFilter && liste.Count > 0)
-        {
-            var idsCsv = string.Join(",", liste.Select(x => x.Id));
-            try
-            {
-                var elemRows = await con.QueryAsync(@"
-                    SELECT POSTBOXREF, ELEMENTID, UUID
-                    FROM ELEMENTS WITH (NOLOCK)
-                    WHERE POSTBOXREF IN (SELECT CAST(value AS BIGINT) FROM STRING_SPLIT(@idsCsv, ','))",
-                    new { idsCsv }, commandTimeout: 60);
-
-                var dict = new Dictionary<long, (string FaturaNo, string Uuid)>();
-                foreach (var er in elemRows)
-                {
-                    long pid = Convert.ToInt64(er.POSTBOXREF);
-                    if (!dict.ContainsKey(pid))
-                        dict[pid] = ((string?)er.ELEMENTID ?? "", (string?)er.UUID ?? "");
-                }
-                foreach (var item in liste)
-                    if (dict.TryGetValue(item.Id, out var t))
-                    {
-                        item.FaturaNo = t.FaturaNo;
-                        item.Uuid     = t.Uuid;
-                    }
-            }
-            catch (Exception ex)
-            {
-                _log.LogWarning(ex, "ELEMENTS toplu yüklenemedi");
-            }
-        }
+        // FaturaNo/UUID artık ana sorguda ELEMENTS join'i ile geliyor — ikincil yükleme kaldırıldı.
 
         // Karşı taraf VKN'lerini Logo cari kart koduyla eşleştir
         var map = await CariEslestirAsync(liste.Select(x => x.KarsiVKN));
@@ -301,8 +297,9 @@ public class EFaturaService
         {
             if (!string.IsNullOrEmpty(item.KarsiVKN) && map.TryGetValue(item.KarsiVKN, out var c))
             {
-                item.LogoCariKod   = c.Kod;
-                item.LogoCariUnvan = c.Unvan;
+                item.LogoCariKod    = c.Kod;
+                item.LogoCariUnvan  = c.Unvan;
+                item.LogoCariOzelKod = c.OzelKod;
             }
             // POSTBOX.SENDER_UNVAN / RECEIVER_UNVAN bazı kayıtlarda boş geliyor (eLogo
             // bu kolonu denormalize etmemiş). Boşsa Logo cari ünvanı ile doldur ki
@@ -330,7 +327,11 @@ public class EFaturaService
     {
         if (liste.Count == 0) return;
 
-        var dict = liste.ToDictionary(x => x.Id);
+        // Aynı Id birden fazla kez gelebilir (kullanıcının toplu filtresinde tekrar
+        // ettiği fatura no veya farklı join sonuçları). Sözlüğe atarken çakışmasın.
+        var dict = liste
+            .GroupBy(x => x.Id)
+            .ToDictionary(g => g.Key, g => g.First());
 
         // 1) Cache'den mevcut toplamları yükle ve list itemlarına uygula.
         HashSet<long> cachedIds;
@@ -447,7 +448,9 @@ public class EFaturaService
 
         // SQLite'da parametre limiti ~999; güvenli olsun diye 500'lük chunk'lar.
         const int chunk = 500;
-        var dict = liste.ToDictionary(x => x.Id);
+        var dict = liste
+            .GroupBy(x => x.Id)
+            .ToDictionary(g => g.Key, g => g.First());
         for (int o = 0; o < liste.Count; o += chunk)
         {
             var ids = liste.Skip(o).Take(chunk).Select(x => x.Id).ToArray();
@@ -555,6 +558,7 @@ public class EFaturaService
         string subCode = "";
         decimal subAmt = 0m;
         decimal kdv = 0m, tev = 0m;
+        decimal taxIncl = 0m;   // LegalMonetaryTotal/TaxInclusiveAmount (KDV dahil tutar)
 
         // İlk InvoiceLine içinden ilk kalem adını çıkarmak için state
         bool gotFirstLine = false;
@@ -635,6 +639,11 @@ public class EFaturaService
                         item.Matrah = ReadDecimalNoAdvance(rdr);
                     break;
 
+                case "TaxInclusiveAmount":
+                    if (legalTotalDepth >= 0 && rdr.Depth == legalTotalDepth + 1)
+                        taxIncl = ReadDecimalNoAdvance(rdr);
+                    break;
+
                 case "PayableAmount":
                     if (legalTotalDepth >= 0 && rdr.Depth == legalTotalDepth + 1)
                         item.ToplamTutar = ReadDecimalNoAdvance(rdr);
@@ -682,8 +691,28 @@ public class EFaturaService
         }
 
         if (!inInvoice) return;
-        item.KdvTutar      = kdv;
-        item.TevkifatTutar = tev;
+
+        // KDV ve Tevkifat'ı LegalMonetaryTotal üçlüsünden türet — en sağlam yöntem.
+        // TaxSubtotal/WithholdingTaxTotal yapısı (Invoice vs satır seviyesi, üst TaxAmount'un
+        // bazen tevkifat-net gelmesi vb.) faturadan faturaya değişiyor; LegalMonetaryTotal ise
+        // her UBL faturasında tutarlı:
+        //   Matrah   = TaxExclusiveAmount
+        //   KDV      = TaxInclusiveAmount - TaxExclusiveAmount
+        //   Tevkifat = TaxInclusiveAmount - PayableAmount   (yoksa 0)
+        // Dövizli faturalarda da çalışır (hepsi aynı para biriminde).
+        if (taxIncl > 0m && item.Matrah > 0m && taxIncl >= item.Matrah - 0.01m)
+        {
+            item.KdvTutar = Math.Round(taxIncl - item.Matrah, 2);
+            item.TevkifatTutar = (item.ToplamTutar > 0m && taxIncl > item.ToplamTutar + 0.01m)
+                ? Math.Round(taxIncl - item.ToplamTutar, 2)
+                : 0m;
+        }
+        else
+        {
+            // Fallback: TaxInclusiveAmount okunamadıysa eski toplama mantığı
+            item.KdvTutar      = kdv;
+            item.TevkifatTutar = tev;
+        }
     }
 
     // Element içeriğini text olarak okur; reader'ı bu element'in EndElement'i üzerinde
@@ -818,6 +847,8 @@ public class EFaturaService
                        i.DATE_      AS Tarih,
                        i.GROSSTOTAL AS Tutar,
                        i.TRCODE     AS Trcode,
+                       i.TRCURR     AS TrCurr,
+                       i.TRNET      AS TrNet,
                        c.TAXNR      AS Taxnr,
                        c.TCKNO      AS Tckno
                 FROM {invTbl} i WITH (NOLOCK)
@@ -883,7 +914,7 @@ public class EFaturaService
             {
                 int gunFark = Math.Abs((r.Tarih.Date - eFTarih).Days);
                 if (gunFark > tarihToleransGun) continue;
-                if (!TutarUyusuyor(item, r.Tutar)) continue;  // tevkifatlı/tevkifatsız 3 değer dener
+                if (!TutarUyusuyor(item, r.Tutar, r.TrNet, r.TrCurr)) continue;  // TL + döviz dener
 
                 // Modifiye yakalama kuralları (herhangi biri tutarsa Modifiye):
                 //   a) Son 4 hane aynı (en yaygın — ortada nokta/üçnokta eklenmiş)
@@ -965,7 +996,7 @@ public class EFaturaService
         // CLCARD'ı tek seferde çek (boyut küçük, full table scan yapılır C# tarafında)
         var tumCariler = (await con.QueryAsync<ClcRow>($@"
             SELECT LOGICALREF AS LogicalRef, CODE AS Code,
-                   DEFINITION_ AS Def, TAXNR AS Tax, TCKNO AS Tc
+                   DEFINITION_ AS Def, TAXNR AS Tax, TCKNO AS Tc, SPECODE AS SpeCode
             FROM {clcTbl} WITH (NOLOCK)
             WHERE DEFINITION_ IS NOT NULL AND DEFINITION_ <> ''")).ToList();
         if (tumCariler.Count == 0) return;
@@ -1014,6 +1045,8 @@ public class EFaturaService
             SELECT i.FICHENO    AS Ficheno,
                    i.DATE_      AS Tarih,
                    i.GROSSTOTAL AS Tutar,
+                   i.TRCURR     AS TrCurr,
+                   i.TRNET      AS TrNet,
                    i.CLIENTREF  AS ClientRef
             FROM {invTbl} i WITH (NOLOCK)
             WHERE i.CLIENTREF IN (SELECT CAST(value AS INT) FROM STRING_SPLIT(@refsCsv, ','))
@@ -1054,7 +1087,7 @@ public class EFaturaService
                 {
                     int gunFark = Math.Abs((r.Tarih.Date - eFTarih).Days);
                     if (gunFark > tarihToleransGun) continue;
-                    if (!TutarUyusuyor(item, r.Tutar)) continue;  // tevkifatlı/tevkifatsız 3 değer dener
+                    if (!TutarUyusuyor(item, r.Tutar, r.TrNet, r.TrCurr)) continue;  // TL + döviz dener
 
                     var lgNorm = NormalizeFichenoFull(r.Ficheno);
                     bool son4   = !string.IsNullOrEmpty(eFSon4) &&
@@ -1078,8 +1111,9 @@ public class EFaturaService
                 // Cari bilgisini güncelle: hangi yanlış cariye işlendiği görünsün
                 if (refMap.TryGetValue(secilen.ClientRef, out var c))
                 {
-                    item.LogoCariKod   = c.Code ?? "";
-                    item.LogoCariUnvan = c.Def  ?? "";
+                    item.LogoCariKod    = c.Code    ?? "";
+                    item.LogoCariUnvan  = c.Def     ?? "";
+                    item.LogoCariOzelKod = c.SpeCode ?? "";
                 }
             }
         }
@@ -1092,6 +1126,7 @@ public class EFaturaService
         public string? Def        { get; set; }
         public string? Tax        { get; set; }
         public string? Tc         { get; set; }
+        public string? SpeCode    { get; set; }
     }
 
     private class UnvanInvRow
@@ -1100,6 +1135,8 @@ public class EFaturaService
         public DateTime Tarih     { get; set; }
         public decimal  Tutar     { get; set; }
         public int      ClientRef { get; set; }
+        public short    TrCurr    { get; set; }
+        public decimal  TrNet     { get; set; }
     }
 
     // Türkçe firma ünvanından anlamlı 2-3 token çıkarır.
@@ -1170,6 +1207,8 @@ public class EFaturaService
         public short     Trcode  { get; set; }
         public string?   Taxnr   { get; set; }
         public string?   Tckno   { get; set; }
+        public short     TrCurr  { get; set; }   // INVOICE.TRCURR — işlem döviz cinsi (0=TL)
+        public decimal   TrNet   { get; set; }   // INVOICE.TRNET  — işlem dövizi tutarı
     }
 
     private class RedRow
@@ -1208,9 +1247,28 @@ public class EFaturaService
     //  - İade/bazı senaryolar → Matrah (sadece TaxExclusive)
     //  - UBL PayableAmount → her zaman güvenilir (ödenecek)
     // Hepsini ±1 TL toleransla dener; biri tutarsa eşleşmiş sayılır.
-    private static bool TutarUyusuyor(EFaturaListItem item, decimal logoTutar)
+    //
+    // DÖVİZLİ FATURA: e-faturanın tutarları döviz cinsinden (EUR/USD) gelir, Logo
+    // GROSSTOTAL ise TL'dir → asla tutmaz. Bu durumda Logo'nun işlem dövizi tutarı
+    // (TRNET) ile e-fatura döviz tutarı karşılaştırılır.
+    private static bool TutarUyusuyor(EFaturaListItem item, decimal logoTutar,
+                                      decimal logoTrNet = 0m, int logoTrCurr = 0)
     {
         const decimal tol = 1m;
+
+        bool eFaturaDovizli = !string.IsNullOrWhiteSpace(item.Doviz)
+            && !item.Doviz.Equals("TRY", StringComparison.OrdinalIgnoreCase)
+            && !item.Doviz.Equals("TL",  StringComparison.OrdinalIgnoreCase);
+
+        if (eFaturaDovizli && logoTrCurr != 0 && logoTrNet > 0m)
+        {
+            const decimal dtol = 2m;   // kur/kuruş yuvarlaması için biraz geniş
+            decimal brutD = item.Matrah + item.KdvTutar;
+            if (Math.Abs(item.ToplamTutar - logoTrNet) <= dtol) return true;
+            if (Math.Abs(brutD            - logoTrNet) <= dtol) return true;
+            if (Math.Abs(item.Matrah      - logoTrNet) <= dtol) return true;
+        }
+
         decimal brut         = item.Matrah + item.KdvTutar;
         decimal odenecek     = item.ToplamTutar > 0 ? item.ToplamTutar : brut - item.TevkifatTutar;
         decimal tevkifatsiz  = brut - item.TevkifatTutar;

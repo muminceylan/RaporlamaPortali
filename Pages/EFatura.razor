@@ -1,10 +1,12 @@
 @page "/efatura"
 @using RaporlamaPortali.Models
 @using RaporlamaPortali.Services
+@using RaporlamaPortali.Services.Logo
 @inject EFaturaService Svc
 @inject ExcelExportService ExcelExportService
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
+@inject IDialogService DialogService
 
 <PageTitle>e-Fatura Görüntüleme</PageTitle>
 
@@ -109,6 +111,24 @@
                          Color="Color.Warning" Dense="true"
                          Label="GİB sistem yanıtlarını da göster" />
         </MudItem>
+
+        <MudItem xs="12">
+            <MudTextField @bind-Value="_filtre.FaturaNoListesiRaw"
+                          Label="Fatura Numaraları (toplu filtre)"
+                          HelperText="Birden fazla fatura numarası yapıştırın — yeni satır, virgül, noktalı virgül veya boşluk ile ayırın. Dolu ise sadece bu numaralardaki kayıtlar listelenir; boş ise tüm faturalar gelir."
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Lines="4" Clearable="true"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.ListAlt" />
+            @{
+                var _eFaturaListeSayisi = _filtre.FaturaNolariCoz().Length;
+            }
+            @if (_eFaturaListeSayisi > 0)
+            {
+                <MudText Typo="Typo.caption" Style="color:#1976d2; margin-top:4px; display:block;">
+                    <b>@_eFaturaListeSayisi</b> fatura numarası filtrede aktif.
+                </MudText>
+            }
+        </MudItem>
     </MudGrid>
 </MudPaper>
 
@@ -135,6 +155,11 @@ else
                    OnClick="ExcelIndir" Disabled="_excelYukleniyor || _kayitlar.Count == 0">
             @(_excelYukleniyor ? "Hazırlanıyor..." : $"Excel'e Aktar ({_kayitlar.Count})")
         </MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small" Class="ml-2"
+                   StartIcon="@Icons.Material.Filled.CloudUpload"
+                   OnClick="LogoyaAktar" Disabled="@(_aktarimSayisi == 0)">
+            Logo'ya Aktar (@_aktarimSayisi)
+        </MudButton>
     </MudPaper>
 
     <MudTable T="EFaturaListItem" Items="_kayitlar" Dense="true" Hover="true" Bordered="true" Striped="true"
@@ -142,6 +167,7 @@ else
               Breakpoint="Breakpoint.None" RowsPerPage="100"
               Class="efatura-list-tbl">
         <HeaderContent>
+            <MudTh Style="width:230px">Aktarım</MudTh>
             <MudTh Style="width:110px"><MudTableSortLabel SortBy="new Func<EFaturaListItem,object>(x=>x.Tarih)">Tarih</MudTableSortLabel></MudTh>
             <MudTh Style="width:85px">Tip</MudTh>
             <MudTh Style="width:155px"><MudTableSortLabel SortBy="new Func<EFaturaListItem,object>(x=>x.FaturaNo)">Fatura No</MudTableSortLabel></MudTh>
@@ -156,6 +182,34 @@ else
             <MudTh Style="width:140px;text-align:center">İşlem</MudTh>
         </HeaderContent>
         <RowTemplate>
+            <MudTd DataLabel="Aktarım" Style="white-space:nowrap; padding:2px 6px;">
+                <div class="d-flex align-center gap-1">
+                    <MudCheckBox T="bool"
+                                 Value="@AktarimSecili(context.Id)"
+                                 ValueChanged="@(v => AktarimToggle(context.Id, v))"
+                                 Color="Color.Primary" Dense="true" Size="Size.Small" />
+                    @if (AktarimSecili(context.Id))
+                    {
+                        var _tip = AktarimTipi(context.Id);
+                        <MudButtonGroup OverrideStyles="false" Variant="Variant.Outlined" Size="Size.Small">
+                            <MudButton Size="Size.Small"
+                                       Variant="@(_tip == "AlinanHizmet" ? Variant.Filled : Variant.Outlined)"
+                                       Color="@(_tip == "AlinanHizmet" ? Color.Success : Color.Default)"
+                                       OnClick="@(() => AktarimTipiSec(context.Id, "AlinanHizmet"))"
+                                       Style="text-transform:none; padding:2px 6px; min-width:auto; font-size:0.72rem;">
+                                Alınan Hizmet
+                            </MudButton>
+                            <MudButton Size="Size.Small"
+                                       Variant="@(_tip == "SatinAlma" ? Variant.Filled : Variant.Outlined)"
+                                       Color="@(_tip == "SatinAlma" ? Color.Info : Color.Default)"
+                                       OnClick="@(() => AktarimTipiSec(context.Id, "SatinAlma"))"
+                                       Style="text-transform:none; padding:2px 6px; min-width:auto; font-size:0.72rem;">
+                                Satın Alma
+                            </MudButton>
+                        </MudButtonGroup>
+                    }
+                </div>
+            </MudTd>
             <MudTd DataLabel="Tarih" Style="white-space:nowrap;">
                 <span>@context.Tarih.ToString("dd.MM.yyyy")</span>
                 <span class="ef-mini">@context.Tarih.ToString("HH:mm")</span>
@@ -540,6 +594,65 @@ else
     private List<EFaturaListItem> _kayitlar = new();
     private bool _yukleniyor = false;
 
+    // Aktarım seçimleri: Id -> "AlinanHizmet" | "SatinAlma" | null
+    // Checkbox işaretliyse Dictionary'de key vardır. Toggle ile eklenir/kaldırılır.
+    private Dictionary<long, string?> _aktarimSecimleri = new();
+    private bool AktarimSecili(long id) => _aktarimSecimleri.ContainsKey(id);
+    private string? AktarimTipi(long id) => _aktarimSecimleri.TryGetValue(id, out var t) ? t : null;
+    private void AktarimToggle(long id, bool secili)
+    {
+        if (secili) _aktarimSecimleri[id] = null;
+        else        _aktarimSecimleri.Remove(id);
+    }
+    private void AktarimTipiSec(long id, string tip)
+    {
+        _aktarimSecimleri[id] = tip;
+    }
+    // "Logo'ya Aktar" butonu için aktif sayım — hem checkbox işaretli hem tip seçili olanlar
+    private int _aktarimSayisi => _aktarimSecimleri.Count(kv => !string.IsNullOrEmpty(kv.Value));
+
+    private async Task LogoyaAktar()
+    {
+        var secimler = _aktarimSecimleri
+            .Where(kv => !string.IsNullOrEmpty(kv.Value))
+            .Select(kv => (kv.Key, kv.Value == "AlinanHizmet" ? 4 : 1))
+            .ToList();
+
+        if (secimler.Count == 0)
+        {
+            Snackbar.Add("Hiç fatura seçilmedi (her seçilen faturanın tipini de işaretleyin).", Severity.Warning);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(SecretsService.LogoUnityKullanici) ||
+            string.IsNullOrWhiteSpace(SecretsService.LogoUnitySifre))
+        {
+            Snackbar.Add("Logo Unity kullanıcı bilgileri ayarlanmamış — Sırlar sayfasından girin.", Severity.Error);
+            return;
+        }
+
+        var cred = new LogoUnityCredentials
+        {
+            Kullanici = SecretsService.LogoUnityKullanici,
+            Sifre     = SecretsService.LogoUnitySifre,
+            FirmaNo   = 211,
+        };
+
+        var parameters = new DialogParameters
+        {
+            ["Secimler"] = (IReadOnlyList<(long, int)>)secimler,
+            ["Cred"]     = cred,
+        };
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = false,
+            FullWidth        = true,
+            MaxWidth         = MaxWidth.ExtraExtraLarge,
+            CloseButton      = false,
+        };
+        await DialogService.ShowAsync<EFaturaLogoAktarimDialog>("Logo'ya Aktar", parameters, options);
+    }
+
     private bool          _detayAcik       = false;
     private bool          _detayYukleniyor = false;
     private EFaturaDetay? _detay;
@@ -586,6 +699,7 @@ else
             _filtre.Baslangic = _bas.Value;
             _filtre.Bitis     = _bit!.Value;
             _kayitlar = await Svc.ListeleAsync(_filtre);
+            _aktarimSecimleri.Clear();
             if (_kayitlar.Count == 0)
                 Snackbar.Add("Filtreye uyan kayıt bulunamadı.", Severity.Info);
             else
@@ -607,6 +721,7 @@ else
         _bas = DateTime.Today.AddDays(-30);
         _bit = DateTime.Today;
         _kayitlar.Clear();
+        _aktarimSecimleri.Clear();
     }
 
     private async Task DetayAc(EFaturaListItem r)

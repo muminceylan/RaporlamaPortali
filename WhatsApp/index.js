@@ -1,15 +1,19 @@
-const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
-const qrcodeTerminal = require('qrcode-terminal');
-const { exec } = require('child_process');
-const path = require('path');
+// =====================================================
+// RaporlamaPortali WhatsApp Bot — Baileys
+// Migration nedeni: whatsapp-web.js'in Multi-Device protokolüyle uyumsuzluğu;
+// "BAGLI ama mesaj akmiyor" silent failure problemi.
+// =====================================================
+
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason,
+        fetchLatestBaileysVersion, Browsers } = require('@whiskeysockets/baileys');
+const pino = require('pino');
 const fs = require('fs');
-const puppeteer = require('puppeteer');
+const path = require('path');
 const http = require('http');
+const puppeteer = require('puppeteer');
 
 // =====================================================
 // DOSYA YOLLARI
-// Kod: __dirname (publish klasörü, her publish'te güncellenir)
-// Veri: WHATSAPP_DATA_DIR env (publish'ten etkilenmeyen kalıcı yer)
 // =====================================================
 
 const DIZIN      = __dirname;
@@ -23,19 +27,18 @@ const CONFIG_DOSYA  = path.join(VERI_DIZIN, 'whatsapp-config.json');
 const DURUM_DOSYA   = path.join(VERI_DIZIN, 'whatsapp-status.json');
 const LOG_DOSYA     = path.join(VERI_DIZIN, 'whatsapp-log.json');
 const CIKTI_KLASORU = path.join(VERI_DIZIN, 'screenshots');
+const AUTH_KLASORU  = path.join(VERI_DIZIN, '.baileys_auth');
+
+try { if (!fs.existsSync(CIKTI_KLASORU)) fs.mkdirSync(CIKTI_KLASORU, { recursive: true }); } catch (_) {}
 
 // =====================================================
-// CONFIG OKUMA / DURUM YAZMA
+// CONFIG / DURUM / LOG
 // =====================================================
 
 function configOku() {
     try {
-        if (fs.existsSync(CONFIG_DOSYA)) {
-            return JSON.parse(fs.readFileSync(CONFIG_DOSYA, 'utf8'));
-        }
-    } catch (e) {
-        console.error('Config okuma hatasi:', e.message);
-    }
+        if (fs.existsSync(CONFIG_DOSYA)) return JSON.parse(fs.readFileSync(CONFIG_DOSYA, 'utf8'));
+    } catch (e) { console.error('Config okuma hatasi:', e.message); }
     return {
         yetkiliNumaralar: [],
         tetikleyiciler: ['tüm rapor', 'tum rapor', 'tumrapor', 'tümrapor'],
@@ -44,554 +47,61 @@ function configOku() {
     };
 }
 
+let _sonDurum = null;
+function durumYaz(durum, qrString) {
+    try {
+        const data = { durum, qrString: qrString || '', guncelleme: new Date().toISOString() };
+        fs.writeFileSync(DURUM_DOSYA, JSON.stringify(data), 'utf8');
+        _sonDurum = durum;
+    } catch (e) { console.error('Durum yazma hatasi:', e.message); }
+}
+
 function logYaz(numara, mesaj, sonuc) {
     try {
         let kayitlar = [];
         if (fs.existsSync(LOG_DOSYA)) {
-            kayitlar = JSON.parse(fs.readFileSync(LOG_DOSYA, 'utf8'));
+            try { kayitlar = JSON.parse(fs.readFileSync(LOG_DOSYA, 'utf8')); } catch (_) { kayitlar = []; }
         }
-        kayitlar.unshift({
-            tarih: new Date().toISOString(),
-            numara: numara,
-            mesaj: mesaj,
-            sonuc: sonuc
-        });
-        // Son 200 kaydı tut
-        if (kayitlar.length > 200) kayitlar = kayitlar.slice(0, 200);
+        kayitlar.unshift({ tarih: new Date().toISOString(), numara, mesaj, sonuc });
+        if (kayitlar.length > 500) kayitlar = kayitlar.slice(0, 500);
         fs.writeFileSync(LOG_DOSYA, JSON.stringify(kayitlar), 'utf8');
-    } catch (e) {
-        console.error('Log yazma hatasi:', e.message);
-    }
-}
-
-let _sonDurum = '';
-function durumYaz(durum, qrString) {
-    try {
-        _sonDurum = durum;
-        fs.writeFileSync(DURUM_DOSYA, JSON.stringify({
-            durum: durum,
-            qrString: qrString || '',
-            guncelleme: new Date().toISOString()
-        }), 'utf8');
-    } catch (e) {
-        console.error('Durum yazma hatasi:', e.message);
-    }
-}
-
-let config = configOku();
-
-if (!fs.existsSync(CIKTI_KLASORU)) {
-    fs.mkdirSync(CIKTI_KLASORU, { recursive: true });
+    } catch (e) { console.error('Log yazma hatasi:', e.message); }
 }
 
 // =====================================================
-// ŞEKER RAPORU — KONUŞMA DURUMU
-// Anahtar: numara → { adim: 'BASLANGIC' | 'BITIS', baslangic: 'YYYY-MM-DD' }
-// =====================================================
-const sekerKonusma = new Map();
-
-// Türkçe ay adı → ay numarası
-const AYLAR = {
-    'ocak': 1, 'subat': 2, 'şubat': 2, 'mart': 3, 'nisan': 4,
-    'mayis': 5, 'mayıs': 5, 'haziran': 6, 'temmuz': 7,
-    'agustos': 8, 'ağustos': 8, 'eylul': 9, 'eylül': 9,
-    'ekim': 10, 'kasim': 11, 'kasım': 11, 'aralik': 12, 'aralık': 12
-};
-
-/** "Eylül", "Ekim 2025" vb. → {baslangic, bitis} veya null */
-function ayAdindenTarih(metin) {
-    const temiz = metin.toLowerCase().replace(/[ığüşöçiI]/g, c =>
-        ({'ı':'i','ğ':'g','ü':'u','ş':'s','ö':'o','ç':'c','i':'i','I':'i'}[c]||c));
-    for (const [isim, no] of Object.entries(AYLAR)) {
-        if (temiz.includes(isim)) {
-            // Yıl var mı?
-            const yilEsles = temiz.match(/\b(20\d{2})\b/);
-            const yil = yilEsles ? parseInt(yilEsles[1]) : new Date().getFullYear();
-            const son = new Date(yil, no, 0).getDate(); // ayın son günü
-            return {
-                baslangic: `${yil}-${String(no).padStart(2,'0')}-01`,
-                bitis:     `${yil}-${String(no).padStart(2,'0')}-${String(son).padStart(2,'0')}`
-            };
-        }
-    }
-    return null;
-}
-
-/** "01.09.2025" veya "01/09/2025" veya "2025-09-01" → "YYYY-MM-DD" veya null */
-function tarihParse(metin) {
-    metin = metin.trim();
-    // DD.MM.YYYY veya DD/MM/YYYY
-    let m = metin.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})$/);
-    if (m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
-    // YYYY-MM-DD
-    m = metin.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (m) return metin;
-    return null;
-}
-
-async function sekerRaporuGonder(message, baslangicStr, bitisStr, bulanik = false) {
-    const baseUrl = (config.raporApiUrl || 'http://localhost:5050/api/rapor')
-        .replace(/\/api\/.*$/, '');
-    const bulanikParam = bulanik ? '&bulanik=true' : '';
-    const urlAnaliz = `${baseUrl}/api/seker-analiz?baslangic=${baslangicStr}&bitis=${bitisStr}${bulanikParam}`;
-    const urlRapor  = `${baseUrl}/api/seker-raporu?baslangic=${baslangicStr}&bitis=${bitisStr}${bulanikParam}`;
-
-    console.log(`[Seker] Analiz tablosu: ${urlAnaliz}`);
-    console.log(`[Seker] Baskanlık tablosu: ${urlRapor}`);
-
-    const [htmlAnaliz, htmlRapor] = await Promise.all([
-        sqlRaporuGetirRetry(urlAnaliz),
-        sqlRaporuGetirRetry(urlRapor)
-    ]);
-
-    if (!htmlAnaliz && !htmlRapor) {
-        await message.reply('Seker raporu alinamadi, sunucu kapali olabilir.');
-        return;
-    }
-
-    // 1. resim: Ham analiz tablosu (üst tablo) — geniş viewport
-    if (htmlAnaliz) {
-        await htmldenPngOlusturVeGonder(message, htmlAnaliz, 'seker-analiz', 1620);
-    }
-    // 2. resim: Başkanlık tablosu (alt tablo)
-    if (htmlRapor) {
-        await htmldenPngOlusturVeGonder(message, htmlRapor, 'seker');
-    }
-}
-
-// =====================================================
-// WHATSAPP CLIENT
+// HTTP RAPOR (api/...) — eski koddan aynen
 // =====================================================
 
-const client = new Client({
-    authStrategy: new LocalAuth({ dataPath: path.join(VERI_DIZIN, '.wwebjs_auth') }),
-    puppeteer: {
-        headless: true,
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            // Kurumsal SSL inspection / MITM proxy ortamlarinda Chromium'un
-            // dis HTTPS bağlantısı kurabilmesi icin sertifika kontrolünü atla
-            '--ignore-certificate-errors',
-            // Headless tab'ın throttle edilmesini engelle — mesaj/ready gecikmesini önler
-            '--disable-background-timer-throttling',
-            '--disable-backgrounding-occluded-windows',
-            '--disable-renderer-backgrounding',
-            '--disable-features=IsolateOrigins,site-per-process,CalculateNativeWinOcclusion'
-        ]
-    },
-    takeoverOnConflict: true,
-    takeoverTimeoutMs: 10000,
-    qrMaxRetries: 5
-});
-
-// Bağlantı takılırsa kendimizi öldür, .NET tarafı yeniden başlatsın
-let _hazirTimer = null;
-let _qrOkundu = false;
-function hazirTimerKur(saniye, sebep) {
-    if (_hazirTimer) clearTimeout(_hazirTimer);
-    _hazirTimer = setTimeout(() => {
-        console.error(`[WhatsApp] ${saniye}sn icinde bagli olunamadi (${sebep}). Bot yeniden baslatiliyor...`);
-        durumYaz('BAGLANIYOR', '');
-        try { client.destroy(); } catch (_) {}
-        process.exit(1);
-    }, saniye * 1000);
-}
-
-client.on('qr', (qr) => {
-    console.log('\n[WhatsApp] QR kodu bekleniyor...');
-    qrcodeTerminal.generate(qr, { small: true });
-    // Ham QR string'ini yaz, .NET tarafı image'a çevirir
-    durumYaz('QR_BEKLIYOR', qr);
-    _qrOkundu = true;
-    // QR gösterildikten sonra 180 sn icinde 'ready' gelmezse yeniden baslat
-    hazirTimerKur(180, 'QR okutma sonrasi authentication tamamlanmadi');
-});
-
-client.on('loading_screen', (percent, message) => {
-    console.log(`[WhatsApp] Yukleniyor: ${percent}% ${message || ''}`);
-    // BAGLI iken sync amaçlı loading_screen tetiklenebiliyor — durumu geri düşürme
-    if (_sonDurum !== 'BAGLI') durumYaz('BAGLANIYOR', '');
-});
-
-client.on('authenticated', () => {
-    console.log('[WhatsApp] Kimlik dogrulandi, ready bekleniyor...');
-    // BAGLI iken authenticated yeniden firing edebilir (re-auth/sync).
-    // Bu durumda durumu geri düşürme ve "kendini öldür" timerini kurma — yoksa döngüye girer.
-    if (_sonDurum !== 'BAGLI') {
-        durumYaz('BAGLANIYOR', '');
-        hazirTimerKur(90, 'authenticated sonrasi ready gelmedi');
-    } else {
-        console.log('[WhatsApp] Zaten BAGLI iken authenticated — yok sayildi.');
-    }
-});
-
-let _tumSistemHazir = false;
-
-async function sistemWarmupYap() {
-    try {
-        console.log('[Warmup] Puppeteer on-baslatma...');
-        await browserGetir();
-        console.log('[Warmup] API ping...');
-        const baseUrl = (config.raporApiUrl || 'http://localhost:5050/api/rapor').replace(/\/api\/.*$/, '');
-        await new Promise((resolve) => {
-            const req = http.get(baseUrl + '/', { timeout: 30000 }, (res) => {
-                res.on('data', () => {});
-                res.on('end', () => resolve());
-            });
-            req.on('error', () => resolve());
-            req.on('timeout', () => { req.destroy(); resolve(); });
-        });
-        _tumSistemHazir = true;
-        console.log('[Warmup] Sistem tamamen hazir.');
-    } catch (err) {
-        console.error('[Warmup] Hata:', err.message);
-        _tumSistemHazir = true; // yine de kabul et, yoksa kilit kalır
-    }
-}
-
-async function bagliOlarakIsaretle(kaynak) {
-    if (_sonDurum === 'BAGLI') return;
-    if (_hazirTimer) { clearTimeout(_hazirTimer); _hazirTimer = null; }
-    config = configOku();
-    console.log(`[WhatsApp] Baglandi! (kaynak: ${kaynak}) — warmup baslatiliyor...`);
-    // Önce warmup'ı bitir, sonra BAGLI yaz — ilk tetikleyicide browser takılı kalmasın
-    if (!_tumSistemHazir) {
-        try { await sistemWarmupYap(); } catch (_) {}
-    }
-    console.log('[WhatsApp] Warmup tamam, BAGLI olarak isaretleniyor.');
-    durumYaz('BAGLI', '');
-}
-
-client.on('ready', () => { bagliOlarakIsaretle('ready'); });
-
-// LocalAuth ile session restore'da 'ready' bazen atlanır; change_state -> CONNECTED yedek tetikleyici
-client.on('change_state', (state) => {
-    console.log('[WhatsApp] state:', state);
-    if (state === 'CONNECTED') bagliOlarakIsaretle('change_state');
-});
-
-// Periyodik durum sorgusu — ready/change_state hiç gelmezse 10sn'de bir kontrol et
-setInterval(async () => {
-    if (_sonDurum === 'BAGLI') return;
-    try {
-        const state = await client.getState();
-        if (state === 'CONNECTED') bagliOlarakIsaretle('poll');
-    } catch (_) { /* henüz hazır değil */ }
-}, 10000);
-
-// HEARTBEAT — BAGLI iken 20sn'de bir status dosyasini tazele.
-// .NET watchdog'i bu zaman damgasina bakarak "kilitli BAGLI" durumlarini tespit edip restart eder.
-setInterval(async () => {
-    if (_sonDurum !== 'BAGLI') return;
-    try {
-        const state = await client.getState();
-        if (state === 'CONNECTED') {
-            durumYaz('BAGLI', '');
-        } else {
-            console.warn('[Heartbeat] state=', state, '— BAGLI degil, durum guncellemesi atlandi');
-        }
-    } catch (e) {
-        console.warn('[Heartbeat] getState hatasi:', e.message);
-    }
-}, 20000);
-
-client.on('disconnected', (reason) => {
-    console.log('[WhatsApp] Baglanti kesildi:', reason);
-    durumYaz('BAGLI_DEGIL', '');
-});
-
-client.on('auth_failure', (msg) => {
-    console.error('[WhatsApp] Kimlik dogrulama hatasi:', msg);
-    durumYaz('HATA', '');
-});
-
-client.on('message', async (message) => {
-    try {
-        config = configOku(); // Her mesajda taze config oku
-
-        // Mesaj alabildiysek bağlıyız — UI'da hâlâ BAGLANIYOR görünüyorsa düzelt
-        if (_sonDurum !== 'BAGLI') bagliOlarakIsaretle('message');
-
-        // Sistem warmup tamamlanmadıysa tetikleyicileri hazırla-kabul et-bekle
-        if (!_tumSistemHazir) {
-            const mesajKucuk = (message.body || '').toLowerCase().trim();
-            const herhangiTetikleyici =
-                ['pancar rapor','pancarrapor','seker rapor','şeker rapor','sekerrapor','şekerrapor']
-                    .some(k => mesajKucuk.includes(k)) ||
-                (config.tetikleyiciler || []).some(k => mesajKucuk.includes(k.toLowerCase()));
-            if (herhangiTetikleyici) {
-                console.log('[Warmup] Ilk mesaj geldi, sistem hazirlanana kadar bekleniyor...');
-                let bekleme = 0;
-                while (!_tumSistemHazir && bekleme < 60000) {
-                    await new Promise(r => setTimeout(r, 500));
-                    bekleme += 500;
-                }
-                if (!_tumSistemHazir) {
-                    await message.reply('Sistem baslatiliyor, lutfen 30 saniye sonra tekrar deneyin.');
-                    return;
-                }
-                // Hazır olunca ek 1sn buffer
-                await new Promise(r => setTimeout(r, 1000));
-            }
-        }
-
-        // Bireysel mesaj: message.from = "905xxxxxxx@c.us" veya "905xxxxxxx@lid" (Meta LID)
-        // Grup mesajı:    message.from = "12036xxx@g.us", message.author = "905xxxxxxx@c.us"
-        // @ işaretinden sonraki her şeyi sil, sadece rakamları al
-        const numaraTemizle = (raw) => raw ? raw.replace(/@\S+$/, '').replace(/\D/g, '') : null;
-
-        // Listedeki numaralarla normalleştirilmiş karşılaştırma (son 10 hane eşleşmesi)
-        const numaraEslesiyor = (numara, liste) => {
-            if (!numara) return false;
-            return liste.some(k => {
-                const temizK = k.replace(/\D/g, '');
-                return temizK === numara ||
-                       temizK.slice(-10) === numara.slice(-10);
-            });
-        };
-
-        let bireyselNumara = numaraTemizle(message.from);
-        let grupGonderenNumara = message.author ? numaraTemizle(message.author) : null;
-
-        let gonderenNumara = numaraEslesiyor(bireyselNumara, config.yetkiliNumaralar)
-            ? bireyselNumara
-            : (numaraEslesiyor(grupGonderenNumara, config.yetkiliNumaralar) ? grupGonderenNumara : null);
-
-        // Eşleşme bulunamadıysa getContact() ile gerçek telefon numarasını sorgula
-        // (Meta LID formatında from alanı gerçek numara içermez)
-        if (!gonderenNumara) {
-            try {
-                const contact = await message.getContact();
-                if (contact && contact.number) {
-                    const gercekNumara = contact.number.replace(/\D/g, '');
-                    if (numaraEslesiyor(gercekNumara, config.yetkiliNumaralar)) {
-                        gonderenNumara = gercekNumara;
-                        bireyselNumara = gercekNumara;
-                        logYaz('DEBUG', `LID cozumlendi: from=${message.from} → ${gercekNumara}`, 'Yetkili');
-                    }
-                }
-            } catch (e) {
-                // getContact başarısız olursa sessizce devam et
-            }
-        }
-
-        // Yetkisiz kullanıcı: bulanik=true yaparak devam et, yetkililer için bulanik=false
-        let bulanik = false;
-        if (!gonderenNumara) {
-            bulanik = true;
-            gonderenNumara = bireyselNumara || grupGonderenNumara || 'bilinmeyen';
-        }
-
-        const mesajIcerigi = message.body.toLowerCase().trim();
-
-        // ── Şeker Raporu konuşma durumu kontrolü (sadece yetkili kullanıcılar) ──
-        if (!bulanik && sekerKonusma.has(gonderenNumara)) {
-            const durum = sekerKonusma.get(gonderenNumara);
-
-            // İptal komutu
-            if (mesajIcerigi === 'iptal' || mesajIcerigi === 'vazgec') {
-                sekerKonusma.delete(gonderenNumara);
-                await message.reply('Seker raporu iptal edildi.');
-                logYaz(gonderenNumara, message.body, 'Iptal');
-                return;
-            }
-
-            if (durum.adim === 'BASLANGIC') {
-                const tarih = tarihParse(message.body.trim());
-                if (!tarih) {
-                    await message.reply('Tarih anlasılamadı. Lütfen DD.MM.YYYY formatında girin (örn: 01.09.2025) veya "iptal" yazın.');
-                    return;
-                }
-                sekerKonusma.set(gonderenNumara, { adim: 'BITIS', baslangic: tarih });
-                await message.reply(`Baslangic: ${tarih}\nSimdi bitis tarihini girin (DD.MM.YYYY):`);
-                return;
-            }
-
-            if (durum.adim === 'BITIS') {
-                const tarih = tarihParse(message.body.trim());
-                if (!tarih) {
-                    await message.reply('Tarih anlasılamadı. Lütfen DD.MM.YYYY formatında girin (örn: 30.09.2025) veya "iptal" yazın.');
-                    return;
-                }
-                sekerKonusma.delete(gonderenNumara);
-                await message.reply('Seker raporu hazirlaniyor, lutfen bekleyin...');
-                logYaz(gonderenNumara, message.body, 'Hazirlaniyor...');
-                try {
-                    await sekerRaporuGonder(message, durum.baslangic, tarih, false);
-                    logYaz(gonderenNumara, message.body, 'Gonderildi');
-                } catch (e) {
-                    logYaz(gonderenNumara, message.body, 'HATA: ' + e.message);
-                    await message.reply('Seker raporu gonderilirken hata: ' + e.message);
-                }
-                return;
-            }
-        }
-
-        // Pancar raporu tetikleyicileri
-        const pancarTetikleyiciler = ['pancar rapor', 'pancarrapor'];
-        const pancarTetiklendi = pancarTetikleyiciler.some(k => mesajIcerigi.includes(k));
-
-        // Şeker raporu tetikleyicileri
-        const sekerTetikleyiciler = ['seker rapor', 'şeker rapor', 'sekerrapor', 'şekerrapor'];
-        const sekerTetiklendi = sekerTetikleyiciler.some(k => mesajIcerigi.includes(k));
-
-        // Genel rapor tetikleyicileri
-        const tetiklendi = !pancarTetiklendi && !sekerTetiklendi && config.tetikleyiciler.some(kelime =>
-            mesajIcerigi.includes(kelime.toLowerCase())
-        );
-
-        if (sekerTetiklendi) {
-            console.log(`\n[${new Date().toLocaleString('tr-TR')}] Seker rapor talebi: ${gonderenNumara}${bulanik?' (yetkisiz)':''}`);
-            // Mesajda ay adı var mı? (örn: "Şeker Rapor Eylül")
-            const ayTarih = ayAdindenTarih(mesajIcerigi);
-            if (ayTarih) {
-                logYaz(gonderenNumara, message.body, bulanik ? 'Hazirlaniyor (bulanik)...' : 'Hazirlaniyor...');
-                await message.reply(`Seker raporu hazirlaniyor (${ayTarih.baslangic} – ${ayTarih.bitis}), lutfen bekleyin...`);
-                try {
-                    await sekerRaporuGonder(message, ayTarih.baslangic, ayTarih.bitis, bulanik);
-                    logYaz(gonderenNumara, message.body, bulanik ? 'Gonderildi (bulanik)' : 'Gonderildi');
-                } catch (e) {
-                    logYaz(gonderenNumara, message.body, 'HATA: ' + e.message);
-                    await message.reply('Seker raporu gonderilirken hata: ' + e.message);
-                }
-            } else if (!bulanik) {
-                // Tarih yok ve yetkili → konuşma modunu başlat
-                sekerKonusma.set(gonderenNumara, { adim: 'BASLANGIC' });
-                await message.reply('Seker raporu - baslangic tarihini girin (DD.MM.YYYY):\n(veya "Seker Rapor Eylul" gibi ay adi ile de gonderebilirsiniz)\n"iptal" yazarak vazgecebilirsiniz.');
-            } else {
-                // Tarih yok ve yetkisiz → mevcut ay için gönder (bulanık)
-                const simdi = new Date();
-                const yil = simdi.getFullYear();
-                const ay = String(simdi.getMonth() + 1).padStart(2, '0');
-                const sonGun = String(new Date(yil, simdi.getMonth() + 1, 0).getDate()).padStart(2, '0');
-                const bas = `${yil}-${ay}-01`;
-                const bit = `${yil}-${ay}-${sonGun}`;
-                logYaz(gonderenNumara, message.body, 'Hazirlaniyor (bulanik, mevcut ay)...');
-                await message.reply('Seker raporu hazirlaniyor, lutfen bekleyin...');
-                try {
-                    await sekerRaporuGonder(message, bas, bit, true);
-                    logYaz(gonderenNumara, message.body, 'Gonderildi (bulanik)');
-                } catch (e) {
-                    logYaz(gonderenNumara, message.body, 'HATA: ' + e.message);
-                    await message.reply('Seker raporu gonderilirken hata: ' + e.message);
-                }
-            }
-        } else if (pancarTetiklendi) {
-            console.log(`\n[${new Date().toLocaleString('tr-TR')}] Pancar rapor talebi: ${gonderenNumara}${bulanik?' (yetkisiz)':''}`);
-            logYaz(gonderenNumara, message.body, bulanik ? 'Hazirlaniyor (bulanik)...' : 'Hazirlaniyor...');
-            await message.reply('Pancar raporu hazirlaniyor, lutfen bekleyin...');
-            try {
-                const baseUrl = (config.raporApiUrl || 'http://localhost:5050/api/rapor')
-                    .replace(/\/api\/.*$/, '');
-                const pancarApiUrl = `${baseUrl}/api/pancar-raporu${bulanik ? '?bulanik=true' : ''}`;
-                const pancarHtml = await sqlRaporuGetirRetry(pancarApiUrl);
-                if (pancarHtml) {
-                    await htmldenPngOlusturVeGonder(message, pancarHtml, 'pancar');
-                    logYaz(gonderenNumara, message.body, bulanik ? 'Gonderildi (bulanik)' : 'Gonderildi');
-                } else {
-                    await message.reply('Pancar raporu alinamadi, sunucu kapali olabilir.');
-                    logYaz(gonderenNumara, message.body, 'HATA: API yanit vermedi');
-                }
-            } catch (raporHata) {
-                logYaz(gonderenNumara, message.body, 'HATA: ' + raporHata.message);
-                await message.reply('Pancar raporu gonderilirken hata: ' + raporHata.message);
-            }
-        } else if (tetiklendi) {
-            console.log(`\n[${new Date().toLocaleString('tr-TR')}] Rapor talebi: ${gonderenNumara}${bulanik?' (yetkisiz)':''}`);
-            logYaz(gonderenNumara, message.body, bulanik ? 'Hazirlaniyor (bulanik)...' : 'Hazirlaniyor...');
-            await message.reply('Rapor hazirlaniyor, lutfen bekleyin...');
-            try {
-                await raporOlusturVeGonder(message, bulanik);
-                logYaz(gonderenNumara, message.body, bulanik ? 'Gonderildi (bulanik)' : 'Gonderildi');
-            } catch (raporHata) {
-                logYaz(gonderenNumara, message.body, 'HATA: ' + raporHata.message);
-                throw raporHata;
-            }
-        } else if (!bulanik) {
-            // Yetkili ama tetikleyici değil — kayıt tutma
-        }
-    } catch (error) {
-        console.error('[WhatsApp] Mesaj hatasi:', error.message);
-    }
-});
-
-// =====================================================
-// ANA FONKSİYON
-// =====================================================
-
-async function raporOlusturVeGonder(message, bulanik = false) {
-    config = configOku();
-    const baseApiUrl = config.raporApiUrl || 'http://localhost:5050/api/rapor';
-    const apiUrl = bulanik ? `${baseApiUrl}?bulanik=true` : baseApiUrl;
-
-    console.log('SQL raporu deneniyor:', apiUrl);
-    const sqlHtml = await sqlRaporuGetirRetry(apiUrl);
-
-    if (sqlHtml) {
-        console.log('SQL raporu alindi, PNG ye cevriliyor...');
-        await htmldenPngOlusturVeGonder(message, sqlHtml, 'sql');
-    } else {
-        console.log('API kapali, Excel raporuna geciliyor...');
-        const excelDosyasi = config.excelDosyasi || '';
-        if (!excelDosyasi || !fs.existsSync(excelDosyasi)) {
-            await message.reply('Veritabani raporu hazir degil ve Excel dosyasi bulunamadi.');
-            return;
-        }
-        await message.reply('Veritabani raporu hazir degil, Excel raporu hazirlaniyor...');
-        await excelRaporuOlusturVeGonder(message, excelDosyasi);
-    }
-}
-
-// =====================================================
-// SQL RAPORU
-// =====================================================
-
-function sqlRaporuGetir(apiUrl, timeoutMs = 60000) {
+function sqlRaporuGetir(url, timeoutMs) {
+    timeoutMs = timeoutMs || 90000;
     return new Promise((resolve) => {
-        const req = http.get(apiUrl, { timeout: timeoutMs }, (res) => {
-            if (res.statusCode !== 200) {
-                console.log('API hata kodu:', res.statusCode);
-                resolve(null);
-                return;
-            }
-            let data = '';
-            res.setEncoding('utf8');
-            res.on('data', chunk => data += chunk);
+        const req = http.get(url, { timeout: timeoutMs }, (res) => {
+            let veri = '';
+            res.on('data', (c) => { veri += c; });
             res.on('end', () => {
-                resolve(data && data.length > 500 ? data : null);
+                if (res.statusCode >= 200 && res.statusCode < 300 && veri.length > 100) resolve(veri);
+                else { console.error(`[API] HTTP ${res.statusCode} url=${url}`); resolve(null); }
             });
         });
-
-        req.on('error', (err) => {
-            console.log('API baglanamadi:', err.message);
-            resolve(null);
-        });
-
-        req.on('timeout', () => {
-            req.destroy();
-            console.log('API zaman asimi');
-            resolve(null);
-        });
+        req.on('error', (e) => { console.error('[API] hata:', e.message); resolve(null); });
+        req.on('timeout', () => { req.destroy(); resolve(null); });
     });
 }
 
-// API'yi yeniden deneme ile çağırır — ilk istek DB soğuk başladığında başarısız olabilir
-async function sqlRaporuGetirRetry(apiUrl) {
-    let html = await sqlRaporuGetir(apiUrl, 60000);
-    if (!html) {
-        console.log('İlk API denemesi başarısız, 5 saniye sonra tekrar deneniyor...');
-        await new Promise(r => setTimeout(r, 5000));
-        html = await sqlRaporuGetir(apiUrl, 60000);
+async function sqlRaporuGetirRetry(url, maxRetry) {
+    maxRetry = maxRetry || 3;
+    for (let i = 0; i < maxRetry; i++) {
+        const r = await sqlRaporuGetir(url);
+        if (r) return r;
+        if (i < maxRetry - 1) await new Promise(r => setTimeout(r, 2000));
     }
-    return html;
+    return null;
 }
 
 // =====================================================
-// HTML → PNG → WhatsApp
+// PUPPETEER PNG
 // =====================================================
 
-// Kalıcı browser örneği — her istekte yeniden başlatılmaz
 let _browser = null;
 let _puppeteerKilit = false;
 
@@ -603,36 +113,35 @@ async function browserGetir() {
             timeout: 60000,
             args: ['--no-sandbox', '--disable-setuid-sandbox',
                    '--font-render-hinting=none', '--disable-font-subpixel-positioning',
-                   // Anti-throttling: tab arka planda da hızlı kalsın
                    '--disable-background-timer-throttling',
                    '--disable-backgrounding-occluded-windows',
                    '--disable-renderer-backgrounding']
         });
-        _browser.on('disconnected', () => {
-            console.log('[Puppeteer] Browser baglantisi kesildi, bir sonraki istekte yeniden baslatilacak.');
-            _browser = null;
-        });
+        _browser.on('disconnected', () => { _browser = null; });
         console.log('[Puppeteer] Browser hazir.');
     }
     return _browser;
 }
 
-async function htmldenPngOlusturVeGonder(message, htmlIcerik, kaynak, viewportGenislik = 1400) {
-    // Kilit bekle (max 120 sn)
+async function htmldenPngOlustur(htmlIcerik, kaynak, viewportGenislik) {
+    viewportGenislik = viewportGenislik || 1400;
     let bekleme = 0;
     while (_puppeteerKilit && bekleme < 120000) {
-        await new Promise(r => setTimeout(r, 1000));
-        bekleme += 1000;
+        await new Promise(r => setTimeout(r, 500));
+        bekleme += 500;
     }
-    if (_puppeteerKilit) {
-        await message.reply('Rapor sistemi mesgul, lutfen tekrar deneyin.');
-        return;
-    }
+    if (_puppeteerKilit) throw new Error('Puppeteer kilidi 120sn icinde acilmadi');
     _puppeteerKilit = true;
 
     let page = null;
     try {
-        const dosyaAdi = kaynak === 'pancar' ? 'pancar' : kaynak === 'seker-analiz' ? 'seker-analiz' : kaynak === 'seker' ? 'seker' : 'rapor';
+        const dosyaAdi = kaynak === 'pancar' ? 'pancar'
+            : kaynak === 'seker-analiz' ? 'seker-analiz'
+            : kaynak === 'seker' ? 'seker'
+            : kaynak === 'gubre-ciro' ? 'gubre-ciro'
+            : kaynak === 'gubre-stok' ? 'gubre-stok'
+            : kaynak === 'cay-durum' ? 'cay-durum'
+            : 'rapor';
         const htmlDosya = path.join(CIKTI_KLASORU, dosyaAdi + '.html');
         const pngDosya  = path.join(CIKTI_KLASORU, dosyaAdi + '.png');
 
@@ -644,123 +153,426 @@ async function htmldenPngOlusturVeGonder(message, htmlIcerik, kaynak, viewportGe
         await page.setViewport({ width: viewportGenislik, height: 900, deviceScaleFactor: 1 });
 
         const fileUrl = 'file:///' + htmlDosya.replace(/\\/g, '/');
-        console.log(`[PNG] page.goto: ${kaynak}`);
         await page.goto(fileUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
         await new Promise(r => setTimeout(r, 800));
-
-        console.log(`[PNG] page.screenshot: ${kaynak}`);
-        // page.screenshot timeoutsuz olabilir — Promise.race ile 60sn limit
         await Promise.race([
             page.screenshot({ path: pngDosya, fullPage: true, type: 'png' }),
             new Promise((_, reject) => setTimeout(() => reject(new Error('screenshot 60sn timeout')), 60000))
         ]);
-        console.log(`[PNG] screenshot OK: ${kaynak}`);
         await page.close();
         page = null;
 
-        const pngSize = fs.statSync(pngDosya).size;
-        console.log(`PNG olusturuldu (${kaynak}), boyut: ${pngSize} byte`);
-
-        if (pngSize > 1000) {
-            const media = MessageMedia.fromFilePath(pngDosya);
-            const tarih = new Date().toLocaleString('tr-TR');
-            const baslik = kaynak === 'sql'
-                ? `Yan Urunler + Seker Uretim-Satis-Stok Raporu\n${tarih}`
-                : kaynak === 'pancar'
-                    ? `Pancar Raporu\n${tarih}`
-                    : kaynak === 'seker-analiz'
-                        ? `Seker Kategorisi Bazli Analiz (Ham Veri)\n${tarih}`
-                        : kaynak === 'seker'
-                        ? `Seker Uretim-Satis-Stok Raporu\n${tarih}`
-                        : `Tum Rapor (Excel)\n${tarih}`;
-            await message.reply(media, undefined, { caption: baslik });
-            console.log('Rapor gonderildi!\n');
-        } else {
-            throw new Error('PNG dosyasi cok kucuk: ' + pngSize);
-        }
-    } catch (error) {
-        console.error('PNG/Gonderim hatasi:', error.message);
-        logYaz('SISTEM', `PNG hata (${kaynak}): ${error.message}`, 'HATA');
+        const sz = fs.statSync(pngDosya).size;
+        if (sz < 1000) throw new Error('PNG cok kucuk: ' + sz);
+        return pngDosya;
+    } catch (e) {
         if (page) { try { await page.close(); } catch (_) {} }
-        // Browser bozulmuş olabilir — bir sonraki istekte yeniden başlat
-        try { if (_browser) { await _browser.close(); } } catch (_) {}
+        try { if (_browser) await _browser.close(); } catch (_) {}
         _browser = null;
-        try { await message.reply('Rapor gonderilirken hata olustu: ' + error.message); } catch (_) {}
+        throw e;
     } finally {
         _puppeteerKilit = false;
     }
 }
 
+function captionFor(kaynak) {
+    const t = new Date().toLocaleString('tr-TR');
+    if (kaynak === 'pancar')        return `Pancar Raporu\n${t}`;
+    if (kaynak === 'seker-analiz')  return `Seker Kategorisi Bazli Analiz (Ham Veri)\n${t}`;
+    if (kaynak === 'seker')         return `Seker Uretim-Satis-Stok Raporu\n${t}`;
+    if (kaynak === 'gubre-ciro')    return `Gubre Ciro Raporu (Net, iade dusulmus)\n${t}`;
+    if (kaynak === 'gubre-stok')    return `Gubre Stok Raporu\n${t}`;
+    if (kaynak === 'cay-durum')     return `Cay Durum Raporu\n${t}`;
+    return `Yan Urunler + Seker Uretim-Satis-Stok Raporu\n${t}`;
+}
+
 // =====================================================
-// EXCEL RAPORU (Fallback)
+// NUMARA / YETKI
 // =====================================================
 
-async function excelRaporuOlusturVeGonder(message, excelDosyasi) {
+function numaraTemizle(raw) {
+    if (!raw) return null;
+    return raw.replace(/@\S+$/, '').split(':')[0].replace(/\D/g, '');
+}
+
+function numaraEslesiyor(numara, liste) {
+    if (!numara) return false;
+    return liste.some(k => {
+        const tk = (k || '').replace(/\D/g, '');
+        return tk === numara || (tk.length >= 10 && tk.slice(-10) === numara.slice(-10));
+    });
+}
+
+// =====================================================
+// BAILEYS BOT
+// =====================================================
+
+let _sock = null;
+let _hazirZamani = 0;
+let _yenidenBaglaniyor = false;
+let _tumSistemHazir = false;
+
+async function sistemWarmupYap() {
     try {
-        const htmlDosya = path.join(CIKTI_KLASORU, 'rapor_excel.html');
-
-        if (fs.existsSync(htmlDosya)) fs.unlinkSync(htmlDosya);
-
-        const vbsIcerik = `
-On Error Resume Next
-Dim xlApp, xlBook
-Set xlApp = CreateObject("Excel.Application")
-xlApp.Visible = False
-xlApp.DisplayAlerts = False
-Set xlBook = xlApp.Workbooks.Open("${excelDosyasi.replace(/\\/g, '\\\\')}")
-If Err.Number <> 0 Then
-    WScript.Echo "HATA: " & Err.Description
-    WScript.Quit 1
-End If
-xlApp.Run "WhatsAppRaporOlustur"
-If Err.Number <> 0 Then
-    WScript.Echo "HATA: Makro - " & Err.Description
-    xlBook.Close False
-    xlApp.Quit
-    WScript.Quit 1
-End If
-xlBook.Close False
-xlApp.Quit
-Set xlBook = Nothing
-Set xlApp = Nothing
-WScript.Echo "BASARILI"
-WScript.Quit 0
-`;
-        const vbsDosya = path.join(CIKTI_KLASORU, 'rapor.vbs');
-        fs.writeFileSync(vbsDosya, vbsIcerik, 'ascii');
-
-        await new Promise((resolve, reject) => {
-            exec(`cscript //nologo "${vbsDosya}"`, { timeout: 180000 }, (error, stdout, stderr) => {
-                console.log('VBScript:', stdout);
-                if (stderr) console.log('VBScript stderr:', stderr);
-                if (stdout.includes('BASARILI')) resolve(stdout);
-                else if (error) reject(new Error(stdout || stderr || error.message));
-                else resolve(stdout);
+        console.log('[Warmup] Puppeteer on-baslatma...');
+        await browserGetir();
+        console.log('[Warmup] API ping...');
+        const config = configOku();
+        const baseUrl = (config.raporApiUrl || 'http://localhost:5050/api/rapor').replace(/\/api\/.*$/, '');
+        await new Promise((resolve) => {
+            const req = http.get(baseUrl + '/', { timeout: 30000 }, (res) => {
+                res.on('data', () => {});
+                res.on('end', () => resolve());
             });
+            req.on('error', () => resolve());
+            req.on('timeout', () => { req.destroy(); resolve(); });
         });
-
-        await new Promise(r => setTimeout(r, 2000));
-
-        if (!fs.existsSync(htmlDosya)) {
-            throw new Error('HTML dosyasi olusturulamadi');
-        }
-
-        const htmlIcerik = fs.readFileSync(htmlDosya, 'utf8');
-        await htmldenPngOlusturVeGonder(message, htmlIcerik, 'excel');
-
-    } catch (error) {
-        console.error('Excel rapor hatasi:', error.message);
-        await message.reply('Excel raporu hazirlanamadi: ' + error.message);
+        _tumSistemHazir = true;
+        console.log('[Warmup] Sistem hazir.');
+    } catch (err) {
+        console.error('[Warmup] Hata:', err.message);
+        _tumSistemHazir = true;
     }
 }
+
+async function botBaslat() {
+    if (_yenidenBaglaniyor) return;
+    _yenidenBaglaniyor = true;
+
+    try {
+        const { state, saveCreds } = await useMultiFileAuthState(AUTH_KLASORU);
+        const { version } = await fetchLatestBaileysVersion();
+        console.log(`[Baileys] WA Web v${version.join('.')} ile baslatiliyor`);
+
+        _sock = makeWASocket({
+            version,
+            auth: state,
+            logger: pino({ level: 'silent' }),
+            browser: Browsers.macOS('Chrome'),
+            markOnlineOnConnect: true,
+            syncFullHistory: false,
+            generateHighQualityLinkPreview: false,
+        });
+
+        _sock.ev.on('creds.update', saveCreds);
+
+        _sock.ev.on('connection.update', async (update) => {
+            const { connection, lastDisconnect, qr } = update;
+            if (qr) {
+                console.log('[Baileys] QR olusturuldu');
+                durumYaz('QR_BEKLIYOR', qr);
+            }
+            if (connection === 'connecting') {
+                console.log('[Baileys] Baglaniyor...');
+                if (_sonDurum !== 'QR_BEKLIYOR') durumYaz('BAGLANIYOR', '');
+            }
+            if (connection === 'open') {
+                console.log('[Baileys] Baglandi!');
+                _hazirZamani = Date.now();
+                if (!_tumSistemHazir) await sistemWarmupYap();
+                durumYaz('BAGLI', '');
+            }
+            if (connection === 'close') {
+                const reasonCode = lastDisconnect?.error?.output?.statusCode;
+                const reason = lastDisconnect?.error?.message || 'unknown';
+                console.log(`[Baileys] Baglanti kesildi: ${reason} (code=${reasonCode})`);
+                durumYaz('BAGLI_DEGIL', '');
+                _yenidenBaglaniyor = false;
+
+                if (reasonCode === DisconnectReason.loggedOut) {
+                    console.log('[Baileys] Cikis yapildi. Auth temizleniyor, yeni QR icin yeniden baslayin.');
+                    try { fs.rmSync(AUTH_KLASORU, { recursive: true, force: true }); } catch (_) {}
+                    setTimeout(() => botBaslat(), 3000);
+                } else {
+                    setTimeout(() => botBaslat(), 3000);
+                }
+                return;
+            }
+        });
+
+        _sock.ev.on('messages.upsert', async ({ messages, type }) => {
+            if (type !== 'notify') return;
+            for (const m of messages) {
+                try { await mesajIsle(m); } catch (e) { console.error('mesajIsle hata:', e.message); }
+            }
+        });
+
+        _yenidenBaglaniyor = false;
+    } catch (e) {
+        console.error('[Baileys] Bot baslatma hatasi:', e.message);
+        _yenidenBaglaniyor = false;
+        setTimeout(() => botBaslat(), 5000);
+    }
+}
+
+// =====================================================
+// MESAJ ISLEME
+// =====================================================
+
+async function mesajIsle(msg) {
+    if (!msg.message) return;
+
+    // Mesaj metni cesitli yerlerde olabilir
+    const body = msg.message.conversation
+        || msg.message.extendedTextMessage?.text
+        || msg.message.imageMessage?.caption
+        || msg.message.videoMessage?.caption
+        || '';
+    if (!body) return;
+
+    const fromJid = msg.key.remoteJid;
+    const fromMe = !!msg.key.fromMe;
+    const isGroup = fromJid?.endsWith('@g.us');
+    const author = msg.key.participant; // grup mesajlarinda gercek gonderen
+
+    // Gondereni cikar — coklu kaynak dene
+    let senderPhone = null;
+    let phoneKaynagi = '';
+
+    // 1) Birincil JID (remote veya participant) — telefon formatinda mi?
+    const birincilJid = isGroup ? (author || '') : (fromJid || '');
+    if (birincilJid && birincilJid.endsWith('@s.whatsapp.net')) {
+        senderPhone = numaraTemizle(birincilJid);
+        phoneKaynagi = 'jid:s.whatsapp.net';
+    }
+
+    // 2) Mesajdaki PN ek alanlari (Baileys 7.x LID ile birlikte saklar)
+    if (!senderPhone) {
+        const pnAdaylar = [
+            { k: 'key.participantPn', v: msg.key?.participantPn },
+            { k: 'key.senderPn',      v: msg.key?.senderPn },
+            { k: 'participantPn',     v: msg.participantPn },
+            { k: 'senderPn',          v: msg.senderPn },
+        ];
+        for (const a of pnAdaylar) {
+            if (a.v && /\d{6,}/.test(a.v)) {
+                senderPhone = numaraTemizle(a.v);
+                phoneKaynagi = a.k;
+                break;
+            }
+        }
+    }
+
+    // 3) LID mapping uzerinden cevir
+    if (!senderPhone) {
+        try {
+            const lidJid = isGroup ? author : fromJid;
+            if (lidJid && lidJid.endsWith('@lid')) {
+                const mapping = _sock?.signalRepository?.lidMapping;
+                if (mapping && typeof mapping.getPNForLID === 'function') {
+                    const pn = await mapping.getPNForLID(lidJid);
+                    if (pn) {
+                        senderPhone = numaraTemizle(pn);
+                        phoneKaynagi = 'lidMapping';
+                    }
+                }
+            }
+        } catch (_) {}
+    }
+
+    // 4) onWhatsApp ile sorgula (LID'yi gercek hesaba dogrula)
+    if (!senderPhone) {
+        try {
+            const lidJid = isGroup ? author : fromJid;
+            if (lidJid && typeof _sock?.onWhatsApp === 'function') {
+                const r = await _sock.onWhatsApp(lidJid);
+                if (Array.isArray(r) && r.length > 0) {
+                    const found = r[0];
+                    if (found.jid && found.jid.endsWith('@s.whatsapp.net')) {
+                        senderPhone = numaraTemizle(found.jid);
+                        phoneKaynagi = 'onWhatsApp';
+                    }
+                }
+            }
+        } catch (_) {}
+    }
+
+    // 5) fromMe ise bot hesabini kullan
+    if (!senderPhone && fromMe) {
+        const myId = _sock?.user?.id;
+        if (myId) { senderPhone = numaraTemizle(myId); phoneKaynagi = 'sock.user.id (fromMe)'; }
+    }
+
+    // 6) Yine yoksa, JID'den ham digit cikar
+    if (!senderPhone) {
+        senderPhone = numaraTemizle(birincilJid || fromJid || '');
+        phoneKaynagi = phoneKaynagi || 'raw-jid';
+    }
+
+    const config = configOku();
+
+    // Bot hesabinin kendi JID/LID'sini cikar (numara formuna donustur)
+    const botId = _sock?.user?.id || '';
+    const botLid = _sock?.user?.lid || '';
+    const botIdNumara = numaraTemizle(botId);
+    const botLidNumara = numaraTemizle(botLid);
+
+    // Self-chat tespiti: sohbetin karsi tarafi bot hesabinin kendisi mi?
+    // Bu durumda kullanici kendi numarasina mesaj atiyor demektir.
+    const remoteNumara = numaraTemizle(fromJid);
+    const selfChat = !isGroup && (
+        (botIdNumara && remoteNumara === botIdNumara) ||
+        (botLidNumara && remoteNumara === botLidNumara)
+    );
+
+    // KRITIK: fromMe=true (kullanicinin kendi telefonundan giden mesaj) ama self-chat degilse,
+    // bu mesaj baska birine yazilmis demektir. Tetiklemeye sakin GIRMA.
+    if (fromMe && !selfChat) return;
+
+    // Yetki: self-chat'te otomatik yetkili; aksi halde gonderen numara yetkili listesinde olmali.
+    const yetkili = selfChat || numaraEslesiyor(senderPhone, config.yetkiliNumaralar || []);
+    const bulanik = !yetkili;
+    const gonderenNumara = senderPhone || 'bilinmeyen';
+
+    const mesajIcerigi = body.toLowerCase().trim();
+    const replyTo = fromJid;
+
+    async function reply(text) {
+        try { await _sock.sendMessage(replyTo, { text }, { quoted: msg }); } catch (e) { console.error('reply hata:', e.message); }
+    }
+    async function replyImage(pngPath, kaynak) {
+        try {
+            await _sock.sendMessage(replyTo, {
+                image: fs.readFileSync(pngPath),
+                caption: captionFor(kaynak)
+            }, { quoted: msg });
+        } catch (e) { console.error('replyImage hata:', e.message); }
+    }
+
+    // Warmup henuz bitmediyse, tetikleyici varsa biraz bekle
+    if (!_tumSistemHazir) {
+        let b = 0;
+        while (!_tumSistemHazir && b < 60000) {
+            await new Promise(r => setTimeout(r, 500)); b += 500;
+        }
+        if (!_tumSistemHazir) { await reply('Sistem baslatiliyor, lutfen 30 saniye sonra tekrar deneyin.'); return; }
+    }
+
+    // Tetikleyiciler
+    const pancarTetiklendi = ['pancar rapor', 'pancarrapor'].some(k => mesajIcerigi.includes(k));
+    const sekerTetiklendi = ['seker rapor', 'şeker rapor', 'sekerrapor', 'şekerrapor'].some(k => mesajIcerigi.includes(k));
+    const gubreCiroTetiklendi = ['gubre ciro', 'gübre ciro', 'gubreciro', 'gübreciro'].some(k => mesajIcerigi.includes(k));
+    const gubreStokTetiklendi = !gubreCiroTetiklendi &&
+        ['gubre rapor', 'gübre rapor', 'gubrerapor', 'gübrerapor', 'gubre raporu', 'gübre raporu'].some(k => mesajIcerigi.includes(k));
+    const cayTetiklendi = ['cay rapor', 'çay rapor', 'cayrapor', 'çayrapor', 'cay raporu', 'çay raporu', 'cay durum', 'çay durum'].some(k => mesajIcerigi.includes(k));
+    const tetiklendi = !pancarTetiklendi && !sekerTetiklendi && !gubreCiroTetiklendi && !gubreStokTetiklendi && !cayTetiklendi
+        && (config.tetikleyiciler || []).some(k => mesajIcerigi.includes((k || '').toLowerCase()));
+
+    if (!pancarTetiklendi && !sekerTetiklendi && !gubreCiroTetiklendi && !gubreStokTetiklendi && !cayTetiklendi && !tetiklendi) return;
+
+    const baseUrl = (config.raporApiUrl || 'http://localhost:5050/api/rapor').replace(/\/api\/.*$/, '');
+    const bSuf = bulanik ? '?bulanik=true' : '';
+
+    console.log(`\n[${new Date().toLocaleString('tr-TR')}] Talep: ${gonderenNumara} - "${body}" ${bulanik?'(yetkisiz)':''}`);
+
+    try {
+        if (pancarTetiklendi) {
+            logYaz(gonderenNumara, body, bulanik ? 'Hazirlaniyor (bulanik)...' : 'Hazirlaniyor...');
+            await reply('Pancar raporu hazirlaniyor, lutfen bekleyin...');
+            const html = await sqlRaporuGetirRetry(`${baseUrl}/api/pancar-raporu${bSuf}`);
+            if (html) {
+                const png = await htmldenPngOlustur(html, 'pancar');
+                await replyImage(png, 'pancar');
+                logYaz(gonderenNumara, body, bulanik ? 'Gonderildi (bulanik)' : 'Gonderildi');
+            } else {
+                await reply('Pancar raporu alinamadi.');
+                logYaz(gonderenNumara, body, 'HATA: API yanit yok');
+            }
+        } else if (sekerTetiklendi) {
+            // Şeker raporu icin tarih bazli karmasik logic var; simdilik basit: mevcut ay
+            const simdi = new Date();
+            const yil = simdi.getFullYear();
+            const ay  = String(simdi.getMonth() + 1).padStart(2, '0');
+            const sonGun = String(new Date(yil, simdi.getMonth() + 1, 0).getDate()).padStart(2, '0');
+            const bas = `${yil}-${ay}-01`;
+            const bit = `${yil}-${ay}-${sonGun}`;
+            logYaz(gonderenNumara, body, bulanik ? 'Hazirlaniyor (bulanik, mevcut ay)...' : 'Hazirlaniyor (mevcut ay)...');
+            await reply('Seker raporu hazirlaniyor (mevcut ay), lutfen bekleyin...');
+            const url = `${baseUrl}/api/seker-raporu?baslangic=${bas}&bitis=${bit}${bulanik?'&bulanik=true':''}`;
+            const html = await sqlRaporuGetirRetry(url);
+            if (html) {
+                const png = await htmldenPngOlustur(html, 'seker');
+                await replyImage(png, 'seker');
+                logYaz(gonderenNumara, body, bulanik ? 'Gonderildi (bulanik)' : 'Gonderildi');
+            } else {
+                await reply('Seker raporu alinamadi.');
+                logYaz(gonderenNumara, body, 'HATA: API yanit yok');
+            }
+        } else if (gubreCiroTetiklendi) {
+            logYaz(gonderenNumara, body, bulanik ? 'Hazirlaniyor (bulanik)...' : 'Hazirlaniyor...');
+            await reply('Gubre ciro raporu hazirlaniyor, lutfen bekleyin...');
+            const html = await sqlRaporuGetirRetry(`${baseUrl}/api/gubre-ciro-raporu${bSuf}`);
+            if (html) {
+                const png = await htmldenPngOlustur(html, 'gubre-ciro');
+                await replyImage(png, 'gubre-ciro');
+                logYaz(gonderenNumara, body, bulanik ? 'Gonderildi (bulanik)' : 'Gonderildi');
+            } else {
+                await reply('Gubre ciro raporu alinamadi.');
+                logYaz(gonderenNumara, body, 'HATA: API yanit yok');
+            }
+        } else if (cayTetiklendi) {
+            logYaz(gonderenNumara, body, bulanik ? 'Hazirlaniyor (bulanik)...' : 'Hazirlaniyor...');
+            await reply('Cay durum raporu hazirlaniyor, lutfen bekleyin...');
+            const html = await sqlRaporuGetirRetry(`${baseUrl}/api/cay-durum-raporu${bSuf}`);
+            if (html) {
+                const png = await htmldenPngOlustur(html, 'cay-durum');
+                await replyImage(png, 'cay-durum');
+                logYaz(gonderenNumara, body, bulanik ? 'Gonderildi (bulanik)' : 'Gonderildi');
+            } else {
+                await reply('Cay durum raporu alinamadi.');
+                logYaz(gonderenNumara, body, 'HATA: API yanit yok');
+            }
+        } else if (gubreStokTetiklendi) {
+            logYaz(gonderenNumara, body, bulanik ? 'Hazirlaniyor (bulanik)...' : 'Hazirlaniyor...');
+            await reply('Gubre stok raporu hazirlaniyor, lutfen bekleyin...');
+            const html = await sqlRaporuGetirRetry(`${baseUrl}/api/gubre-stok-raporu${bSuf}`);
+            if (html) {
+                const png = await htmldenPngOlustur(html, 'gubre-stok');
+                await replyImage(png, 'gubre-stok');
+                logYaz(gonderenNumara, body, bulanik ? 'Gonderildi (bulanik)' : 'Gonderildi');
+            } else {
+                await reply('Gubre stok raporu alinamadi.');
+                logYaz(gonderenNumara, body, 'HATA: API yanit yok');
+            }
+        } else if (tetiklendi) {
+            logYaz(gonderenNumara, body, bulanik ? 'Hazirlaniyor (bulanik)...' : 'Hazirlaniyor...');
+            await reply('Rapor hazirlaniyor, lutfen bekleyin...');
+            const html = await sqlRaporuGetirRetry(`${baseUrl}/api/rapor${bSuf}`);
+            if (html) {
+                const png = await htmldenPngOlustur(html, 'sql');
+                await replyImage(png, 'sql');
+                logYaz(gonderenNumara, body, bulanik ? 'Gonderildi (bulanik)' : 'Gonderildi');
+            } else {
+                await reply('Rapor alinamadi.');
+                logYaz(gonderenNumara, body, 'HATA: API yanit yok');
+            }
+        }
+    } catch (e) {
+        console.error('[Trigger] HATA:', e.message);
+        logYaz(gonderenNumara, body, 'HATA: ' + e.message);
+        try { await reply('Rapor gonderilirken hata: ' + e.message); } catch (_) {}
+    }
+}
+
+// =====================================================
+// HEARTBEAT — durum dosyasini taze tut (C# watchdog icin)
+// =====================================================
+
+setInterval(() => {
+    if (_sonDurum === 'BAGLI' && _sock?.user) {
+        durumYaz('BAGLI', '');
+    }
+}, 20000);
 
 // =====================================================
 // BASLAT
 // =====================================================
 
-console.log('[WhatsApp] Baslatiliyor...');
-console.log('[WhatsApp] Veri dizini:', VERI_DIZIN);
 durumYaz('BAGLANIYOR', '');
-// initialize cagrisi ile ilk baglanti icin 120 sn sinir koy
-hazirTimerKur(120, 'initialize sonrasi qr/ready gelmedi');
-client.initialize();
+botBaslat().catch(e => {
+    console.error('[Boot] Hata:', e.message);
+    durumYaz('BAGLI_DEGIL', '');
+});
+
+process.on('uncaughtException', (e) => { console.error('[UNCAUGHT]', e); });
+process.on('unhandledRejection', (e) => { console.error('[UNHANDLED]', e); });

@@ -1,0 +1,168 @@
+@page "/odeme-kontrol"
+@using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
+@inject OdemeKontrolService Kontrol
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Ödeme Dosyası Kontrol</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.VerifiedUser" Class="mr-2" />
+    Ödeme Dosyası Kontrol
+</MudText>
+
+<MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-3">
+    <b>Çift kontrol</b>: Hazırlanan banka dosyalarını buraya yükleyin. Sistem SabNet'teki verilerle TCKN, IBAN ve Tutar karşılaştırması yapar.
+    Bir uyumsuzluk varsa <b>banka sistemine yüklemeyin</b>.
+</MudAlert>
+
+<MudPaper Class="pa-3 mb-3">
+    <MudGrid AlignItems="Center">
+        <MudItem xs="12" md="2">
+            <MudSelect T="int" Label="Avans" @bind-Value="_avansNo" Variant="Variant.Outlined" Margin="Margin.Dense">
+                @foreach (var kv in OdemeService.AvansAdlari)
+                {
+                    <MudSelectItem T="int" Value="@kv.Key">@kv.Value</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+
+        <MudItem xs="12" md="3">
+            <InputFile OnChange="@(e => DosyaSec(e, "ziraat"))" accept=".xlsm,.xlsx" />
+            <MudText Typo="Typo.caption">Ziraat: @(_ziraatAd ?? "—")</MudText>
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <InputFile OnChange="@(e => DosyaSec(e, "garanti"))" accept=".xlsx" />
+            <MudText Typo="Typo.caption">Garanti: @(_garantiAd ?? "—")</MudText>
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <InputFile OnChange="@(e => DosyaSec(e, "is"))" accept=".xlsx" />
+            <MudText Typo="Typo.caption">İş: @(_isAd ?? "—")</MudText>
+        </MudItem>
+
+        <MudItem xs="12" md="1">
+            <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.FactCheck"
+                       OnClick="KontrolEtAsync" Disabled="_calisiyor || !DosyaVar">
+                @(_calisiyor ? "..." : "Kontrol")
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@if (_sonuc != null)
+{
+    @if (_sonuc.Hatalar.Count > 0)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-3">
+            @foreach (var h in _sonuc.Hatalar) { <div>@h</div> }
+        </MudAlert>
+    }
+
+    @foreach (var b in _sonuc.Bankalar)
+    {
+        <MudPaper Class="pa-3 mb-3" Style="@($"border-left:6px solid {(b.TamamUyumlu ? "#2E7D32" : "#C62828")};")">
+            <MudText Typo="Typo.h6">
+                @if (b.TamamUyumlu)
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Class="mr-1" />
+                }
+                else
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.ErrorOutline" Color="Color.Error" Class="mr-1" />
+                }
+                @b.Banka — @(b.TamamUyumlu ? "TAM UYUMLU" : $"{b.Uyumsuzluklar.Count} UYUMSUZLUK")
+            </MudText>
+            <MudText Typo="Typo.body2">
+                Dosya: <b>@b.DosyaSatirSayisi kayıt · @b.DosyaToplam.ToString("N2") TL</b> ·
+                DB: <b>@b.DbSatirSayisi kayıt · @b.DbToplam.ToString("N2") TL</b> ·
+                Eşleşen: <b>@b.EslesenSayisi</b>
+            </MudText>
+
+            @if (b.Uyumsuzluklar.Count > 0)
+            {
+                <MudTable Items="b.Uyumsuzluklar" Dense="true" Hover="true" Striped="true" Class="mt-2">
+                    <HeaderContent>
+                        <MudTh>Kategori</MudTh>
+                        <MudTh>IBAN</MudTh>
+                        <MudTh>Ad Soyad</MudTh>
+                        <MudTh>Dosya TCKN</MudTh>
+                        <MudTh>DB TCKN</MudTh>
+                        <MudTh Style="text-align:right">Dosya Tutar</MudTh>
+                        <MudTh Style="text-align:right">DB Tutar</MudTh>
+                        <MudTh>Açıklama</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>
+                            <MudChip T="string" Size="Size.Small"
+                                     Color="@(context.Kategori is "TckFarkli" or "TutarFarkli" or "YanlisBanka" ? Color.Error
+                                              : context.Kategori == "SadeceDosyada" ? Color.Warning : Color.Info)">
+                                @context.Kategori
+                            </MudChip>
+                        </MudTd>
+                        <MudTd>@context.IBAN</MudTd>
+                        <MudTd>@context.AdSoyad</MudTd>
+                        <MudTd>@context.DosyaTck</MudTd>
+                        <MudTd>@context.DbTck</MudTd>
+                        <MudTd Style="text-align:right">@(context.DosyaTutar == 0 ? "-" : context.DosyaTutar.ToString("N2"))</MudTd>
+                        <MudTd Style="text-align:right">@(context.DbTutar == 0 ? "-" : context.DbTutar.ToString("N2"))</MudTd>
+                        <MudTd>@context.Aciklama</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+    }
+}
+
+@code {
+    private int _avansNo = 37;
+    private byte[]? _ziraat, _garanti, _is;
+    private string? _ziraatAd, _garantiAd, _isAd;
+    private bool _calisiyor = false;
+    private KontrolSonuc? _sonuc;
+
+    private bool DosyaVar => _ziraat != null || _garanti != null || _is != null;
+
+    private async Task DosyaSec(InputFileChangeEventArgs e, string banka)
+    {
+        var f = e.File;
+        if (f == null) return;
+        if (f.Size > 50 * 1024 * 1024) { Snackbar.Add("Dosya 50MB'tan büyük.", Severity.Error); return; }
+        using var ms = new MemoryStream();
+        await f.OpenReadStream(60 * 1024 * 1024).CopyToAsync(ms);
+        var bytes = ms.ToArray();
+        switch (banka)
+        {
+            case "ziraat":  _ziraat  = bytes; _ziraatAd  = f.Name; break;
+            case "garanti": _garanti = bytes; _garantiAd = f.Name; break;
+            case "is":      _is      = bytes; _isAd      = f.Name; break;
+        }
+        StateHasChanged();
+    }
+
+    private async Task KontrolEtAsync()
+    {
+        _calisiyor = true;
+        StateHasChanged();
+        try
+        {
+            _sonuc = await Kontrol.KontrolEtAsync(_avansNo, _ziraat, _garanti, _is);
+            var uyumsuz = _sonuc.Bankalar.Sum(b => b.Uyumsuzluklar.Count);
+            if (uyumsuz == 0)
+                Snackbar.Add("Hiçbir uyumsuzluk bulunamadı — dosyalar güvenle yüklenebilir.", Severity.Success);
+            else
+                Snackbar.Add($"{uyumsuz} uyumsuzluk var — banka sistemine YÜKLEMEYİN, kontrol edin.", Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Hata: {ex.Message}", Severity.Error);
+            _sonuc = null;
+        }
+        finally
+        {
+            _calisiyor = false;
+            StateHasChanged();
+        }
+    }
+}

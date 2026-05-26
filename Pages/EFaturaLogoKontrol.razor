@@ -51,7 +51,7 @@
                 <MudSelectItem T="string" Value="@(null)">— Hepsi —</MudSelectItem>
                 <MudSelectItem T="string" Value="@("Yok")">❌ İşlenmedi (red hariç)</MudSelectItem>
                 <MudSelectItem T="string" Value="@("Red")">🚫 Red/İptal</MudSelectItem>
-                <MudSelectItem T="string" Value="@("Supheli")">⚠️ Şüpheli</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Supheli")">⚠️ İade Kesilenler/Şüpheli</MudSelectItem>
                 <MudSelectItem T="string" Value="@("Modifiye")">✅ Modifiye</MudSelectItem>
                 <MudSelectItem T="string" Value="@("Kesin")">✅ Kesin</MudSelectItem>
             </MudSelect>
@@ -119,7 +119,7 @@ else
             <span class="lk-sayac lk-red @(_durumKodu=="Red" ? "lk-aktif" : "")" @onclick='() => SayacTikla("Red")'
                   title="Uygulama Yanıtı 'RED' — alıcı reddetmiş, Logo'ya işlenmemesi normal">🚫 Red/İptal: <b>@_sayim.Red</b></span>
             <span class="lk-sayac lk-supheli @(_durumKodu=="Supheli" ? "lk-aktif" : "")" @onclick='() => SayacTikla("Supheli")'
-                  title="Tutar+tarih eşleşti, numara hiç tutmadı">⚠️ Şüpheli: <b>@_sayim.Supheli</b></span>
+                  title="Tutar+tarih eşleşti, numara hiç tutmadı">⚠️ İade Kesilenler/Şüpheli: <b>@_sayim.Supheli</b></span>
             <span class="lk-sayac lk-modifiye @(_durumKodu=="Modifiye" ? "lk-aktif" : "")" @onclick='() => SayacTikla("Modifiye")'
                   title="Son 4 hane + tutar + tarih eşleşti">✅ Modifiye: <b>@_sayim.Modifiye</b></span>
             <span class="lk-sayac lk-kesin @(_durumKodu=="Kesin" ? "lk-aktif" : "")" @onclick='() => SayacTikla("Kesin")'
@@ -151,6 +151,10 @@ else
                 {
                     <div class="ef-code">@context.LogoCariKod</div>
                     <div class="ef-sub" title="@context.LogoCariUnvan">@context.LogoCariUnvan</div>
+                    @if (!string.IsNullOrEmpty(context.LogoCariOzelKod))
+                    {
+                        <span class="ef-ozelkod" title="Logo Cari Özel Kodu">@context.LogoCariOzelKod</span>
+                    }
                 }
                 else { <span class="ef-dash">—</span> }
             </MudTd>
@@ -217,6 +221,7 @@ else
     .ef-num  { text-align:right; white-space:nowrap; font-variant-numeric: tabular-nums; }
     .ef-code { font-family:'Consolas',monospace; font-weight:600; font-size:0.9em; }
     .ef-sub  { color:#666; font-size:0.78em; line-height:1.1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:200px; }
+    .ef-ozelkod { display:inline-block; margin-top:2px; padding:1px 7px; border-radius:9px; font-size:0.76em; font-weight:700; background:#ede7f6; color:#5e35b1; border:1px solid #b39ddb; }
     .ef-trunc{ max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .lk-sayac { padding:3px 10px; border-radius:14px; font-size:0.85em; background:#fff; border:1px solid #ccc; cursor:pointer; user-select:none; transition:transform 0.1s ease; }
     .lk-sayac:hover { transform:scale(1.05); box-shadow:0 1px 4px rgba(0,0,0,0.15); }
@@ -321,7 +326,7 @@ else
     {
         LogoIslemDurumu.Kesin    => ("İşlendi",       Color.Success, Icons.Material.Filled.CheckCircle),
         LogoIslemDurumu.Modifiye => ("Modifiye",      Color.Info,    Icons.Material.Filled.Verified),
-        LogoIslemDurumu.Supheli  => ("Şüpheli",       Color.Warning, Icons.Material.Filled.Help),
+        LogoIslemDurumu.Supheli  => ("İade Kes./Şüpheli", Color.Warning, Icons.Material.Filled.Help),
         LogoIslemDurumu.Yok      => ("İşlenmedi",     Color.Error,   Icons.Material.Filled.Cancel),
         _                        => ("?",             Color.Default, Icons.Material.Filled.QuestionMark),
     };

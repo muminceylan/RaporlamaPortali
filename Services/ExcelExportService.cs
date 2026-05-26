@@ -637,6 +637,223 @@ public class ExcelExportService
         return stream.ToArray();
     }
 
+    public byte[] ExportGubreStok(List<StokSatiri> veriler)
+    {
+        using var workbook = new XLWorkbook();
+        var ws = workbook.Worksheets.Add("Gubre Stok");
+
+        string[] basliklar = { "AMBAR_NO", "AMBAR", "MALZEME_KODU", "MALZEME_ADI", "STOK" };
+        for (int i = 0; i < basliklar.Length; i++)
+        {
+            ws.Cell(1, i + 1).Value = basliklar[i];
+            ws.Cell(1, i + 1).Style.Font.Bold = true;
+            ws.Cell(1, i + 1).Style.Fill.BackgroundColor = XLColor.FromHtml("#E8F5E9");
+            ws.Cell(1, i + 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        }
+
+        int row = 2;
+        foreach (var s in veriler)
+        {
+            ws.Cell(row, 1).Value = s.AmbarNo;
+            ws.Cell(row, 2).Value = s.Ambar;
+            ws.Cell(row, 3).Value = s.MalzemeKodu;
+            ws.Cell(row, 4).Value = s.MalzemeAdi;
+            ws.Cell(row, 5).Value = s.Stok;
+            ws.Cell(row, 5).Style.NumberFormat.Format = "#,##0.00";
+            row++;
+        }
+
+        // Veri sonuna toplam satırı — AutoFilter aralığından önce belirlenmesi için row değişkeni
+        int veriSonRow = row - 1;
+        ws.Cell(row, 4).Value = "TOPLAM";
+        ws.Cell(row, 4).Style.Font.Bold = true;
+        ws.Cell(row, 4).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+        ws.Cell(row, 4).Style.Fill.BackgroundColor = XLColor.FromHtml("#E8F5E9");
+        ws.Cell(row, 5).Value = veriler.Sum(s => s.Stok);
+        ws.Cell(row, 5).Style.Font.Bold = true;
+        ws.Cell(row, 5).Style.NumberFormat.Format = "#,##0.00";
+        ws.Cell(row, 5).Style.Fill.BackgroundColor = XLColor.FromHtml("#E8F5E9");
+
+        ws.SheetView.FreezeRows(1);
+        // AutoFilter sadece veri aralığında — toplam satırı filtreye dahil edilmez
+        if (veriSonRow >= 1)
+            ws.Range(1, 1, veriSonRow, basliklar.Length).SetAutoFilter();
+        ws.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    public byte[] ExportCayDurumu(List<StokSatiri> veriler)
+    {
+        using var workbook = new XLWorkbook();
+        var ws = workbook.Worksheets.Add("Cay Durum");
+
+        string[] basliklar = { "AMBAR_NO", "AMBAR", "MALZEME_KODU", "MALZEME_ADI", "STOK" };
+        for (int i = 0; i < basliklar.Length; i++)
+        {
+            ws.Cell(1, i + 1).Value = basliklar[i];
+            ws.Cell(1, i + 1).Style.Font.Bold = true;
+            ws.Cell(1, i + 1).Style.Fill.BackgroundColor = XLColor.FromHtml("#EFEBE9");
+            ws.Cell(1, i + 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        }
+
+        int row = 2;
+        foreach (var s in veriler)
+        {
+            ws.Cell(row, 1).Value = s.AmbarNo;
+            ws.Cell(row, 2).Value = s.Ambar;
+            ws.Cell(row, 3).Value = s.MalzemeKodu;
+            ws.Cell(row, 4).Value = s.MalzemeAdi;
+            ws.Cell(row, 5).Value = s.Stok;
+            ws.Cell(row, 5).Style.NumberFormat.Format = "#,##0.00";
+            row++;
+        }
+
+        int veriSonRow = row - 1;
+        ws.Cell(row, 4).Value = "TOPLAM";
+        ws.Cell(row, 4).Style.Font.Bold = true;
+        ws.Cell(row, 4).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+        ws.Cell(row, 4).Style.Fill.BackgroundColor = XLColor.FromHtml("#EFEBE9");
+        ws.Cell(row, 5).Value = veriler.Sum(s => s.Stok);
+        ws.Cell(row, 5).Style.Font.Bold = true;
+        ws.Cell(row, 5).Style.NumberFormat.Format = "#,##0.00";
+        ws.Cell(row, 5).Style.Fill.BackgroundColor = XLColor.FromHtml("#EFEBE9");
+
+        ws.SheetView.FreezeRows(1);
+        if (veriSonRow >= 1)
+            ws.Range(1, 1, veriSonRow, basliklar.Length).SetAutoFilter();
+        ws.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    public byte[] ExportGubreCiro(
+        List<GubreCiroMalzeme> malzeme,
+        List<GubreCiroMusteriAy> musteriAy,
+        List<GubreAlimFaturaSatiri> alim)
+    {
+        using var workbook = new XLWorkbook();
+
+        // ---- Sayfa 1: Malzeme Bazlı Ciro ----
+        var ws1 = workbook.Worksheets.Add("Malzeme Ciro");
+        string[] b1 = { "MALZEME_KODU", "MALZEME_ADI", "NET_MIKTAR", "NET_CIRO (TL)" };
+        for (int i = 0; i < b1.Length; i++)
+        {
+            ws1.Cell(1, i + 1).Value = b1[i];
+            ws1.Cell(1, i + 1).Style.Font.Bold = true;
+            ws1.Cell(1, i + 1).Style.Fill.BackgroundColor = XLColor.FromHtml("#E8F5E9");
+            ws1.Cell(1, i + 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        }
+        int r = 2;
+        foreach (var m in malzeme)
+        {
+            ws1.Cell(r, 1).Value = m.MalzemeKodu;
+            ws1.Cell(r, 2).Value = m.MalzemeAdi;
+            ws1.Cell(r, 3).Value = m.NetMiktar;
+            ws1.Cell(r, 3).Style.NumberFormat.Format = "#,##0.00";
+            ws1.Cell(r, 4).Value = m.NetCiro;
+            ws1.Cell(r, 4).Style.NumberFormat.Format = "#,##0.00";
+            r++;
+        }
+        int s1 = r - 1;
+        ws1.Cell(r, 2).Value = "TOPLAM";
+        ws1.Cell(r, 2).Style.Font.Bold = true;
+        ws1.Cell(r, 2).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+        ws1.Cell(r, 2).Style.Fill.BackgroundColor = XLColor.FromHtml("#E8F5E9");
+        ws1.Cell(r, 3).Value = malzeme.Sum(x => x.NetMiktar);
+        ws1.Cell(r, 4).Value = malzeme.Sum(x => x.NetCiro);
+        ws1.Range(r, 3, r, 4).Style.NumberFormat.Format = "#,##0.00";
+        ws1.Range(r, 1, r, 4).Style.Font.Bold = true;
+        ws1.Range(r, 1, r, 4).Style.Fill.BackgroundColor = XLColor.FromHtml("#E8F5E9");
+        ws1.SheetView.FreezeRows(1);
+        if (s1 >= 1) ws1.Range(1, 1, s1, b1.Length).SetAutoFilter();
+        ws1.Columns().AdjustToContents();
+
+        // ---- Sayfa 2: Müşteri + Ay Kırılımı ----
+        var ws2 = workbook.Worksheets.Add("Musteri-Ay Ciro");
+        string[] b2 = { "MALZEME_KODU", "MALZEME_ADI", "MUSTERI_KODU", "MUSTERI_UNVAN", "DONEM (YYYY-AA)", "NET_MIKTAR", "NET_CIRO (TL)" };
+        for (int i = 0; i < b2.Length; i++)
+        {
+            ws2.Cell(1, i + 1).Value = b2[i];
+            ws2.Cell(1, i + 1).Style.Font.Bold = true;
+            ws2.Cell(1, i + 1).Style.Fill.BackgroundColor = XLColor.FromHtml("#E8F5E9");
+            ws2.Cell(1, i + 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        }
+        r = 2;
+        foreach (var m in musteriAy)
+        {
+            ws2.Cell(r, 1).Value = m.MalzemeKodu;
+            ws2.Cell(r, 2).Value = m.MalzemeAdi;
+            ws2.Cell(r, 3).Value = m.MusteriKodu;
+            ws2.Cell(r, 4).Value = m.MusteriUnvan;
+            ws2.Cell(r, 5).Value = m.Donem;
+            ws2.Cell(r, 6).Value = m.NetMiktar;
+            ws2.Cell(r, 6).Style.NumberFormat.Format = "#,##0.00";
+            ws2.Cell(r, 7).Value = m.NetCiro;
+            ws2.Cell(r, 7).Style.NumberFormat.Format = "#,##0.00";
+            r++;
+        }
+        int s2 = r - 1;
+        ws2.Cell(r, 5).Value = "TOPLAM";
+        ws2.Cell(r, 5).Style.Font.Bold = true;
+        ws2.Cell(r, 5).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+        ws2.Cell(r, 6).Value = musteriAy.Sum(x => x.NetMiktar);
+        ws2.Cell(r, 7).Value = musteriAy.Sum(x => x.NetCiro);
+        ws2.Range(r, 6, r, 7).Style.NumberFormat.Format = "#,##0.00";
+        ws2.Range(r, 1, r, 7).Style.Font.Bold = true;
+        ws2.Range(r, 1, r, 7).Style.Fill.BackgroundColor = XLColor.FromHtml("#E8F5E9");
+        ws2.SheetView.FreezeRows(1);
+        if (s2 >= 1) ws2.Range(1, 1, s2, b2.Length).SetAutoFilter();
+        ws2.Columns().AdjustToContents();
+
+        // ---- Sayfa 3: Alım Faturaları ----
+        var ws3 = workbook.Worksheets.Add("Alim Faturalari");
+        string[] b3 = { "FATURA_NO", "TARIH", "TEDARIKCI_KOD", "TEDARIKCI_UNVAN", "MALZEME_KODU", "MALZEME_ADI", "MIKTAR", "NET_TUTAR (TL)" };
+        for (int i = 0; i < b3.Length; i++)
+        {
+            ws3.Cell(1, i + 1).Value = b3[i];
+            ws3.Cell(1, i + 1).Style.Font.Bold = true;
+            ws3.Cell(1, i + 1).Style.Fill.BackgroundColor = XLColor.FromHtml("#E8F5E9");
+            ws3.Cell(1, i + 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        }
+        r = 2;
+        foreach (var a in alim)
+        {
+            ws3.Cell(r, 1).Value = a.FaturaNo;
+            ws3.Cell(r, 2).Value = a.Tarih;
+            ws3.Cell(r, 2).Style.DateFormat.Format = "dd.MM.yyyy";
+            ws3.Cell(r, 3).Value = a.TedarikciKodu;
+            ws3.Cell(r, 4).Value = a.TedarikciUnvan;
+            ws3.Cell(r, 5).Value = a.MalzemeKodu;
+            ws3.Cell(r, 6).Value = a.MalzemeAdi;
+            ws3.Cell(r, 7).Value = a.Miktar;
+            ws3.Cell(r, 7).Style.NumberFormat.Format = "#,##0.00";
+            ws3.Cell(r, 8).Value = a.NetTutar;
+            ws3.Cell(r, 8).Style.NumberFormat.Format = "#,##0.00";
+            r++;
+        }
+        int s3 = r - 1;
+        ws3.Cell(r, 6).Value = "TOPLAM";
+        ws3.Cell(r, 6).Style.Font.Bold = true;
+        ws3.Cell(r, 6).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+        ws3.Cell(r, 7).Value = alim.Sum(x => x.Miktar);
+        ws3.Cell(r, 8).Value = alim.Sum(x => x.NetTutar);
+        ws3.Range(r, 7, r, 8).Style.NumberFormat.Format = "#,##0.00";
+        ws3.Range(r, 1, r, 8).Style.Font.Bold = true;
+        ws3.Range(r, 1, r, 8).Style.Fill.BackgroundColor = XLColor.FromHtml("#E8F5E9");
+        ws3.SheetView.FreezeRows(1);
+        if (s3 >= 1) ws3.Range(1, 1, s3, b3.Length).SetAutoFilter();
+        ws3.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
     public byte[] ExportKurBilgileri(List<KurBilgisi> veriler)
     {
         using var workbook = new XLWorkbook();
@@ -1968,9 +2185,10 @@ public class ExcelExportService
         SayfaDolur(wb, "İşlenen", "LOGO'YA İŞLENEN FATURALAR (Kesin + Modifiye)",
                    islenen, baslangic, bitis, tarihToleransGun, "#2E7D32");
 
-        // Şüpheli
+        // İade Kesilenler / Şüpheli
         var supheli = kayitlar.Where(x => !x.RedEdildi && x.LogoDurum == LogoIslemDurumu.Supheli).ToList();
-        SayfaDolur(wb, "Şüpheli", "ŞÜPHELİ FATURALAR (Tutar+Tarih Tutuyor, FICHENO Tutmuyor)",
+        SayfaDolur(wb, "İade Kesilenler-Şüpheli",
+                   "İADE KESİLENLER / ŞÜPHELİ FATURALAR (Tutar+Tarih Tutuyor, FICHENO Tutmuyor)",
                    supheli, baslangic, bitis, tarihToleransGun, "#E65100");
 
         // İşlenmeyenler = Yok (red hariç)
@@ -1999,9 +2217,10 @@ public class ExcelExportService
         string baslikRengi)
     {
         var ws = wb.Worksheets.Add(sayfaAdi);
+        const int sonSutun = 18;   // A..R
 
         ws.Cell("A1").Value = baslik;
-        ws.Range("A1:Q1").Merge();
+        ws.Range("A1:R1").Merge();
         ws.Cell("A1").Style.Font.Bold = true;
         ws.Cell("A1").Style.Font.FontSize = 14;
         ws.Cell("A1").Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
@@ -2009,7 +2228,7 @@ public class ExcelExportService
         ws.Cell("A1").Style.Font.FontColor = XLColor.White;
 
         ws.Cell("A2").Value = $"Tarih: {baslangic:dd.MM.yyyy} - {bitis:dd.MM.yyyy}  ·  Tolerans: {tarihToleransGun} gün  ·  Bu sayfa: {kayitlar.Count} fatura";
-        ws.Range("A2:Q2").Merge();
+        ws.Range("A2:R2").Merge();
         ws.Cell("A2").Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
         ws.Cell("A2").Style.Font.Italic = true;
 
@@ -2019,15 +2238,15 @@ public class ExcelExportService
         int yokSay      = kayitlar.Count(x => x.LogoDurum == LogoIslemDurumu.Yok && !x.RedEdildi);
         int redSay      = kayitlar.Count(x => x.RedEdildi);
 
-        ws.Cell("A3").Value = $"✅ Kesin: {kesinSay}    ✅ Modifiye: {modifiyeSay}    ⚠️ Şüpheli: {supheliSay}    ❌ İşlenmedi: {yokSay}    🚫 Red/İptal: {redSay}";
-        ws.Range("A3:Q3").Merge();
+        ws.Cell("A3").Value = $"✅ Kesin: {kesinSay}    ✅ Modifiye: {modifiyeSay}    ⚠️ İade Kesilenler/Şüpheli: {supheliSay}    ❌ İşlenmedi: {yokSay}    🚫 Red/İptal: {redSay}";
+        ws.Range("A3:R3").Merge();
         ws.Cell("A3").Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
         ws.Cell("A3").Style.Font.Bold = true;
 
         int row = 5;
         string[] basliklar = {
             "Tarih", "e-Fatura No", "VKN/TCKN", "Gönderen",
-            "Logo Cari Kod", "Logo Cari Ünvan",
+            "Logo Cari Kod", "Logo Cari Ünvan", "Logo Cari Özel Kod",
             "Matrah", "KDV", "Tevkifat", "Tutar (KDV Dahil)",
             "Logo Durumu", "Logo FICHENO", "Logo Tarih", "Logo Tutar",
             "Red/İptal", "Red Tarihi", "Red Açıklama"
@@ -2052,45 +2271,46 @@ public class ExcelExportService
             ws.Cell(row, 4).Value  = k.KarsiUnvan;
             ws.Cell(row, 5).Value  = k.LogoCariKod;
             ws.Cell(row, 6).Value  = k.LogoCariUnvan;
-            ws.Cell(row, 7).Value  = k.Matrah;
-            ws.Cell(row, 8).Value  = k.KdvTutar;
-            ws.Cell(row, 9).Value  = k.TevkifatTutar;
-            ws.Cell(row, 10).Value = EFaturaService.GosterilecekTutar(k);
-            ws.Cell(row, 11).Value = DurumMetni(k.LogoDurum);
-            ws.Cell(row, 12).Value = k.LogoFicheno;
+            ws.Cell(row, 7).Value  = k.LogoCariOzelKod;
+            ws.Cell(row, 8).Value  = k.Matrah;
+            ws.Cell(row, 9).Value  = k.KdvTutar;
+            ws.Cell(row, 10).Value = k.TevkifatTutar;
+            ws.Cell(row, 11).Value = EFaturaService.GosterilecekTutar(k);
+            ws.Cell(row, 12).Value = DurumMetni(k);
+            ws.Cell(row, 13).Value = k.LogoFicheno;
             if (k.LogoTarih.HasValue)
             {
-                ws.Cell(row, 13).Value = k.LogoTarih.Value;
-                ws.Cell(row, 13).Style.DateFormat.Format = "dd.MM.yyyy";
+                ws.Cell(row, 14).Value = k.LogoTarih.Value;
+                ws.Cell(row, 14).Style.DateFormat.Format = "dd.MM.yyyy";
             }
-            ws.Cell(row, 14).Value = k.LogoTutar;
+            ws.Cell(row, 15).Value = k.LogoTutar;
 
             if (k.RedEdildi)
             {
-                ws.Cell(row, 15).Value = "🚫 RED/İPTAL";
-                ws.Cell(row, 15).Style.Fill.BackgroundColor = XLColor.FromHtml("#FFCDD2");
-                ws.Cell(row, 15).Style.Font.FontColor = XLColor.FromHtml("#B71C1C");
-                ws.Cell(row, 15).Style.Font.Bold = true;
-                ws.Cell(row, 15).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                ws.Cell(row, 16).Value = "🚫 RED/İPTAL";
+                ws.Cell(row, 16).Style.Fill.BackgroundColor = XLColor.FromHtml("#FFCDD2");
+                ws.Cell(row, 16).Style.Font.FontColor = XLColor.FromHtml("#B71C1C");
+                ws.Cell(row, 16).Style.Font.Bold = true;
+                ws.Cell(row, 16).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
             }
             if (k.RedTarihi.HasValue)
             {
-                ws.Cell(row, 16).Value = k.RedTarihi.Value;
-                ws.Cell(row, 16).Style.DateFormat.Format = "dd.MM.yyyy";
+                ws.Cell(row, 17).Value = k.RedTarihi.Value;
+                ws.Cell(row, 17).Style.DateFormat.Format = "dd.MM.yyyy";
             }
-            ws.Cell(row, 17).Value = k.RedAciklama;
+            ws.Cell(row, 18).Value = k.RedAciklama;
 
-            for (int col = 7; col <= 10; col++)
+            for (int col = 8; col <= 11; col++)
                 ws.Cell(row, col).Style.NumberFormat.Format = "#,##0.00";
-            ws.Cell(row, 14).Style.NumberFormat.Format = "#,##0.00";
+            ws.Cell(row, 15).Style.NumberFormat.Format = "#,##0.00";
 
-            var (bg, fg) = DurumRengi(k.LogoDurum);
-            ws.Cell(row, 11).Style.Fill.BackgroundColor = bg;
-            ws.Cell(row, 11).Style.Font.FontColor = fg;
-            ws.Cell(row, 11).Style.Font.Bold = true;
-            ws.Cell(row, 11).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            var (bg, fg) = DurumRengi(k);
+            ws.Cell(row, 12).Style.Fill.BackgroundColor = bg;
+            ws.Cell(row, 12).Style.Font.FontColor = fg;
+            ws.Cell(row, 12).Style.Font.Bold = true;
+            ws.Cell(row, 12).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
-            for (int col = 1; col <= 17; col++)
+            for (int col = 1; col <= sonSutun; col++)
                 ws.Cell(row, col).Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
 
             row++;
@@ -2106,28 +2326,37 @@ public class ExcelExportService
         if (kayitlar.Count == 0)
         {
             ws.Cell(6, 1).Value = "(Bu kategoride kayıt bulunmuyor)";
-            ws.Range(6, 1, 6, 17).Merge();
+            ws.Range(6, 1, 6, sonSutun).Merge();
             ws.Cell(6, 1).Style.Font.Italic = true;
             ws.Cell(6, 1).Style.Font.FontColor = XLColor.Gray;
             ws.Cell(6, 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
         }
     }
 
-    private static string DurumMetni(LogoIslemDurumu d) => d switch
+    // RED/İptal edilen fatura, LogoDurum'u "Yok" olsa bile asla "İşlenmedi" gösterilmez.
+    private static string DurumMetni(EFaturaListItem k)
     {
-        LogoIslemDurumu.Kesin    => "✅ Kesin",
-        LogoIslemDurumu.Modifiye => "✅ Modifiye",
-        LogoIslemDurumu.Supheli  => "⚠️ Şüpheli",
-        LogoIslemDurumu.Yok      => "❌ İşlenmedi",
-        _                        => "?"
-    };
+        if (k.RedEdildi) return "🚫 Red/İptal";
+        return k.LogoDurum switch
+        {
+            LogoIslemDurumu.Kesin    => "✅ Kesin",
+            LogoIslemDurumu.Modifiye => "✅ Modifiye",
+            LogoIslemDurumu.Supheli  => "⚠️ İade Kesilenler/Şüpheli",
+            LogoIslemDurumu.Yok      => "❌ İşlenmedi",
+            _                        => "?"
+        };
+    }
 
-    private static (XLColor Bg, XLColor Fg) DurumRengi(LogoIslemDurumu d) => d switch
+    private static (XLColor Bg, XLColor Fg) DurumRengi(EFaturaListItem k)
     {
-        LogoIslemDurumu.Kesin    => (XLColor.FromHtml("#C8E6C9"), XLColor.FromHtml("#1B5E20")),
-        LogoIslemDurumu.Modifiye => (XLColor.FromHtml("#E3F2FD"), XLColor.FromHtml("#0D47A1")),
-        LogoIslemDurumu.Supheli  => (XLColor.FromHtml("#FFF8E1"), XLColor.FromHtml("#E65100")),
-        LogoIslemDurumu.Yok      => (XLColor.FromHtml("#FFEBEE"), XLColor.FromHtml("#B71C1C")),
-        _                        => (XLColor.White, XLColor.Black)
-    };
+        if (k.RedEdildi) return (XLColor.FromHtml("#ECEFF1"), XLColor.FromHtml("#263238"));
+        return k.LogoDurum switch
+        {
+            LogoIslemDurumu.Kesin    => (XLColor.FromHtml("#C8E6C9"), XLColor.FromHtml("#1B5E20")),
+            LogoIslemDurumu.Modifiye => (XLColor.FromHtml("#E3F2FD"), XLColor.FromHtml("#0D47A1")),
+            LogoIslemDurumu.Supheli  => (XLColor.FromHtml("#FFF8E1"), XLColor.FromHtml("#E65100")),
+            LogoIslemDurumu.Yok      => (XLColor.FromHtml("#FFEBEE"), XLColor.FromHtml("#B71C1C")),
+            _                        => (XLColor.White, XLColor.Black)
+        };
+    }
 }

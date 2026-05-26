@@ -18,6 +18,8 @@ public static class SecretsService
     public static string PmhsConnectionString   => _cached?.PmhsConnectionString   ?? "";
     public static string AnthropicApiKey        => _cached?.AnthropicApiKey        ?? "";
     public static string MailPassword           => _cached?.MailPassword           ?? "";
+    public static string LogoUnityKullanici     => _cached?.LogoUnityKullanici     ?? "";
+    public static string LogoUnitySifre         => _cached?.LogoUnitySifre         ?? "";
 
     // Vault unlocked ise çağrılır. secrets.enc varsa decrypt eder; yoksa
     // appsettings.json'dan ilk değerleri toplayıp dosyayı oluşturur.
@@ -50,6 +52,8 @@ public static class SecretsService
         PmhsConnectionString   = m.PmhsConnectionString,
         AnthropicApiKey        = m.AnthropicApiKey,
         MailPassword           = m.MailPassword,
+        LogoUnityKullanici     = m.LogoUnityKullanici,
+        LogoUnitySifre         = m.LogoUnitySifre,
     };
 
     // ---------- migration ----------
@@ -74,6 +78,12 @@ public static class SecretsService
                 {
                     var pwd = sf.GetString() ?? "";
                     if (pwd != "OUTLOOK_SIFRENIZI_BURAYA_YAZIN") s.MailPassword = pwd;
+                }
+
+                if (doc.RootElement.TryGetProperty("LogoUnity", out var lu))
+                {
+                    if (lu.TryGetProperty("Kullanici", out var u)) s.LogoUnityKullanici = u.GetString() ?? "";
+                    if (lu.TryGetProperty("Sifre",     out var p)) s.LogoUnitySifre     = p.GetString() ?? "";
                 }
             }
         }
@@ -128,6 +138,9 @@ public static class SecretsService
         public string PmhsConnectionString   { get; set; } = "";
         public string AnthropicApiKey        { get; set; } = "";
         public string MailPassword           { get; set; } = "";
+        // Logo Tiger Unity COM API login bilgileri — e-Fatura'yı Logo'ya aktarırken kullanılır.
+        public string LogoUnityKullanici     { get; set; } = "";
+        public string LogoUnitySifre         { get; set; } = "";
     }
 
     // Connection string'i parçalara ayırıp UI'da Server/Database/User/Password

@@ -1,0 +1,351 @@
+@page "/odeme-dosyasi"
+@using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
+@inject OdemeService Odeme
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Ödeme Dosyası Hazırla</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Class="mr-2" />
+    Ödeme Dosyası Hazırla
+</MudText>
+
+<MudPaper Class="pa-3 mb-3">
+    <MudGrid AlignItems="Center">
+        <MudItem xs="12" md="3">
+            <MudSelect T="int" Label="Avans" @bind-Value="_avansNo" Variant="Variant.Outlined" Margin="Margin.Dense">
+                @foreach (var kv in OdemeService.AvansAdlari)
+                {
+                    <MudSelectItem T="int" Value="@kv.Key">@kv.Value</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudDatePicker @bind-Date="_odemeTarihi" Label="Ödeme Tarihi"
+                           DateFormat="dd.MM.yyyy" Editable="true"
+                           Mask="@(new DateMask("dd.MM.yyyy"))"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.Build"
+                       OnClick="HazirlaAsync" Disabled="_calisiyor">
+                @(_calisiyor ? "Hazırlanıyor..." : "Ödeme Dosyalarını Hazırla")
+            </MudButton>
+        </MudItem>
+        <MudItem xs="12" md="3" Class="d-flex align-center">
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Seçilen avansın 2026 dönem kayıtları IBAN bankasına göre dağıtılır.
+            </MudText>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@if (_sonuc != null)
+{
+    <MudPaper Class="pa-3 mb-3">
+        <MudText Typo="Typo.h6" Class="mb-2">
+            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Class="mr-1" />
+            @_sonuc.AvansAdi · Ödeme Tarihi: @_sonuc.OdemeTarihi.ToString("dd.MM.yyyy")
+        </MudText>
+        <MudGrid>
+            @* Ziraat *@
+            <MudItem xs="12" md="4">
+                <MudCard Outlined="true">
+                    <MudCardContent>
+                        <MudText Typo="Typo.subtitle1"><b>Ziraat Bankası</b></MudText>
+                        <MudText Typo="Typo.body2">Kişi: <b>@_sonuc.ZiraatAdet</b></MudText>
+                        <MudText Typo="Typo.body2">Tutar: <b>@_sonuc.ZiraatTutar.ToString("N2")</b> ₺</MudText>
+                    </MudCardContent>
+                    <MudCardActions>
+                        <MudButton Disabled="@(_sonuc.ZiraatDosya == null)" Color="Color.Primary" Variant="Variant.Filled"
+                                   StartIcon="@Icons.Material.Filled.FileDownload"
+                                   OnClick="@(() => DosyaIndir(_sonuc.ZiraatDosya))">İndir</MudButton>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+            @* Garanti *@
+            <MudItem xs="12" md="4">
+                <MudCard Outlined="true">
+                    <MudCardContent>
+                        <MudText Typo="Typo.subtitle1"><b>Garanti Bankası</b></MudText>
+                        <MudText Typo="Typo.body2">Kişi: <b>@_sonuc.GarantiAdet</b></MudText>
+                        <MudText Typo="Typo.body2">Tutar: <b>@_sonuc.GarantiTutar.ToString("N2")</b> ₺</MudText>
+                    </MudCardContent>
+                    <MudCardActions>
+                        <MudButton Disabled="@(_sonuc.GarantiDosya == null)" Color="Color.Primary" Variant="Variant.Filled"
+                                   StartIcon="@Icons.Material.Filled.FileDownload"
+                                   OnClick="@(() => DosyaIndir(_sonuc.GarantiDosya))">İndir</MudButton>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+            @* İş *@
+            <MudItem xs="12" md="4">
+                <MudCard Outlined="true">
+                    <MudCardContent>
+                        <MudText Typo="Typo.subtitle1"><b>İş Bankası</b></MudText>
+                        <MudText Typo="Typo.body2">Kişi: <b>@_sonuc.IsAdet</b></MudText>
+                        <MudText Typo="Typo.body2">Tutar: <b>@_sonuc.IsTutar.ToString("N2")</b> ₺</MudText>
+                    </MudCardContent>
+                    <MudCardActions>
+                        <MudButton Disabled="@(_sonuc.IsDosya == null)" Color="Color.Primary" Variant="Variant.Filled"
+                                   StartIcon="@Icons.Material.Filled.FileDownload"
+                                   OnClick="@(() => DosyaIndir(_sonuc.IsDosya))">İndir</MudButton>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+        </MudGrid>
+        <MudText Typo="Typo.caption" Class="mt-2" Color="Color.Secondary">
+            Çıktı klasörü: <code>@_sonuc.CiktiKlasor</code>
+        </MudText>
+    </MudPaper>
+
+    @* BANKAYA GORE BOLGE ODEME RAPORU *@
+    <div class="d-flex align-center gap-2 mb-1" style="max-width:560px;">
+        <MudButton Color="Color.Primary" Variant="Variant.Outlined" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.ContentCopy"
+                   OnClick="MailIcinKopyala">
+            Mail İçin Kopyala
+        </MudButton>
+        <MudButton Color="Color.Success" Variant="Variant.Filled" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.FileDownload"
+                   OnClick="ExcelTransfer">
+            Excel Transfer
+        </MudButton>
+    </div>
+    <MudPaper Class="pa-0 mb-3" Style="max-width:560px;border:1px solid #1565C0;">
+        <div style="background:#1565C0;color:white;padding:10px 14px;font-weight:700;font-size:1.05em;">
+            BANKAYA GÖRE BÖLGE ÖDEME RAPORU
+        </div>
+        <div style="background:#E3F2FD;padding:6px 14px;text-align:center;font-size:0.9em;">
+            Rapor Tarihi: @_sonuc.RaporZamani.ToString("dd.MM.yyyy HH:mm")
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:0.92em;">
+            <thead>
+                <tr style="background:#BBDEFB;">
+                    <th style="text-align:left;padding:8px 14px;border-bottom:1px solid #90CAF9;">BANKA</th>
+                    <th style="text-align:right;padding:8px 14px;border-bottom:1px solid #90CAF9;">ÖDEME TUTARI</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var b in _sonuc.BankaBolgeOzeti)
+                {
+                    <tr><td colspan="2" style="background:#E3F2FD;color:#0D47A1;font-weight:700;padding:8px 14px;border-top:1px solid #90CAF9;">@b.Ad</td></tr>
+                    @foreach (var bk in b.Bolgeler)
+                    {
+                        <tr style="border-bottom:1px solid #E3F2FD;">
+                            <td style="padding:5px 24px;">@bk.Bolge</td>
+                            <td style="padding:5px 14px;text-align:right;font-family:Consolas,monospace;">@bk.Tutar.ToString("N2") TL</td>
+                        </tr>
+                    }
+                    <tr style="background:#1565C0;color:white;font-weight:700;">
+                        <td style="padding:8px 14px;">@b.Ad TOPLAM</td>
+                        <td style="padding:8px 14px;text-align:right;font-family:Consolas,monospace;">@b.Toplam.ToString("N2") TL</td>
+                    </tr>
+                }
+                <tr style="background:#0D47A1;color:white;font-weight:800;font-size:1.05em;">
+                    <td style="padding:10px 14px;">GENEL TOPLAM</td>
+                    <td style="padding:10px 14px;text-align:right;font-family:Consolas,monospace;">@_sonuc.GenelToplam.ToString("N2") TL</td>
+                </tr>
+            </tbody>
+        </table>
+    </MudPaper>
+
+    @if (_sonuc.DigerBankaUyarilari.Count > 0)
+    {
+        <MudPaper Class="pa-3 mb-3" Style="border-left:4px solid #FB8C00;">
+            <MudText Typo="Typo.h6">
+                <MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Warning" Class="mr-1" />
+                Diğer Banka Uyarısı (@_sonuc.DigerBankaUyarilari.Count kişi · @_sonuc.DigerBankaUyarilari.Sum(x => x.Tutar).ToString("N2") ₺)
+            </MudText>
+            <MudText Typo="Typo.body2" Class="mb-2">
+                Bu müstahsiller Ziraat/Garanti/İş dışı bankaların IBAN'larına sahip — dosyaya eklenmedi. Manuel ödeme yapılmalı.
+            </MudText>
+            <MudButton Color="Color.Warning" Variant="Variant.Filled" Size="Size.Small"
+                       StartIcon="@Icons.Material.Filled.FileDownload"
+                       OnClick="@(() => UyariIndir(_sonuc.DigerBankaUyarilari, "DigerBankalar"))">
+                Excel İndir
+            </MudButton>
+            <MudTable Items="_sonuc.DigerBankaUyarilari.Take(20)" Dense="true" Class="mt-2">
+                <HeaderContent>
+                    <MudTh>TCKN</MudTh><MudTh>Ad Soyad</MudTh><MudTh>IBAN</MudTh>
+                    <MudTh Style="text-align:right">Tutar</MudTh><MudTh>Bölge</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.TcKimlikNo</MudTd>
+                    <MudTd>@context.AdSoyad</MudTd>
+                    <MudTd>@context.IBAN</MudTd>
+                    <MudTd Style="text-align:right">@context.Tutar.ToString("N2")</MudTd>
+                    <MudTd>@context.KaynakBolge</MudTd>
+                </RowTemplate>
+            </MudTable>
+            @if (_sonuc.DigerBankaUyarilari.Count > 20)
+            {
+                <MudText Typo="Typo.caption">… ve @(_sonuc.DigerBankaUyarilari.Count - 20) kayıt daha (Excel'de tamamı).</MudText>
+            }
+        </MudPaper>
+    }
+
+    @if (_sonuc.IbanEksikUyarilari.Count > 0)
+    {
+        <MudPaper Class="pa-3 mb-3" Style="border-left:4px solid #E53935;">
+            <MudText Typo="Typo.h6">
+                <MudIcon Icon="@Icons.Material.Filled.ErrorOutline" Color="Color.Error" Class="mr-1" />
+                IBAN Eksik / Geçersiz (@_sonuc.IbanEksikUyarilari.Count kişi · @_sonuc.IbanEksikUyarilari.Sum(x => x.Tutar).ToString("N2") ₺)
+            </MudText>
+            <MudText Typo="Typo.body2" Class="mb-2">
+                Bu müstahsillerin IBAN bilgisi eksik veya geçersiz — dosyaya eklenmedi. SabNet'te Çiftçi Kartı düzeltilmeli.
+            </MudText>
+            <MudButton Color="Color.Error" Variant="Variant.Filled" Size="Size.Small"
+                       StartIcon="@Icons.Material.Filled.FileDownload"
+                       OnClick="@(() => UyariIndir(_sonuc.IbanEksikUyarilari, "IBANeksik"))">
+                Excel İndir
+            </MudButton>
+            <MudTable Items="_sonuc.IbanEksikUyarilari.Take(20)" Dense="true" Class="mt-2">
+                <HeaderContent>
+                    <MudTh>TCKN</MudTh><MudTh>Ad Soyad</MudTh><MudTh>IBAN</MudTh>
+                    <MudTh Style="text-align:right">Tutar</MudTh><MudTh>Bölge</MudTh><MudTh>Sebep</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.TcKimlikNo</MudTd>
+                    <MudTd>@context.AdSoyad</MudTd>
+                    <MudTd>@context.IBAN</MudTd>
+                    <MudTd Style="text-align:right">@context.Tutar.ToString("N2")</MudTd>
+                    <MudTd>@context.KaynakBolge</MudTd>
+                    <MudTd>@context.Sebep</MudTd>
+                </RowTemplate>
+            </MudTable>
+            @if (_sonuc.IbanEksikUyarilari.Count > 20)
+            {
+                <MudText Typo="Typo.caption">… ve @(_sonuc.IbanEksikUyarilari.Count - 20) kayıt daha (Excel'de tamamı).</MudText>
+            }
+        </MudPaper>
+    }
+}
+
+@code {
+    private int _avansNo = 37;
+    private DateTime? _odemeTarihi = DateTime.Today;
+    private bool _calisiyor = false;
+    private OdemeHazirlamaSonuc? _sonuc;
+
+    private async Task HazirlaAsync()
+    {
+        if (_odemeTarihi == null)
+        {
+            Snackbar.Add("Ödeme tarihi seçin.", Severity.Warning);
+            return;
+        }
+        _calisiyor = true;
+        StateHasChanged();
+        try
+        {
+            _sonuc = await Odeme.HazirlaAsync(_avansNo, _odemeTarihi.Value);
+            Snackbar.Add(
+                $"{_sonuc.AvansAdi}: Ziraat {_sonuc.ZiraatAdet}, Garanti {_sonuc.GarantiAdet}, İş {_sonuc.IsAdet} kişi · Diğer {_sonuc.DigerBankaUyarilari.Count}, IBAN eksik {_sonuc.IbanEksikUyarilari.Count}",
+                Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Hata: {ex.Message}", Severity.Error);
+            _sonuc = null;
+        }
+        finally
+        {
+            _calisiyor = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task DosyaIndir(string? path)
+    {
+        if (string.IsNullOrEmpty(path) || !System.IO.File.Exists(path))
+        {
+            Snackbar.Add("Dosya bulunamadı.", Severity.Error);
+            return;
+        }
+        var bytes = await System.IO.File.ReadAllBytesAsync(path);
+        var name = System.IO.Path.GetFileName(path);
+        var mime = name.EndsWith(".xlsm")
+            ? "application/vnd.ms-excel.sheet.macroEnabled.12"
+            : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        await JS.InvokeVoidAsync("downloadFile", name, Convert.ToBase64String(bytes), mime);
+    }
+
+    private async Task UyariIndir(List<OdemeUyariSatiri> liste, string baslik)
+    {
+        var bytes = Odeme.UyariListesiExcel(liste, baslik);
+        var name = $"{baslik}_Avans{_avansNo}_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx";
+        await JS.InvokeVoidAsync("downloadFile", name, Convert.ToBase64String(bytes),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private async Task ExcelTransfer()
+    {
+        if (_sonuc == null) return;
+        try
+        {
+            var bytes = Odeme.BankaBolgeOzetExcel(_sonuc);
+            var name = $"BankaBolge_Avans{_sonuc.AvansNo}_{DateTime.Now:yyyyMMdd_HHmm}.xlsx";
+            await JS.InvokeVoidAsync("downloadFile", name, Convert.ToBase64String(bytes),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            Snackbar.Add("Excel indirildi.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Excel hatası: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task MailIcinKopyala()
+    {
+        if (_sonuc == null) return;
+        var html = RaporHtmlOlustur(_sonuc);
+        var text = RaporDuzMetin(_sonuc);
+        var ok = await JS.InvokeAsync<bool>("copyHtmlToClipboard", html, text);
+        Snackbar.Add(ok ? "Tablo panoya kopyalandı — maile yapıştırabilirsiniz." : "Kopyalama başarısız oldu.",
+            ok ? Severity.Success : Severity.Error);
+    }
+
+    private static string RaporHtmlOlustur(OdemeHazirlamaSonuc s)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append("<table style='border-collapse:collapse;font-family:Segoe UI,Arial,sans-serif;font-size:13px;border:1px solid #1565C0;width:560px;'>");
+        // Başlık
+        sb.Append("<tr><td colspan='2' style='background:#1565C0;color:white;font-weight:700;padding:10px 14px;font-size:15px;'>BANKAYA GÖRE BÖLGE ÖDEME RAPORU</td></tr>");
+        sb.Append($"<tr><td colspan='2' style='background:#E3F2FD;padding:6px 14px;text-align:center;'>Rapor Tarihi: {s.RaporZamani:dd.MM.yyyy HH:mm}</td></tr>");
+        sb.Append("<tr style='background:#BBDEFB;'><th style='text-align:left;padding:8px 14px;border-bottom:1px solid #90CAF9;'>BANKA</th><th style='text-align:right;padding:8px 14px;border-bottom:1px solid #90CAF9;'>ÖDEME TUTARI</th></tr>");
+        foreach (var b in s.BankaBolgeOzeti)
+        {
+            sb.Append($"<tr><td colspan='2' style='background:#E3F2FD;color:#0D47A1;font-weight:700;padding:8px 14px;border-top:1px solid #90CAF9;'>{System.Net.WebUtility.HtmlEncode(b.Ad)}</td></tr>");
+            foreach (var bk in b.Bolgeler)
+            {
+                sb.Append($"<tr><td style='padding:5px 24px;border-bottom:1px solid #E3F2FD;'>{System.Net.WebUtility.HtmlEncode(bk.Bolge)}</td><td style='padding:5px 14px;text-align:right;border-bottom:1px solid #E3F2FD;font-family:Consolas,monospace;'>{bk.Tutar:N2} TL</td></tr>");
+            }
+            sb.Append($"<tr style='background:#1565C0;color:white;font-weight:700;'><td style='padding:8px 14px;'>{System.Net.WebUtility.HtmlEncode(b.Ad)} TOPLAM</td><td style='padding:8px 14px;text-align:right;font-family:Consolas,monospace;'>{b.Toplam:N2} TL</td></tr>");
+        }
+        sb.Append($"<tr style='background:#0D47A1;color:white;font-weight:800;font-size:14px;'><td style='padding:10px 14px;'>GENEL TOPLAM</td><td style='padding:10px 14px;text-align:right;font-family:Consolas,monospace;'>{s.GenelToplam:N2} TL</td></tr>");
+        sb.Append("</table>");
+        return sb.ToString();
+    }
+
+    private static string RaporDuzMetin(OdemeHazirlamaSonuc s)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("BANKAYA GÖRE BÖLGE ÖDEME RAPORU");
+        sb.AppendLine($"Rapor Tarihi: {s.RaporZamani:dd.MM.yyyy HH:mm}");
+        sb.AppendLine();
+        foreach (var b in s.BankaBolgeOzeti)
+        {
+            sb.AppendLine(b.Ad);
+            foreach (var bk in b.Bolgeler)
+                sb.AppendLine($"  {bk.Bolge,-20} {bk.Tutar,18:N2} TL");
+            sb.AppendLine($"{b.Ad} TOPLAM: {b.Toplam:N2} TL");
+            sb.AppendLine();
+        }
+        sb.AppendLine($"GENEL TOPLAM: {s.GenelToplam:N2} TL");
+        return sb.ToString();
+    }
+}

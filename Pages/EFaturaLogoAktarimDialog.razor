@@ -1,0 +1,560 @@
+@using RaporlamaPortali.Services.Logo
+@using RaporlamaPortali.Models
+@inject LogoAktarimService AktarimSvc
+@inject LogoOrgLookupService OrgSvc
+@inject LogoMasterKartLookupService KartSvc
+@inject LogoBirimSetiLookupService BirimSetiSvc
+@inject LogoUnityComService ComSvc
+@inject ISnackbar Snackbar
+
+<MudDialog Style="min-width:1400px;">
+    <TitleContent>
+        <MudIcon Icon="@Icons.Material.Filled.SyncAlt" Class="mr-2" Color="Color.Primary" />
+        Logo'ya Aktar — @(_stateler?.Count ?? 0) Fatura
+    </TitleContent>
+    <DialogContent>
+        @if (_yukleniyor)
+        {
+            <div class="d-flex justify-center pa-6">
+                <MudProgressCircular Indeterminate="true" Size="Size.Large" />
+                <span class="ml-3">Faturalar yükleniyor...</span>
+            </div>
+        }
+        else if (_stateler == null || _stateler.Count == 0)
+        {
+            <MudAlert Severity="Severity.Warning">Aktarılacak fatura yok.</MudAlert>
+        }
+        else
+        {
+            <MudGrid Spacing="2" Style="height:78vh;">
+                @* SOL: Fatura listesi *@
+                <MudItem xs="3" Style="height:100%;">
+                    <MudPaper Elevation="2" Class="pa-1" Style="height:100%; overflow-y:auto;">
+                        @foreach (var s in _stateler)
+                        {
+                            var aktif       = ReferenceEquals(s, _secili);
+                            var renkBorder  = s.GonderilebilirMi ? "#2e7d32" : "#d32f2f";
+                            var bg          = aktif ? "background:#e3f2fd;" : "";
+                            var stil        = $"border-left:4px solid {renkBorder}; cursor:pointer; padding:6px 8px; margin-bottom:2px; {bg}";
+                            var ak          = _sonuclar?.Faturalar.FirstOrDefault(f => f.EFaturaId == s.EFaturaId);
+                            <div @onclick="@(async () => await SelectChanged(s))" style="@stil">
+                                <div style="font-weight:600; font-size:0.85rem;">@s.Detay.FaturaNo</div>
+                                <div style="font-size:0.72rem; opacity:.8;">@s.Detay.SaticiUnvan</div>
+                                <div style="font-size:0.7rem; opacity:.65;">
+                                    @s.Detay.Tarih?.ToString("dd.MM.yyyy") · @(s.Type == 4 ? "Hizmet" : "Mal")
+                                    @if (ak != null && ak.Basarili)
+                                    {
+                                        <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+                                    }
+                                    else if (ak != null && !ak.Basarili)
+                                    {
+                                        <MudIcon Icon="@Icons.Material.Filled.Error" Color="Color.Error" Size="Size.Small" Title="@ak.Hata" />
+                                    }
+                                    else if (!s.GonderilebilirMi)
+                                    {
+                                        <MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Warning" Size="Size.Small" />
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </MudPaper>
+                </MudItem>
+
+                @* SAĞ: Seçili faturanın detayları *@
+                <MudItem xs="9" Style="height:100%; overflow-y:auto;">
+                    @if (_secili == null)
+                    {
+                        <MudAlert Severity="Severity.Info">Soldan bir fatura seçin.</MudAlert>
+                    }
+                    else
+                    {
+                        @* Hata/uyarı kutusu *@
+                        @if (_secili.Uyarilar.Count > 0)
+                        {
+                            <MudAlert Severity="Severity.Error" Class="mb-2">
+                                <b>Eksik bilgi:</b>
+                                <ul class="mb-0" style="padding-left:20px">
+                                    @foreach (var u in _secili.Uyarilar) { <li>@u</li> }
+                                </ul>
+                            </MudAlert>
+                        }
+
+                        @* Mükerrer kontrol uyarısı (üstte, çok belirgin) *@
+                        @if (_secili.MevcutKontrol.Durum == LogoCariLookupService.FaturaMevcutDurumu.AyniVknMevcut)
+                        {
+                            <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="mb-2" Icon="@Icons.Material.Filled.Block">
+                                <b>⛔ MÜKERRER FATURA — AKTARIM ENGELLENDİ</b><br />
+                                Bu fatura (<b>@_secili.Detay.FaturaNo</b>) zaten Logo'da
+                                <b>@_secili.MevcutKontrol.FicheNo</b> numarasıyla,
+                                <b>@_secili.MevcutKontrol.Tarih?.ToString("dd.MM.yyyy")</b> tarihinde,
+                                <b>@_secili.MevcutKontrol.CariKod</b> (@_secili.MevcutKontrol.CariUnvan)
+                                için <b>@_secili.MevcutKontrol.Tutar.ToString("N2")</b> tutarla işlenmiş.
+                                Tekrar aktarmak fazla ödeme yaratır. Logo'dan kontrol edip silinmedikçe aktarılamaz.
+                            </MudAlert>
+                        }
+                        else if (_secili.MevcutKontrol.Durum == LogoCariLookupService.FaturaMevcutDurumu.BaskaVknMevcut)
+                        {
+                            <MudAlert Severity="Severity.Warning" Variant="Variant.Filled" Class="mb-2" Icon="@Icons.Material.Filled.Warning">
+                                <b>⚠️ Aynı fatura numarası başka cari için kayıtlı</b><br />
+                                <b>@_secili.MevcutKontrol.CariKod</b> (@_secili.MevcutKontrol.CariUnvan)
+                                için Logo'da <b>@_secili.MevcutKontrol.FicheNo</b>
+                                (@_secili.MevcutKontrol.Tarih?.ToString("dd.MM.yyyy")) olarak işlenmiş.
+                                Duplicate key hatasından kaçınmak için fatura no <b>'@_secili.EtkinFaturaNo'</b> olarak güncellendi.
+                            </MudAlert>
+                        }
+
+                        @* Header bilgileri *@
+                        <MudPaper Elevation="1" Class="pa-3 mb-2">
+                            <MudGrid Spacing="2">
+                                <MudItem xs="12" md="6">
+                                    <MudText Typo="Typo.body2"><b>Satıcı:</b> @_secili.Detay.SaticiUnvan (VKN: @_secili.Detay.SaticiVkn)</MudText>
+                                    <MudText Typo="Typo.body2"><b>Tarih:</b> @_secili.Detay.Tarih?.ToString("dd.MM.yyyy")</MudText>
+                                    <MudText Typo="Typo.body2">
+                                        <b>Tip:</b> @(_secili.Type == 4 ? "Alınan Hizmet" : "Satın Alma") ·
+                                        <b>Tutar:</b> @_secili.Detay.PayableAmount.ToString("N2") @_secili.Detay.Doviz
+                                    </MudText>
+                                    <div class="d-flex align-center gap-1 mt-1">
+                                        <MudTextField T="string"
+                                                      Value="@_secili.EtkinFaturaNo"
+                                                      ValueChanged="@(v => FaturaNoDuzenle(v))"
+                                                      Label="Logo'ya Yazılacak Fatura No (FICHENO)"
+                                                      Variant="Variant.Outlined" Margin="Margin.Dense"
+                                                      HelperText="@(_secili.Detay.FaturaNo == _secili.EtkinFaturaNo ? "" : $"Orijinal: {_secili.Detay.FaturaNo}")"
+                                                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Tag" />
+                                        <MudIconButton Icon="@Icons.Material.Filled.AddCircleOutline"
+                                                       Size="Size.Small" Color="Color.Warning"
+                                                       Title="K-prefix uygula (2026'dan sonraki ilk karakter K olur)"
+                                                       OnClick="@(() => FaturaNoDuzenle(FaturaNoYardimcisi.KEkle(_secili.EtkinFaturaNo)))" />
+                                        <MudIconButton Icon="@Icons.Material.Filled.RestartAlt"
+                                                       Size="Size.Small" Color="Color.Default"
+                                                       Title="Orijinal fatura no'ya dön"
+                                                       OnClick="@(() => FaturaNoDuzenle(_secili.Detay.FaturaNo))" />
+                                    </div>
+                                </MudItem>
+                                <MudItem xs="12" md="6">
+                                    @if (_secili.CariAdaylari.Count == 0)
+                                    {
+                                        <MudAlert Severity="Severity.Error" Dense="true">Cari bulunamadı.</MudAlert>
+                                    }
+                                    else if (_secili.CariAdaylari.Count == 1)
+                                    {
+                                        <MudText Typo="Typo.body2"><b>Cari:</b> @_secili.SeciliCari?.Kod — @_secili.SeciliCari?.Unvan</MudText>
+                                        <MudText Typo="Typo.body2">
+                                            <b>GL_CODE:</b>
+                                            @if (_secili.SeciliCari?.GlKodVar == true)
+                                            { <span style="color:#2e7d32">@_secili.SeciliCari.GlKod</span> }
+                                            else
+                                            { <span style="color:#d32f2f">YOK (cari kartına eklenmesi gerek)</span> }
+                                        </MudText>
+                                        @if (_bakiyeYukleniyor)
+                                        {
+                                            <MudText Typo="Typo.body2"><b>Bakiye:</b> <i>yükleniyor…</i></MudText>
+                                        }
+                                        else if (_seciliBakiye != null)
+                                        {
+                                            var renk = _seciliBakiye.Bakiye >= 0 ? "#d32f2f" : "#2e7d32";
+                                            <MudText Typo="Typo.body2">
+                                                <b>Bakiye:</b>
+                                                <span style="color:@renk; font-weight:600;">
+                                                    @_seciliBakiye.BakiyeMutlak.ToString("N2") TL @_seciliBakiye.BakiyeYon
+                                                </span>
+                                                <span style="opacity:.6; font-size:.85em;">
+                                                    (B: @_seciliBakiye.ToplamBorc.ToString("N2") / A: @_seciliBakiye.ToplamAlacak.ToString("N2"))
+                                                </span>
+                                            </MudText>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <MudSelect T="LogoCariLookupService.CariAdayi"
+                                                   Label="Cari Seçimi"
+                                                   Value="_secili.SeciliCari"
+                                                   ValueChanged="@(v => CariSec(v))"
+                                                   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                                            @foreach (var c in _secili.CariAdaylari)
+                                            {
+                                                <MudSelectItem T="LogoCariLookupService.CariAdayi" Value="c">
+                                                    @c.Kod — @c.Unvan @(c.GlKodVar ? "✓" : "(GL_CODE yok!)")
+                                                </MudSelectItem>
+                                            }
+                                        </MudSelect>
+                                    }
+                                </MudItem>
+                            </MudGrid>
+                        </MudPaper>
+
+                        @* Fabrika / Ambar / Ödeme *@
+                        <MudPaper Elevation="1" Class="pa-3 mb-2">
+                            <MudGrid Spacing="2">
+                                <MudItem xs="6" md="3">
+                                    <MudSelect T="string" Label="Fabrika" Value="@_secili.Fabrika.ToString()"
+                                               ValueChanged="@(v => { if (int.TryParse(v, out var n)) _secili.Fabrika = n; })"
+                                               Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                                        @if (_fabrikalar != null)
+                                        {
+                                            @foreach (var f in _fabrikalar)
+                                            { <MudSelectItem T="string" Value="@f.Kod">@f.Etiket</MudSelectItem> }
+                                        }
+                                    </MudSelect>
+                                </MudItem>
+                                <MudItem xs="6" md="3">
+                                    <MudSelect T="string" Label="Ambar" Value="@_secili.Ambar.ToString()"
+                                               ValueChanged="@(v => { if (int.TryParse(v, out var n)) _secili.Ambar = n; })"
+                                               Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                                        @if (_ambarlar != null)
+                                        {
+                                            @foreach (var a in _ambarlar)
+                                            { <MudSelectItem T="string" Value="@a.Kod">@a.Etiket</MudSelectItem> }
+                                        }
+                                    </MudSelect>
+                                </MudItem>
+                                <MudItem xs="6" md="3">
+                                    <MudTextField @bind-Value="_secili.OdemeKodu" Label="Ödeme Kodu"
+                                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+                                </MudItem>
+                                <MudItem xs="6" md="3">
+                                    <MudTextField @bind-Value="_secili.OzelKod" Label="Ticari İşlem Grubu"
+                                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+                                </MudItem>
+                            </MudGrid>
+                        </MudPaper>
+
+                        @* Kalemler *@
+                        <MudPaper Elevation="1" Class="pa-2">
+                            <MudText Typo="Typo.subtitle2" Class="mb-1">Kalemler (@_secili.Kalemler.Count)</MudText>
+                            <MudTable T="LogoAktarimService.AktarimKalemState" Items="_secili.Kalemler" Dense="true" Hover="true" Bordered="true">
+                                <HeaderContent>
+                                    <MudTh Style="width:60px">#</MudTh>
+                                    <MudTh>UBL Açıklama</MudTh>
+                                    <MudTh Style="width:250px">Master Kart *</MudTh>
+                                    <MudTh Style="width:130px">Birim</MudTh>
+                                    @if (_secili.Type == 4)
+                                    {
+                                        <MudTh Style="width:120px">Masraf Merkezi</MudTh>
+                                    }
+                                    <MudTh Style="width:80px;text-align:right">Miktar</MudTh>
+                                    <MudTh Style="width:80px;text-align:right">B.Fiyat</MudTh>
+                                    <MudTh Style="width:60px;text-align:right">KDV %</MudTh>
+                                    <MudTh Style="width:100px">KDV Hesabı</MudTh>
+                                    <MudTh Style="width:110px">Tevkifat</MudTh>
+                                </HeaderContent>
+                                <RowTemplate>
+                                    <MudTd>@(_secili.Kalemler.IndexOf(context) + 1)</MudTd>
+                                    <MudTd>
+                                        <div style="font-size:0.78rem; line-height:1.15;">@context.UbliAciklama</div>
+                                        @if (!string.IsNullOrWhiteSpace(context.UbliIstisnaKodu))
+                                        { <MudChip T="string" Size="Size.Small" Color="Color.Warning">İstisna: @context.UbliIstisnaKodu</MudChip> }
+                                    </MudTd>
+                                    <MudTd>
+                                        <MudAutocomplete T="LogoMasterKartLookupService.MasterKart"
+                                                         Value="@(new LogoMasterKartLookupService.MasterKart { Kod = context.MasterCode })"
+                                                         SearchFunc="@(async s => await KartAraAsync(s))"
+                                                         ToStringFunc="@(k => k?.Kod ?? "")"
+                                                         ValueChanged="@(async k => await KartSecAsync(context, k))"
+                                                         ResetValueOnEmptyText="false" CoerceText="false"
+                                                         Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                                                         Placeholder="Kart ara...">
+                                            <ItemTemplate Context="k">
+                                                <div style="font-size:0.78rem;">
+                                                    <b>@k.Kod</b><br/>
+                                                    <span style="opacity:.7;">@k.Aciklama</span>
+                                                </div>
+                                            </ItemTemplate>
+                                        </MudAutocomplete>
+                                    </MudTd>
+                                    <MudTd>
+                                        @if (context.BirimSecenekler.Count > 0)
+                                        {
+                                            <MudSelect T="string" @bind-Value="context.Birim"
+                                                       Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                                                       Title="@(string.IsNullOrEmpty(context.UbliBirim) ? "" : $"UBL: {context.UbliBirim}")">
+                                                @foreach (var b in context.BirimSecenekler)
+                                                {
+                                                    <MudSelectItem T="string" Value="@b.Code">@b.Etiket</MudSelectItem>
+                                                }
+                                            </MudSelect>
+                                        }
+                                        else
+                                        {
+                                            <span style="font-size:0.78rem; opacity:.6;" title="Master kart seçildiğinde Logo birim seti yüklenir">
+                                                @(string.IsNullOrEmpty(context.UbliBirim) ? "—" : context.UbliBirim)
+                                            </span>
+                                        }
+                                    </MudTd>
+                                    @if (_secili.Type == 4)
+                                    {
+                                        <MudTd>
+                                            <MudSelect T="string" @bind-Value="context.MasrafMerkezi"
+                                                       Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                                                @if (_masrafMerkezleri != null)
+                                                {
+                                                    @foreach (var mm in _masrafMerkezleri)
+                                                    { <MudSelectItem T="string" Value="@mm.Kod">@mm.Kod</MudSelectItem> }
+                                                }
+                                            </MudSelect>
+                                        </MudTd>
+                                    }
+                                    <MudTd Style="text-align:right">@context.Miktar.ToString("N2")</MudTd>
+                                    <MudTd Style="text-align:right">@context.BirimFiyat.ToString("N4")</MudTd>
+                                    <MudTd Style="text-align:right">%@context.KdvOran</MudTd>
+                                    <MudTd>
+                                        @if (string.IsNullOrWhiteSpace(context.KdvHesabi))
+                                        { <span style="color:#d32f2f">YOK</span> }
+                                        else
+                                        { <span style="font-family:Consolas">@context.KdvHesabi</span> }
+                                    </MudTd>
+                                    <MudTd>
+                                        @if (context.Tevkifatli)
+                                        {
+                                            <div style="font-size:0.72rem; line-height:1.15;">
+                                                @context.TevkifatPay/@context.TevkifatPayda<br/>
+                                                <span style="opacity:.7">@context.TevkifatTutar.ToString("N2")</span><br/>
+                                                <span style="font-family:Consolas">@context.TevkifatKodu</span>
+                                            </div>
+                                        }
+                                        else { <span style="opacity:.4">—</span> }
+                                    </MudTd>
+                                </RowTemplate>
+                            </MudTable>
+                        </MudPaper>
+
+                        @* Aktarım sonucu (varsa) *@
+                        @if (_sonuclar?.Faturalar.FirstOrDefault(f => f.EFaturaId == _secili.EFaturaId) is LogoFaturaAktarimSatir sonuc)
+                        {
+                            <MudAlert Severity="@(sonuc.Basarili ? Severity.Success : Severity.Error)" Class="mt-2">
+                                @if (sonuc.Basarili)
+                                {
+                                    <span>✓ Logo'ya aktarıldı — NUMBER: <b>@sonuc.LogoNo</b> (REF: @sonuc.LogoRef)</span>
+                                }
+                                else
+                                {
+                                    <div><b>Hata:</b> @sonuc.Hata</div>
+                                    @if (sonuc.ValidateErrors.Count > 0)
+                                    {
+                                        <ul class="mb-0" style="padding-left:20px; font-size:0.78rem;">
+                                            @foreach (var ve in sonuc.ValidateErrors)
+                                            {
+                                                <li>@ve</li>
+                                            }
+                                        </ul>
+                                    }
+                                }
+                            </MudAlert>
+                        }
+                    }
+                </MudItem>
+            </MudGrid>
+        }
+    </DialogContent>
+    <DialogActions>
+        @if (_sonuclar != null)
+        {
+            <MudChip T="string" Color="Color.Success" Variant="Variant.Filled">
+                ✓ @_sonuclar.BasariliSayisi başarılı
+            </MudChip>
+            @if (_sonuclar.HataliSayisi > 0)
+            {
+                <MudChip T="string" Color="Color.Error" Variant="Variant.Filled">
+                    ✕ @_sonuclar.HataliSayisi hatalı
+                </MudChip>
+            }
+            <MudSpacer />
+            <MudButton OnClick="Kapat">Kapat</MudButton>
+        }
+        else
+        {
+            <MudButton OnClick="Iptal">İptal</MudButton>
+            <MudSpacer />
+            <MudButton Color="Color.Success" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.CloudUpload"
+                       OnClick="Aktar"
+                       Disabled="@(_aktariliyor || _stateler == null || !_stateler.Any(s => s.GonderilebilirMi))">
+                @(_aktariliyor ? "Aktarılıyor..." : $"Logo'ya Aktar ({_stateler?.Count(s => s.GonderilebilirMi) ?? 0})")
+            </MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudBlazor.MudDialogInstance Dialog { get; set; } = null!;
+
+    [Parameter] public IReadOnlyList<(long Id, int Type)> Secimler { get; set; } = new List<(long, int)>();
+    [Parameter] public LogoUnityCredentials Cred { get; set; } = new();
+
+    private List<LogoAktarimService.AktarimSatirState>? _stateler;
+    private LogoAktarimService.AktarimSatirState? _secili;
+    private bool _yukleniyor;
+    private bool _aktariliyor;
+    private LogoAktarimSonuc? _sonuclar;
+
+    // Seçili fatura için cari bakiye (cache: cariKod -> Bakiye)
+    private LogoCariLookupService.CariBakiye? _seciliBakiye;
+    private bool _bakiyeYukleniyor;
+    private readonly Dictionary<string, LogoCariLookupService.CariBakiye> _bakiyeCache = new();
+    [Inject] LogoCariLookupService CariSvc { get; set; } = null!;
+
+    private List<LogoOrgLookupService.KodAd>? _fabrikalar;
+    private List<LogoOrgLookupService.KodAd>? _ambarlar;
+    private List<LogoOrgLookupService.KodAd>? _masrafMerkezleri;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _yukleniyor = true;
+        StateHasChanged();
+
+        try
+        {
+            _fabrikalar       = await OrgSvc.FabrikalarAsync();
+            _ambarlar         = await OrgSvc.AmbarlarAsync();
+            _masrafMerkezleri = await OrgSvc.MasrafMerkezleriAsync();
+
+            _stateler = await AktarimSvc.HazirlaAsync(Secimler);
+            _secili   = _stateler.FirstOrDefault();
+            if (_secili != null)
+                await BakiyeYukleAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Yükleme hatası: {ex.Message}", MudBlazor.Severity.Error);
+        }
+        finally
+        {
+            _yukleniyor = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task<IEnumerable<LogoMasterKartLookupService.MasterKart>> KartAraAsync(string? arama)
+    {
+        if (_secili == null) return Array.Empty<LogoMasterKartLookupService.MasterKart>();
+        return _secili.Type == 4
+            ? await KartSvc.HizmetAraAsync(arama)
+            : await KartSvc.MalzemeAraAsync(arama);
+    }
+
+    // Master kart seçildiğinde: kart kodunu kaydet + Logo'daki birim setini çek + UBL'e en yakın
+    // yerel birimi default seç.
+    private async Task KartSecAsync(LogoAktarimService.AktarimKalemState kalem,
+                                    LogoMasterKartLookupService.MasterKart? k)
+    {
+        if (k == null || _secili == null) return;
+        kalem.MasterCode = k.Kod;
+        await BirimSetiYukleAsync(kalem);
+        StateHasChanged();
+    }
+
+    private async Task BirimSetiYukleAsync(LogoAktarimService.AktarimKalemState kalem)
+    {
+        if (_secili == null || string.IsNullOrWhiteSpace(kalem.MasterCode))
+        {
+            kalem.BirimSecenekler = new();
+            return;
+        }
+        var liste = await BirimSetiSvc.KartBirimleriAsync(kalem.MasterCode, _secili.Type == 4);
+        kalem.BirimSecenekler = liste;
+        if (liste.Count == 0) return;
+        var onerilen = BirimSetiSvc.OnerilenBirim(liste, kalem.UbliBirim);
+        if (onerilen != null) kalem.Birim = onerilen.Code;
+    }
+
+    private async Task SelectChanged(LogoAktarimService.AktarimSatirState? v)
+    {
+        _secili = v;
+        await BakiyeYukleAsync();
+        StateHasChanged();
+    }
+
+    private void FaturaNoDuzenle(string? yeniNo)
+    {
+        if (_secili == null) return;
+        var temiz = (yeniNo ?? "").Trim();
+        // Orijinal ile aynıysa override boş — Detay.FaturaNo kullanılır
+        _secili.FaturaNoOverride = string.Equals(temiz, _secili.Detay.FaturaNo, StringComparison.Ordinal)
+            ? ""
+            : temiz;
+        StateHasChanged();
+    }
+
+    private async Task BakiyeYukleAsync()
+    {
+        _seciliBakiye = null;
+        var kod = _secili?.SeciliCari?.Kod;
+        if (string.IsNullOrWhiteSpace(kod)) return;
+        if (_bakiyeCache.TryGetValue(kod, out var cached))
+        {
+            _seciliBakiye = cached;
+            return;
+        }
+        _bakiyeYukleniyor = true;
+        StateHasChanged();
+        try
+        {
+            var b = await CariSvc.BakiyeAsync(kod);
+            _bakiyeCache[kod] = b;
+            _seciliBakiye = b;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Bakiye sorgulama hatası: {ex.Message}", MudBlazor.Severity.Warning);
+        }
+        finally
+        {
+            _bakiyeYukleniyor = false;
+        }
+    }
+
+    private async Task CariSec(LogoCariLookupService.CariAdayi? v)
+    {
+        if (_secili == null || v == null) return;
+        _secili.SeciliCari = v;
+        // Cari seçimi sonrası uyarıları yeniden hesapla — basitçe ilgili uyarıları temizle
+        _secili.Uyarilar.RemoveAll(u =>
+            u.Contains("birden fazla cari") ||
+            u.Contains("Muhasebe Hesap Kodu (GL_CODE) tanımlı değil"));
+        if (!v.GlKodVar)
+            _secili.Uyarilar.Add($"Cari {v.Kod} için Muhasebe Hesap Kodu (GL_CODE) tanımlı değil.");
+        await BakiyeYukleAsync();
+        StateHasChanged();
+    }
+
+    private async Task Aktar()
+    {
+        if (_stateler == null) return;
+        var gonderilecek = _stateler.Where(s => s.GonderilebilirMi).ToList();
+        if (gonderilecek.Count == 0)
+        {
+            Snackbar.Add("Aktarılacak fatura yok — eksik bilgileri kontrol edin.", MudBlazor.Severity.Warning);
+            return;
+        }
+
+        _aktariliyor = true;
+        StateHasChanged();
+        try
+        {
+            _sonuclar = await AktarimSvc.AktarAsync(Cred, gonderilecek, ComSvc);
+            if (!_sonuclar.LoginBasarili)
+            {
+                Snackbar.Add($"Logo login başarısız: {_sonuclar.LoginHata}", MudBlazor.Severity.Error);
+            }
+            else
+            {
+                if (_sonuclar.HataliSayisi == 0)
+                    Snackbar.Add($"{_sonuclar.BasariliSayisi} fatura Logo'ya aktarıldı.", MudBlazor.Severity.Success);
+                else
+                    Snackbar.Add($"{_sonuclar.BasariliSayisi} başarılı, {_sonuclar.HataliSayisi} hatalı. Detayları soldan kontrol edin.", MudBlazor.Severity.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Aktarım hatası: {ex.Message}", MudBlazor.Severity.Error);
+        }
+        finally
+        {
+            _aktariliyor = false;
+            StateHasChanged();
+        }
+    }
+
+    private void Iptal() => Dialog.Cancel();
+    private void Kapat() => Dialog.Close(MudBlazor.DialogResult.Ok(_sonuclar));
+}

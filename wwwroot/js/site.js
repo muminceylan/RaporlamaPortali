@@ -88,3 +88,63 @@ async function copyToClipboard(text) {
         return false;
     }
 }
+
+/**
+ * HTML içeriği clipboard'a hem HTML hem düz metin olarak yazar.
+ * Outlook/Gmail/Word yapıştırırken tablo formatı korunur.
+ * Outlook için copy event + clipboardData yöntemi en uyumlu olanı, onu önce dener.
+ */
+async function copyHtmlToClipboard(html, plainText) {
+    plainText = plainText || html.replace(/<[^>]+>/g, '').trim();
+
+    // YÖNTEM 1: copy event + clipboardData.setData (Outlook ile en uyumlu)
+    try {
+        const onCopy = (e) => {
+            e.preventDefault();
+            e.clipboardData.setData('text/html', html);
+            e.clipboardData.setData('text/plain', plainText);
+        };
+        document.addEventListener('copy', onCopy);
+        const ok = document.execCommand('copy');
+        document.removeEventListener('copy', onCopy);
+        if (ok) return true;
+    } catch (e1) {
+        console.warn('Yöntem 1 (copy event) başarısız:', e1);
+    }
+
+    // YÖNTEM 2: contenteditable div + execCommand('copy')
+    try {
+        const div = document.createElement('div');
+        div.contentEditable = 'true';
+        div.style.position = 'fixed';
+        div.style.left = '-9999px';
+        div.style.top = '0';
+        div.innerHTML = html;
+        document.body.appendChild(div);
+        const range = document.createRange();
+        range.selectNodeContents(div);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        const ok = document.execCommand('copy');
+        sel.removeAllRanges();
+        document.body.removeChild(div);
+        if (ok) return true;
+    } catch (e2) {
+        console.warn('Yöntem 2 (contenteditable) başarısız:', e2);
+    }
+
+    // YÖNTEM 3: modern Clipboard API (Outlook eski sürümleri tanımayabilir)
+    try {
+        const htmlBlob = new Blob([html], { type: 'text/html' });
+        const textBlob = new Blob([plainText], { type: 'text/plain' });
+        await navigator.clipboard.write([
+            new ClipboardItem({ 'text/html': htmlBlob, 'text/plain': textBlob })
+        ]);
+        return true;
+    } catch (e3) {
+        console.error('Yöntem 3 (Clipboard API) başarısız:', e3);
+        return false;
+    }
+}
+window.copyHtmlToClipboard = copyHtmlToClipboard;

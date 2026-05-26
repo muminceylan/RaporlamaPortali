@@ -1,0 +1,142 @@
+@page "/cay-durum"
+@using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
+@inject LogoIslemleriService Logo
+@inject ExcelExportService ExcelExportService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Çay Durum Raporu</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.EmojiFoodBeverage" Class="mr-2" />
+    Çay Durum Raporu
+</MudText>
+
+<MudPaper Class="pa-3 mb-3">
+    <MudGrid>
+        <MudItem xs="12" md="6">
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Malzeme kodu <b>C.D.1.</b> veya <b>C.D.2.</b> ile başlayan kalemler · Stok ≥ 1 · Belirli ambarlar hariç
+            </MudText>
+        </MudItem>
+        <MudItem xs="12" md="6" Class="d-flex align-center justify-end gap-2">
+            <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.Refresh"
+                       OnClick="VeriYukle" Disabled="_yukleniyor">
+                @(_yukleniyor ? "Yükleniyor..." : "Yenile")
+            </MudButton>
+            <MudButton Color="Color.Success" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.FileDownload"
+                       OnClick="ExcelIndir" Disabled="FiltreliKayit.Count == 0">
+                Excel
+            </MudButton>
+        </MudItem>
+
+        <MudItem xs="12" md="4">
+            <MudTextField @bind-Value="_aramaKod" Label="Malzeme Kodu (içinde ara)"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Clearable="true"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          Immediate="true" DebounceInterval="300" />
+        </MudItem>
+        <MudItem xs="12" md="5">
+            <MudTextField @bind-Value="_aramaAd" Label="Malzeme Adı (içinde ara)"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Clearable="true"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          Immediate="true" DebounceInterval="300" />
+        </MudItem>
+        <MudItem xs="12" md="3" Class="d-flex align-center">
+            <MudText Typo="Typo.body2">
+                Toplam: <b>@FiltreliKayit.Count</b> / @_stoklar.Count kayıt · Stok: <b>@StokToplam.ToString("N2")</b>
+            </MudText>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudTable Items="FiltreliKayit" Dense="true" Hover="true" Bordered="true" Striped="true"
+          FixedHeader="true" FixedFooter="true" Height="calc(100vh - 320px)"
+          Breakpoint="Breakpoint.None"
+          RowsPerPage="100"
+          Class="mt-2">
+    <HeaderContent>
+        <MudTh><MudTableSortLabel SortBy="new Func<StokSatiri,object>(x => x.AmbarNo)">Ambar No</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortBy="new Func<StokSatiri,object>(x => x.Ambar)">Ambar</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortBy="new Func<StokSatiri,object>(x => x.MalzemeKodu)">Malzeme Kodu</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortBy="new Func<StokSatiri,object>(x => x.MalzemeAdi)">Malzeme Adı</MudTableSortLabel></MudTh>
+        <MudTh Style="text-align:right"><MudTableSortLabel SortBy="new Func<StokSatiri,object>(x => x.Stok)">Stok</MudTableSortLabel></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@context.AmbarNo</MudTd>
+        <MudTd>@context.Ambar</MudTd>
+        <MudTd>@context.MalzemeKodu</MudTd>
+        <MudTd>@context.MalzemeAdi</MudTd>
+        <MudTd Style="text-align:right">@context.Stok.ToString("N2")</MudTd>
+    </RowTemplate>
+    <FooterContent>
+        <MudTd colspan="4" Style="text-align:right;font-weight:bold;background:#EFEBE9">TOPLAM</MudTd>
+        <MudTd Style="text-align:right;font-weight:bold;background:#EFEBE9">@StokToplam.ToString("N2")</MudTd>
+    </FooterContent>
+    <PagerContent>
+        <MudTablePager PageSizeOptions="new int[] { 50, 100, 250, 500, 1000 }" />
+    </PagerContent>
+    <NoRecordsContent>
+        <MudText>Kayıt bulunamadı.</MudText>
+    </NoRecordsContent>
+</MudTable>
+
+@code {
+    private bool _yukleniyor = false;
+    private string _aramaKod = "";
+    private string _aramaAd = "";
+
+    private List<StokSatiri> _stoklar = new();
+
+    private List<StokSatiri> FiltreliKayit =>
+        _stoklar.Where(s =>
+            (string.IsNullOrWhiteSpace(_aramaKod) || (s.MalzemeKodu ?? "").Contains(_aramaKod, StringComparison.OrdinalIgnoreCase)) &&
+            (string.IsNullOrWhiteSpace(_aramaAd)  || (s.MalzemeAdi  ?? "").Contains(_aramaAd,  StringComparison.OrdinalIgnoreCase))
+        ).ToList();
+
+    private decimal StokToplam => FiltreliKayit.Sum(s => s.Stok);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await VeriYukle();
+    }
+
+    private async Task VeriYukle()
+    {
+        _yukleniyor = true;
+        try
+        {
+            _stoklar = await Logo.CayDurumuAsync();
+            Snackbar.Add($"{_stoklar.Count} kayıt yüklendi.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Hata: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _yukleniyor = false;
+        }
+    }
+
+    private async Task ExcelIndir()
+    {
+        try
+        {
+            var bytes = ExcelExportService.ExportCayDurumu(FiltreliKayit);
+            var fileName = $"CayDurumRaporu_{DateTime.Today:yyyyMMdd}.xlsx";
+            await JS.InvokeVoidAsync("downloadFile", fileName, Convert.ToBase64String(bytes),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            Snackbar.Add("Excel dosyası indirildi.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Excel hatası: {ex.Message}", Severity.Error);
+        }
+    }
+}

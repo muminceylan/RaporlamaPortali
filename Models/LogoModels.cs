@@ -1,5 +1,145 @@
 namespace RaporlamaPortali.Models;
 
+public enum OdemeBankasi { Bilinmeyen = 0, Ziraat = 1, Garanti = 2, IsBankasi = 3 }
+
+public class OdemeAvansSatiri
+{
+    public string FormNo { get; set; } = "";
+    public string TcKimlikNo { get; set; } = "";
+    public string AdSoyad { get; set; } = "";
+    public string IBAN { get; set; } = "";
+    public string BankaAdi { get; set; } = "";
+    public OdemeBankasi Banka { get; set; }
+    public decimal Tutar { get; set; }
+    public string KaynakBolge { get; set; } = "";
+}
+
+public class OdemeUyariSatiri
+{
+    public string FormNo { get; set; } = "";
+    public string TcKimlikNo { get; set; } = "";
+    public string AdSoyad { get; set; } = "";
+    public string IBAN { get; set; } = "";
+    public string BankaAdi { get; set; } = "";
+    public decimal Tutar { get; set; }
+    public string KaynakBolge { get; set; } = "";
+    public string Sebep { get; set; } = "";
+}
+
+public class BankaBolgeKayit
+{
+    public string Bolge { get; set; } = "";
+    public int Adet { get; set; }
+    public decimal Tutar { get; set; }
+}
+
+public class OdemeBankaOzeti
+{
+    public OdemeBankasi Banka { get; set; }
+    public string Ad { get; set; } = "";
+    public List<BankaBolgeKayit> Bolgeler { get; set; } = new();
+    public int Adet => Bolgeler.Sum(b => b.Adet);
+    public decimal Toplam => Bolgeler.Sum(b => b.Tutar);
+}
+
+public class OdemeHazirlamaSonuc
+{
+    public int AvansNo { get; set; }
+    public string AvansAdi { get; set; } = "";
+    public DateTime OdemeTarihi { get; set; }
+    public DateTime RaporZamani { get; set; } = DateTime.Now;
+    public string CiktiKlasor { get; set; } = "";
+    public string? ZiraatDosya { get; set; }
+    public string? GarantiDosya { get; set; }
+    public string? IsDosya { get; set; }
+    public List<string> Hatalar { get; set; } = new();
+    public int ZiraatAdet { get; set; }
+    public int GarantiAdet { get; set; }
+    public int IsAdet { get; set; }
+    public decimal ZiraatTutar { get; set; }
+    public decimal GarantiTutar { get; set; }
+    public decimal IsTutar { get; set; }
+    public List<OdemeBankaOzeti> BankaBolgeOzeti { get; set; } = new();
+    public decimal GenelToplam => BankaBolgeOzeti.Sum(b => b.Toplam);
+    public List<OdemeUyariSatiri> DigerBankaUyarilari { get; set; } = new();
+    public List<OdemeUyariSatiri> IbanEksikUyarilari { get; set; } = new();
+}
+
+public class AyniAvansSatiri
+{
+    public string  FormNo         { get; set; } = "";
+    public int     SiraNo         { get; set; }
+    public string  HesapNo        { get; set; } = "";
+    public string  TcKimlikNo     { get; set; } = "";
+    public string  AdSoyad        { get; set; } = "";
+    public string  EPostaAdresi   { get; set; } = "";
+    public string  GsmNo          { get; set; } = "";
+    public int     AvansNo        { get; set; }
+    public string  AvansAdi       { get; set; } = "";
+    public string  AvansStokKodu  { get; set; } = "";
+    public string  AvansBirimi    { get; set; } = "KG";
+    public string  KdvDahilHaric  { get; set; } = "DAHİL";
+    public decimal KdvOrani       { get; set; }
+    public decimal Miktar         { get; set; }
+    public decimal BirimFiyat     { get; set; }
+    public decimal Tutar          { get; set; }
+    public string  KaynakBolge    { get; set; } = "";
+    public string  ErpEvrakNo     { get; set; } = "";
+    public DateTime? FormTarihi   { get; set; }
+    public string  Kod_AmbarKodu      { get; set; } = "";
+    public string  Kod_FabrikaKodu    { get; set; } = "";
+    public string  Kod_IsyeriKodu     { get; set; } = "";
+    public string  Kod_BolumKodu      { get; set; } = "";
+    public string  Kod_TicaretGrubu   { get; set; } = "AFYON";
+
+    // UI state — bu satır seçili mi + kullanıcı ERP No
+    public bool    Secili        { get; set; }
+    public string  AtanmisErpNo  { get; set; } = "";  // user'ın atadığı (başlangıç+index)
+}
+
+public class KontrolDosyaSatiri
+{
+    public int SatirNo { get; set; }
+    public string IBAN { get; set; } = "";
+    public string TcKimlikNo { get; set; } = "";   // Iş bankası dosyasında yok
+    public string AdSoyad { get; set; } = "";
+    public decimal Tutar { get; set; }
+}
+
+public class KontrolUyumsuzluk
+{
+    public string Banka { get; set; } = "";
+    public string Kategori { get; set; } = "";   // SadeceDosyada / SadeceDbde / TutarFarkli / TckFarkli / YanlisBanka
+    public string IBAN { get; set; } = "";
+    public string TcKimlikNo { get; set; } = "";
+    public string AdSoyad { get; set; } = "";
+    public decimal DosyaTutar { get; set; }
+    public decimal DbTutar { get; set; }
+    public string DosyaTck { get; set; } = "";
+    public string DbTck { get; set; } = "";
+    public string Aciklama { get; set; } = "";
+}
+
+public class KontrolBankaSonuc
+{
+    public string Banka { get; set; } = "";
+    public int DosyaSatirSayisi { get; set; }
+    public int DbSatirSayisi { get; set; }
+    public int EslesenSayisi { get; set; }
+    public decimal DosyaToplam { get; set; }
+    public decimal DbToplam { get; set; }
+    public List<KontrolUyumsuzluk> Uyumsuzluklar { get; set; } = new();
+    public bool TamamUyumlu => Uyumsuzluklar.Count == 0 && DosyaSatirSayisi == DbSatirSayisi && DosyaToplam == DbToplam;
+}
+
+public class KontrolSonuc
+{
+    public int AvansNo { get; set; }
+    public string AvansAdi { get; set; } = "";
+    public List<KontrolBankaSonuc> Bankalar { get; set; } = new();
+    public List<string> Hatalar { get; set; } = new();
+}
+
 public class KasaHareketi
 {
     public int LogicalRef { get; set; }
@@ -52,6 +192,37 @@ public class StokSatiri
     public string MalzemeKodu { get; set; } = "";
     public string MalzemeAdi { get; set; } = "";
     public decimal Stok { get; set; }
+}
+
+public class GubreCiroMalzeme
+{
+    public string MalzemeKodu { get; set; } = "";
+    public string MalzemeAdi { get; set; } = "";
+    public decimal NetMiktar { get; set; }
+    public decimal NetCiro { get; set; }
+}
+
+public class GubreCiroMusteriAy
+{
+    public string MalzemeKodu { get; set; } = "";
+    public string MalzemeAdi { get; set; } = "";
+    public string MusteriKodu { get; set; } = "";
+    public string MusteriUnvan { get; set; } = "";
+    public string Donem { get; set; } = "";
+    public decimal NetMiktar { get; set; }
+    public decimal NetCiro { get; set; }
+}
+
+public class GubreAlimFaturaSatiri
+{
+    public string FaturaNo { get; set; } = "";
+    public DateTime Tarih { get; set; }
+    public string TedarikciKodu { get; set; } = "";
+    public string TedarikciUnvan { get; set; } = "";
+    public string MalzemeKodu { get; set; } = "";
+    public string MalzemeAdi { get; set; } = "";
+    public decimal Miktar { get; set; }
+    public decimal NetTutar { get; set; }
 }
 
 public class AmbarSecenek

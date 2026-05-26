@@ -1,0 +1,439 @@
+@page "/efatura-aktar"
+@using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
+@using RaporlamaPortali.Services.Logo
+@inject EFaturaService Svc
+@inject EFaturaAktarimGecmisiService GecmisSvc
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>e-Fatura Aktar</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-2 d-flex align-center">
+    <MudIcon Icon="@Icons.Material.Filled.CloudUpload" Class="mr-2" Color="Color.Primary" />
+    e-Fatura Aktar
+    <MudChip T="string" Size="Size.Small" Color="Color.Default" Class="ml-3"
+             Icon="@Icons.Material.Filled.Storage">eFaturaDogusCayDB</MudChip>
+    <MudChip T="string" Size="Size.Small" Color="Color.Success" Class="ml-2"
+             Icon="@Icons.Material.Filled.History">@_gecmisSayisi aktarılmış</MudChip>
+</MudText>
+
+@if (!Svc.BaglantiTanimliMi)
+{
+    <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="mb-4">
+        EFaturaDB connection string tanımlı değil.
+    </MudAlert>
+}
+
+<MudPaper Class="pa-3 mb-3" Elevation="3" Style="border-left:4px solid #1976d2;">
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="3">
+            <MudToggleGroup T="EFaturaYon" SelectionMode="SelectionMode.SingleSelection"
+                            @bind-Value="_filtre.Yon" Color="Color.Primary" CheckMark="true">
+                <MudToggleItem Value="EFaturaYon.Gelen">
+                    <MudIcon Icon="@Icons.Material.Filled.CallReceived" Class="mr-1" /> Gelen
+                </MudToggleItem>
+                <MudToggleItem Value="EFaturaYon.Giden">
+                    <MudIcon Icon="@Icons.Material.Filled.CallMade" Class="mr-1" /> Giden
+                </MudToggleItem>
+            </MudToggleGroup>
+        </MudItem>
+
+        <MudItem xs="6" md="2">
+            <MudDatePicker @bind-Date="_bas" Label="Başlangıç" DateFormat="dd.MM.yyyy"
+                           Variant="Variant.Outlined" Margin="Margin.Dense"
+                           PickerVariant="PickerVariant.Dialog" />
+        </MudItem>
+        <MudItem xs="6" md="2">
+            <MudDatePicker @bind-Date="_bit" Label="Bitiş" DateFormat="dd.MM.yyyy"
+                           Variant="Variant.Outlined" Margin="Margin.Dense"
+                           PickerVariant="PickerVariant.Dialog" />
+        </MudItem>
+
+        <MudItem xs="6" md="2">
+            <MudSelect T="string" Label="Fatura Tipi" @bind-Value="_filtre.Tip"
+                       Variant="Variant.Outlined" Margin="Margin.Dense"
+                       Clearable="true" Dense="true" AnchorOrigin="Origin.BottomCenter">
+                <MudSelectItem T="string" Value="@(null)">— Hepsi —</MudSelectItem>
+                @foreach (var t in _tipler)
+                {
+                    <MudSelectItem T="string" Value="@t">@t</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+
+        <MudItem xs="6" md="3" Class="d-flex align-center gap-2">
+            <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.Search"
+                       OnClick="Sorgula" Disabled="_yukleniyor" FullWidth="true">
+                @(_yukleniyor ? "Yükleniyor..." : "Sorgula")
+            </MudButton>
+            <MudIconButton Icon="@Icons.Material.Filled.RestartAlt" Title="Filtreleri temizle"
+                           Color="Color.Default" OnClick="FiltreSifirla" />
+        </MudItem>
+
+        <MudItem xs="12" md="4">
+            <MudTextField @bind-Value="_filtre.KarsiUnvan"
+                          Label="@(_filtre.Yon == EFaturaYon.Gelen ? "Gönderen Ünvan (LIKE)" : "Alıcı Ünvan (LIKE)")"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Business"
+                          Clearable="true" />
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudTextField @bind-Value="_filtre.KarsiVKN" Label="VKN / TCKN"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Clearable="true" />
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudTextField @bind-Value="_filtre.FaturaNo" Label="Fatura No (LIKE — tek)"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Clearable="true" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudTextField @bind-Value="_filtre.LogoCariKodu"
+                          Label="Logo Cari Kod (örn. 320.06)"
+                          HelperText="Bu kodla başlayan cariler"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.AccountTree"
+                          Clearable="true" />
+        </MudItem>
+        <MudItem xs="6" md="2">
+            <MudNumericField @bind-Value="_filtre.MaxKayit" Label="Max kayıt"
+                             Variant="Variant.Outlined" Margin="Margin.Dense"
+                             Min="50" Max="5000" Step="500" Immediate="true" />
+        </MudItem>
+
+        <MudItem xs="12">
+            <MudTextField @bind-Value="_filtre.FaturaNoListesiRaw"
+                          Label="Fatura Numaraları (toplu filtre)"
+                          HelperText="Birden fazla fatura numarası yapıştırın — yeni satır, virgül, noktalı virgül veya boşluk ile ayırın. Dolu ise sadece bu numaralardaki kayıtlar listelenir; boş ise tüm faturalar gelir."
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Lines="4" Clearable="true"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.ListAlt" />
+            @{
+                var _eFaturaListeSayisi = _filtre.FaturaNolariCoz().Length;
+            }
+            @if (_eFaturaListeSayisi > 0)
+            {
+                <MudText Typo="Typo.caption" Style="color:#1976d2; margin-top:4px; display:block;">
+                    <b>@_eFaturaListeSayisi</b> fatura numarası filtrede aktif.
+                </MudText>
+            }
+        </MudItem>
+
+        <MudItem xs="12" Class="d-flex align-center gap-3">
+            <MudCheckBox T="bool" @bind-Value="_aktarilmisiGoster"
+                         Color="Color.Info" Dense="true"
+                         Label="Daha önce aktarılmış faturaları da göster (gri, seçilemez)" />
+            <MudCheckBox T="bool" @bind-Value="_filtre.SistemYanitlariniGoster"
+                         Color="Color.Warning" Dense="true"
+                         Label="GİB sistem yanıtlarını da göster" />
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@if (_kayitlar.Count == 0 && !_yukleniyor)
+{
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3">
+        Aktarılmaya hazır fatura yok. Filtreleri ayarlayıp "Sorgula" tuşuna basın.
+    </MudAlert>
+}
+else
+{
+    <MudPaper Class="pa-2 mb-2 d-flex align-center" Elevation="0" Style="background:#e3f2fd;">
+        <MudText Typo="Typo.body2">
+            <b>@GosterilenSayi</b> kayıt
+            @if (_aktarilmisSayi > 0)
+            {
+                <span style="opacity:.7"> &nbsp;|&nbsp; <b>@_aktarilmisSayi</b> tanesi zaten aktarılmış</span>
+            }
+            &nbsp;|&nbsp; Tarih: <b>@(_bas?.ToString("dd.MM.yyyy"))</b> – <b>@(_bit?.ToString("dd.MM.yyyy"))</b>
+        </MudText>
+        <MudSpacer />
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.CloudUpload"
+                   OnClick="LogoyaAktar" Disabled="@(_aktarimSayisi == 0)">
+            Logo'ya Aktar (@_aktarimSayisi)
+        </MudButton>
+    </MudPaper>
+
+    <MudTable T="EFaturaListItem" Items="GosterilenKayitlar" Dense="true" Hover="true" Bordered="true" Striped="true"
+              FixedHeader="true" Height="calc(100vh - 360px)"
+              Breakpoint="Breakpoint.None" RowsPerPage="100">
+        <HeaderContent>
+            <MudTh Style="width:240px">Aktarım</MudTh>
+            <MudTh Style="width:160px">Önceki Aktarım</MudTh>
+            <MudTh Style="width:110px">Tarih</MudTh>
+            <MudTh Style="width:90px">Tip</MudTh>
+            <MudTh Style="width:160px">Fatura No</MudTh>
+            <MudTh Style="width:170px">Logo Cari</MudTh>
+            <MudTh>Karşı Taraf</MudTh>
+            <MudTh Style="width:105px;text-align:right">Matrah</MudTh>
+            <MudTh Style="width:85px;text-align:right">KDV</MudTh>
+            <MudTh Style="width:105px;text-align:right">Fatura Tutarı</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            @{
+                var aktarildi = _gecmisMap.TryGetValue(context.Id, out var prevAk);
+                var rowStyle = aktarildi ? "background:#f5f5f5; opacity:.75;" : "";
+            }
+            <MudTd Style="@($"white-space:nowrap; padding:2px 6px; {rowStyle}")">
+                @if (aktarildi)
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.Lock" Color="Color.Default" Size="Size.Small" Title="Tekrar aktarmak için 'İşaret Kaldır' butonuna basın" />
+                    <span class="ml-1" style="font-size:.78rem; color:#888;">Aktarılmış</span>
+                }
+                else
+                {
+                    <div class="d-flex align-center gap-1">
+                        <MudCheckBox T="bool"
+                                     Value="@AktarimSecili(context.Id)"
+                                     ValueChanged="@(v => AktarimToggle(context.Id, v))"
+                                     Color="Color.Primary" Dense="true" Size="Size.Small" />
+                        @if (AktarimSecili(context.Id))
+                        {
+                            var tip = AktarimTipi(context.Id);
+                            <MudButtonGroup OverrideStyles="false" Variant="Variant.Outlined" Size="Size.Small">
+                                <MudButton Size="Size.Small"
+                                           Variant="@(tip == "AlinanHizmet" ? Variant.Filled : Variant.Outlined)"
+                                           Color="@(tip == "AlinanHizmet" ? Color.Success : Color.Default)"
+                                           OnClick="@(() => AktarimTipiSec(context.Id, "AlinanHizmet"))"
+                                           Style="text-transform:none; padding:2px 6px; min-width:auto; font-size:0.72rem;">
+                                    Alınan Hizmet
+                                </MudButton>
+                                <MudButton Size="Size.Small"
+                                           Variant="@(tip == "SatinAlma" ? Variant.Filled : Variant.Outlined)"
+                                           Color="@(tip == "SatinAlma" ? Color.Info : Color.Default)"
+                                           OnClick="@(() => AktarimTipiSec(context.Id, "SatinAlma"))"
+                                           Style="text-transform:none; padding:2px 6px; min-width:auto; font-size:0.72rem;">
+                                    Satın Alma
+                                </MudButton>
+                            </MudButtonGroup>
+                        }
+                    </div>
+                }
+            </MudTd>
+            <MudTd Style="@($"font-size:.78rem; {rowStyle}")">
+                @if (aktarildi && prevAk != null)
+                {
+                    <div style="color:#2e7d32; font-weight:600;">
+                        ✓ @prevAk.AktarimTarihi.ToString("dd.MM.yyyy HH:mm")
+                    </div>
+                    <div style="opacity:.75; font-family:'Consolas',monospace; font-size:.72rem;">
+                        Logo: @prevAk.LogoNumber
+                    </div>
+                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Warning"
+                               StartIcon="@Icons.Material.Filled.RestartAlt"
+                               OnClick="@(() => IsaretiKaldirAsync(context.Id))"
+                               Style="text-transform:none; padding:0 4px; min-width:auto; font-size:.7rem; margin-top:2px;">
+                        İşaret Kaldır
+                    </MudButton>
+                }
+                else { <span style="color:#bbb">—</span> }
+            </MudTd>
+            <MudTd Style="@($"white-space:nowrap; {rowStyle}")">@context.Tarih.ToString("dd.MM.yyyy")</MudTd>
+            <MudTd Style="@rowStyle">
+                <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Filled">@context.Tip</MudChip>
+            </MudTd>
+            <MudTd Style="@($"font-family:'Consolas',monospace; font-size:.85em; {rowStyle}")">@context.FaturaNo</MudTd>
+            <MudTd Style="@rowStyle">
+                @if (!string.IsNullOrEmpty(context.LogoCariKod))
+                {
+                    <div style="font-family:'Consolas',monospace; font-weight:600; color:#7a5a00; font-size:.92em;">@context.LogoCariKod</div>
+                    <div style="color:#999; font-size:.78em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:160px;" title="@context.LogoCariUnvan">@context.LogoCariUnvan</div>
+                }
+                else { <span style="color:#bbb">—</span> }
+            </MudTd>
+            <MudTd Style="@($"white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:280px; {rowStyle}")" Title="@context.KarsiUnvan">@context.KarsiUnvan</MudTd>
+            <MudTd Style="@($"text-align:right; font-family:'Consolas',monospace; white-space:nowrap; {rowStyle}")">
+                @if (context.Matrah != 0)
+                {
+                    @context.Matrah.ToString("N2")
+                    @if (!string.IsNullOrEmpty(context.Doviz) && context.Doviz != "TRY")
+                    { <span style="color:#999; font-size:.8em;"> @context.Doviz</span> }
+                }
+                else { <span style="color:#bbb">—</span> }
+            </MudTd>
+            <MudTd Style="@($"text-align:right; font-family:'Consolas',monospace; {rowStyle}")">
+                @if (context.KdvTutar != 0)
+                { @context.KdvTutar.ToString("N2") }
+                else { <span style="color:#bbb">—</span> }
+            </MudTd>
+            <MudTd Style="@($"text-align:right; font-family:'Consolas',monospace; font-weight:600; color:#0d47a1; {rowStyle}")">
+                @if (context.ToplamTutar != 0)
+                { @context.ToplamTutar.ToString("N2") }
+                else { <span style="color:#bbb">—</span> }
+            </MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager PageSizeOptions="new int[] { 50, 100, 250, 500 }" />
+        </PagerContent>
+        <NoRecordsContent>
+            <MudText>Kayıt yok.</MudText>
+        </NoRecordsContent>
+    </MudTable>
+}
+
+@code {
+    private EFaturaFiltre _filtre = new() { Yon = EFaturaYon.Gelen };
+    private DateTime?     _bas    = DateTime.Today.AddDays(-30);
+    private DateTime?     _bit    = DateTime.Today;
+    private List<string>  _tipler = new();
+    private List<EFaturaListItem> _kayitlar = new();
+    private bool _yukleniyor = false;
+    private bool _aktarilmisiGoster = false;
+
+    private Dictionary<long, EFaturaAktarimGecmisiService.Kayit> _gecmisMap = new();
+    private int _gecmisSayisi => _gecmisMap.Count;
+    private int _aktarilmisSayi => _kayitlar.Count(k => _gecmisMap.ContainsKey(k.Id));
+
+    private IEnumerable<EFaturaListItem> GosterilenKayitlar =>
+        _aktarilmisiGoster
+            ? _kayitlar
+            : _kayitlar.Where(k => !_gecmisMap.ContainsKey(k.Id));
+    private int GosterilenSayi => GosterilenKayitlar.Count();
+
+    // Aktarım seçimleri (yalnız aktarılmamışlar)
+    private Dictionary<long, string?> _aktarimSecimleri = new();
+    private bool AktarimSecili(long id) => _aktarimSecimleri.ContainsKey(id);
+    private string? AktarimTipi(long id) => _aktarimSecimleri.TryGetValue(id, out var t) ? t : null;
+    private void AktarimToggle(long id, bool secili)
+    {
+        if (_gecmisMap.ContainsKey(id))
+        {
+            Snackbar.Add("Bu fatura zaten aktarılmış. Tekrar aktarmak için 'İşaret Kaldır' butonuna basın.", Severity.Warning);
+            return;
+        }
+        if (secili) _aktarimSecimleri[id] = null;
+        else        _aktarimSecimleri.Remove(id);
+    }
+    private void AktarimTipiSec(long id, string tip) => _aktarimSecimleri[id] = tip;
+    private int _aktarimSayisi => _aktarimSecimleri.Count(kv => !string.IsNullOrEmpty(kv.Value));
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Svc.BaglantiTanimliMi)
+        {
+            try { _tipler = await Svc.InvoiceTiplerAsync(); }
+            catch (Exception ex) { Snackbar.Add($"Bağlantı: {ex.Message}", Severity.Error); }
+        }
+    }
+
+    private async Task Sorgula()
+    {
+        if (!Svc.BaglantiTanimliMi) { Snackbar.Add("EFaturaDB tanımlı değil.", Severity.Error); return; }
+        if (_bas == null || _bit == null) { Snackbar.Add("Tarih aralığı seçin.", Severity.Warning); return; }
+        if (_bit < _bas) { Snackbar.Add("Bitiş başlangıçtan önce olamaz.", Severity.Warning); return; }
+
+        _yukleniyor = true;
+        try
+        {
+            DonemSiniri.Kirp(ref _bit);
+            _filtre.Baslangic = _bas.Value;
+            _filtre.Bitis     = _bit!.Value;
+            _kayitlar = await Svc.ListeleAsync(_filtre);
+            _aktarimSecimleri.Clear();
+
+            // Aktarım geçmişi cross-check
+            _gecmisMap = await GecmisSvc.ListeAlAsync(_kayitlar.Select(k => k.Id));
+
+            if (_kayitlar.Count == 0)
+                Snackbar.Add("Filtreye uyan kayıt yok.", Severity.Info);
+            else
+                Snackbar.Add($"{_kayitlar.Count} kayıt — {_aktarilmisSayi} tanesi aktarılmış.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add($"Sorgu hatası: {ex.Message}", Severity.Error); }
+        finally { _yukleniyor = false; }
+    }
+
+    private void FiltreSifirla()
+    {
+        _filtre = new EFaturaFiltre { Yon = _filtre.Yon };
+        _bas = DateTime.Today.AddDays(-30);
+        _bit = DateTime.Today;
+        _kayitlar.Clear();
+        _aktarimSecimleri.Clear();
+        _gecmisMap.Clear();
+    }
+
+    private async Task IsaretiKaldirAsync(long efaturaId)
+    {
+        var prev = _gecmisMap.TryGetValue(efaturaId, out var v) ? v : null;
+        var msg = prev != null
+            ? $"Bu fatura {prev.AktarimTarihi:dd.MM.yyyy HH:mm} tarihinde Logo'ya '{prev.LogoNumber}' numarayla aktarılmıştı. "
+              + "Tekrar aktarmaya hazırlamak için işareti kaldırmak istiyor musunuz?\n\n"
+              + "ÖNEMLİ: Logo'da hâlâ varsa önce orada silmelisiniz, yoksa tekrar aktarım çift kayıt oluşturur."
+            : "İşareti kaldırmak istiyor musunuz?";
+        var onay = await DialogService.ShowMessageBox(
+            new MessageBoxOptions
+            {
+                Title = "İşaret Kaldır",
+                Message = msg,
+                YesText = "Evet, Kaldır",
+                NoText = "Vazgeç",
+            });
+        if (onay != true) return;
+
+        try
+        {
+            await GecmisSvc.IsaretiKaldirAsync(efaturaId);
+            _gecmisMap.Remove(efaturaId);
+            Snackbar.Add("İşaret kaldırıldı. Fatura artık aktarıma açık.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Hata: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task LogoyaAktar()
+    {
+        var secimler = _aktarimSecimleri
+            .Where(kv => !string.IsNullOrEmpty(kv.Value) && !_gecmisMap.ContainsKey(kv.Key))
+            .Select(kv => (kv.Key, kv.Value == "AlinanHizmet" ? 4 : 1))
+            .ToList();
+
+        if (secimler.Count == 0)
+        {
+            Snackbar.Add("Hiç fatura seçilmedi.", Severity.Warning);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(SecretsService.LogoUnityKullanici) ||
+            string.IsNullOrWhiteSpace(SecretsService.LogoUnitySifre))
+        {
+            Snackbar.Add("Logo Unity kullanıcı bilgileri ayarlanmamış (Sırlar sayfası).", Severity.Error);
+            return;
+        }
+
+        var cred = new LogoUnityCredentials
+        {
+            Kullanici = SecretsService.LogoUnityKullanici,
+            Sifre     = SecretsService.LogoUnitySifre,
+            FirmaNo   = 211,
+        };
+
+        var parameters = new DialogParameters
+        {
+            ["Secimler"] = (IReadOnlyList<(long, int)>)secimler,
+            ["Cred"]     = cred,
+        };
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = false,
+            FullWidth        = true,
+            MaxWidth         = MaxWidth.ExtraExtraLarge,
+            CloseButton      = false,
+        };
+        var dlg = await DialogService.ShowAsync<EFaturaLogoAktarimDialog>("Logo'ya Aktar", parameters, options);
+        var sonuc = await dlg.Result;
+
+        // Aktarım sonrası geçmişi yeniden yükle — başarılı olanlar artık locked görünsün
+        if (sonuc != null && !sonuc.Canceled)
+        {
+            _gecmisMap = await GecmisSvc.ListeAlAsync(_kayitlar.Select(k => k.Id));
+            _aktarimSecimleri.Clear();
+            StateHasChanged();
+        }
+    }
+}

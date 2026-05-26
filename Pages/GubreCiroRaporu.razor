@@ -1,0 +1,208 @@
+@page "/gubre-ciro"
+@using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
+@inject LogoIslemleriService Logo
+@inject ExcelExportService ExcelExportService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Gübre Ciro Raporu</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.PriceChange" Class="mr-2" />
+    Gübre Ciro Raporu
+</MudText>
+
+<MudPaper Class="pa-3 mb-3">
+    <MudGrid AlignItems="Center">
+        <MudItem xs="12" md="3">
+            <MudDatePicker @bind-Date="_baslangic" Label="Başlangıç tarihi"
+                           Variant="Variant.Outlined" Margin="Margin.Dense"
+                           DateFormat="dd.MM.yyyy" />
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Malzeme kodu <b>A.G.</b> veya <b>S.707.03</b> ile başlayanlar · NET (iade düşülmüş) ·
+                Satış: TRCODE 8 + iade 3, Alış: TRCODE 1
+            </MudText>
+        </MudItem>
+        <MudItem xs="12" md="3" Class="d-flex justify-end gap-2">
+            <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.Refresh"
+                       OnClick="VeriYukle" Disabled="_yukleniyor">
+                @(_yukleniyor ? "Yükleniyor..." : "Yenile")
+            </MudButton>
+            <MudButton Color="Color.Success" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.FileDownload"
+                       OnClick="ExcelIndir"
+                       Disabled="_malzeme.Count == 0 && _musteriAy.Count == 0 && _alimlar.Count == 0">
+                Excel
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudTabs Elevation="2" Rounded="true" PanelClass="pa-3" Color="Color.Primary">
+    <MudTabPanel Text="@($"Malzeme Bazlı Ciro ({_malzeme.Count})")" Icon="@Icons.Material.Filled.Inventory2">
+        <MudText Typo="Typo.body2" Class="mb-2">
+            Net Miktar Toplam: <b>@_malzeme.Sum(x => x.NetMiktar).ToString("N2")</b> ·
+            Net Ciro Toplam: <b>@_malzeme.Sum(x => x.NetCiro).ToString("N2") TL</b>
+        </MudText>
+        <MudTable Items="_malzeme" Dense="true" Hover="true" Bordered="true" Striped="true"
+                  FixedHeader="true" Height="calc(100vh - 410px)" Breakpoint="Breakpoint.None"
+                  RowsPerPage="200">
+            <HeaderContent>
+                <MudTh><MudTableSortLabel SortBy="new Func<GubreCiroMalzeme,object>(x => x.MalzemeKodu)">Malzeme Kodu</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<GubreCiroMalzeme,object>(x => x.MalzemeAdi)">Malzeme Adı</MudTableSortLabel></MudTh>
+                <MudTh Style="text-align:right"><MudTableSortLabel SortBy="new Func<GubreCiroMalzeme,object>(x => x.NetMiktar)">Net Miktar</MudTableSortLabel></MudTh>
+                <MudTh Style="text-align:right"><MudTableSortLabel SortBy="new Func<GubreCiroMalzeme,object>(x => x.NetCiro)">Net Ciro (TL)</MudTableSortLabel></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.MalzemeKodu</MudTd>
+                <MudTd>@context.MalzemeAdi</MudTd>
+                <MudTd Style="text-align:right">@context.NetMiktar.ToString("N2")</MudTd>
+                <MudTd Style="text-align:right">@context.NetCiro.ToString("N2")</MudTd>
+            </RowTemplate>
+            <FooterContent>
+                <MudTd colspan="2" Style="text-align:right;font-weight:bold;background:#E8F5E9">TOPLAM</MudTd>
+                <MudTd Style="text-align:right;font-weight:bold;background:#E8F5E9">@_malzeme.Sum(x => x.NetMiktar).ToString("N2")</MudTd>
+                <MudTd Style="text-align:right;font-weight:bold;background:#E8F5E9">@_malzeme.Sum(x => x.NetCiro).ToString("N2")</MudTd>
+            </FooterContent>
+            <PagerContent>
+                <MudTablePager PageSizeOptions="new int[] { 50, 100, 200, 500 }" />
+            </PagerContent>
+            <NoRecordsContent><MudText>Kayıt bulunamadı.</MudText></NoRecordsContent>
+        </MudTable>
+    </MudTabPanel>
+
+    <MudTabPanel Text="@($"Müşteri + Ay ({_musteriAy.Count})")" Icon="@Icons.Material.Filled.PeopleAlt">
+        <MudText Typo="Typo.body2" Class="mb-2">
+            Net Miktar Toplam: <b>@_musteriAy.Sum(x => x.NetMiktar).ToString("N2")</b> ·
+            Net Ciro Toplam: <b>@_musteriAy.Sum(x => x.NetCiro).ToString("N2") TL</b>
+        </MudText>
+        <MudTable Items="_musteriAy" Dense="true" Hover="true" Bordered="true" Striped="true"
+                  FixedHeader="true" Height="calc(100vh - 410px)" Breakpoint="Breakpoint.None"
+                  RowsPerPage="200">
+            <HeaderContent>
+                <MudTh><MudTableSortLabel SortBy="new Func<GubreCiroMusteriAy,object>(x => x.MalzemeKodu)">Malzeme</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<GubreCiroMusteriAy,object>(x => x.MalzemeAdi)">Malzeme Adı</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<GubreCiroMusteriAy,object>(x => x.MusteriKodu)">Müşteri Kodu</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<GubreCiroMusteriAy,object>(x => x.MusteriUnvan)">Müşteri Ünvan</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<GubreCiroMusteriAy,object>(x => x.Donem)">Dönem</MudTableSortLabel></MudTh>
+                <MudTh Style="text-align:right"><MudTableSortLabel SortBy="new Func<GubreCiroMusteriAy,object>(x => x.NetMiktar)">Net Miktar</MudTableSortLabel></MudTh>
+                <MudTh Style="text-align:right"><MudTableSortLabel SortBy="new Func<GubreCiroMusteriAy,object>(x => x.NetCiro)">Net Ciro (TL)</MudTableSortLabel></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.MalzemeKodu</MudTd>
+                <MudTd>@context.MalzemeAdi</MudTd>
+                <MudTd>@context.MusteriKodu</MudTd>
+                <MudTd>@context.MusteriUnvan</MudTd>
+                <MudTd>@context.Donem</MudTd>
+                <MudTd Style="text-align:right">@context.NetMiktar.ToString("N2")</MudTd>
+                <MudTd Style="text-align:right">@context.NetCiro.ToString("N2")</MudTd>
+            </RowTemplate>
+            <FooterContent>
+                <MudTd colspan="5" Style="text-align:right;font-weight:bold;background:#E8F5E9">TOPLAM</MudTd>
+                <MudTd Style="text-align:right;font-weight:bold;background:#E8F5E9">@_musteriAy.Sum(x => x.NetMiktar).ToString("N2")</MudTd>
+                <MudTd Style="text-align:right;font-weight:bold;background:#E8F5E9">@_musteriAy.Sum(x => x.NetCiro).ToString("N2")</MudTd>
+            </FooterContent>
+            <PagerContent>
+                <MudTablePager PageSizeOptions="new int[] { 50, 100, 200, 500, 1000 }" />
+            </PagerContent>
+            <NoRecordsContent><MudText>Kayıt bulunamadı.</MudText></NoRecordsContent>
+        </MudTable>
+    </MudTabPanel>
+
+    <MudTabPanel Text="@($"Alım Faturaları ({_alimlar.Count})")" Icon="@Icons.Material.Filled.ShoppingCart">
+        <MudText Typo="Typo.body2" Class="mb-2">
+            Miktar Toplam: <b>@_alimlar.Sum(x => x.Miktar).ToString("N2")</b> ·
+            Net Tutar Toplam: <b>@_alimlar.Sum(x => x.NetTutar).ToString("N2") TL</b>
+        </MudText>
+        <MudTable Items="_alimlar" Dense="true" Hover="true" Bordered="true" Striped="true"
+                  FixedHeader="true" Height="calc(100vh - 410px)" Breakpoint="Breakpoint.None"
+                  RowsPerPage="200">
+            <HeaderContent>
+                <MudTh><MudTableSortLabel SortBy="new Func<GubreAlimFaturaSatiri,object>(x => x.FaturaNo)">Fatura No</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<GubreAlimFaturaSatiri,object>(x => x.Tarih)">Tarih</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<GubreAlimFaturaSatiri,object>(x => x.TedarikciKodu)">Tedarikçi Kodu</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<GubreAlimFaturaSatiri,object>(x => x.TedarikciUnvan)">Tedarikçi Ünvan</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<GubreAlimFaturaSatiri,object>(x => x.MalzemeKodu)">Malzeme Kodu</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<GubreAlimFaturaSatiri,object>(x => x.MalzemeAdi)">Malzeme Adı</MudTableSortLabel></MudTh>
+                <MudTh Style="text-align:right"><MudTableSortLabel SortBy="new Func<GubreAlimFaturaSatiri,object>(x => x.Miktar)">Miktar</MudTableSortLabel></MudTh>
+                <MudTh Style="text-align:right"><MudTableSortLabel SortBy="new Func<GubreAlimFaturaSatiri,object>(x => x.NetTutar)">Net Tutar (TL)</MudTableSortLabel></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.FaturaNo</MudTd>
+                <MudTd>@context.Tarih.ToString("dd.MM.yyyy")</MudTd>
+                <MudTd>@context.TedarikciKodu</MudTd>
+                <MudTd>@context.TedarikciUnvan</MudTd>
+                <MudTd>@context.MalzemeKodu</MudTd>
+                <MudTd>@context.MalzemeAdi</MudTd>
+                <MudTd Style="text-align:right">@context.Miktar.ToString("N2")</MudTd>
+                <MudTd Style="text-align:right">@context.NetTutar.ToString("N2")</MudTd>
+            </RowTemplate>
+            <FooterContent>
+                <MudTd colspan="6" Style="text-align:right;font-weight:bold;background:#E8F5E9">TOPLAM</MudTd>
+                <MudTd Style="text-align:right;font-weight:bold;background:#E8F5E9">@_alimlar.Sum(x => x.Miktar).ToString("N2")</MudTd>
+                <MudTd Style="text-align:right;font-weight:bold;background:#E8F5E9">@_alimlar.Sum(x => x.NetTutar).ToString("N2")</MudTd>
+            </FooterContent>
+            <PagerContent>
+                <MudTablePager PageSizeOptions="new int[] { 50, 100, 200, 500, 1000 }" />
+            </PagerContent>
+            <NoRecordsContent><MudText>Kayıt bulunamadı.</MudText></NoRecordsContent>
+        </MudTable>
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    private DateTime? _baslangic = new DateTime(2026, 1, 1);
+    private bool _yukleniyor = false;
+
+    private List<GubreCiroMalzeme> _malzeme = new();
+    private List<GubreCiroMusteriAy> _musteriAy = new();
+    private List<GubreAlimFaturaSatiri> _alimlar = new();
+
+    protected override async Task OnInitializedAsync() => await VeriYukle();
+
+    private async Task VeriYukle()
+    {
+        if (_baslangic is null) return;
+        _yukleniyor = true;
+        try
+        {
+            var bas = _baslangic.Value.Date;
+            var t1 = Logo.GubreCiroMalzemeAsync(bas);
+            var t2 = Logo.GubreCiroMusteriAyAsync(bas);
+            var t3 = Logo.GubreAlimFaturalariAsync(bas);
+            await Task.WhenAll(t1, t2, t3);
+            _malzeme = t1.Result;
+            _musteriAy = t2.Result;
+            _alimlar = t3.Result;
+            Snackbar.Add($"Yüklendi — Satış: {_malzeme.Count} malzeme · Müşteri-Ay: {_musteriAy.Count} satır · Alım: {_alimlar.Count} satır", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Hata: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _yukleniyor = false;
+        }
+    }
+
+    private async Task ExcelIndir()
+    {
+        try
+        {
+            var bytes = ExcelExportService.ExportGubreCiro(_malzeme, _musteriAy, _alimlar);
+            var fileName = $"GubreCiroRaporu_{DateTime.Today:yyyyMMdd}.xlsx";
+            await JS.InvokeVoidAsync("downloadFile", fileName, Convert.ToBase64String(bytes),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            Snackbar.Add("Excel dosyası indirildi.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Excel hatası: {ex.Message}", Severity.Error);
+        }
+    }
+}

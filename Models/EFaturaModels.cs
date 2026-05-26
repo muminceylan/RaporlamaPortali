@@ -18,6 +18,22 @@ public class EFaturaFiltre
     // Logo cari kart kodu LIKE filtresi — örn. "320.06" yazılırsa "320.06%" ile başlayan
     // tüm cariler eşleşir. % işareti otomatik eklenir.
     public string?  LogoCariKodu { get; set; }
+
+    // Çoklu fatura no filtresi — kullanıcı toplu fatura numarası listesi yapıştırır
+    // (yeni satır / virgül / noktalı virgül / boşluk ile ayrılabilir). Dolu ise
+    // diğer filtreler etkili olmaya devam eder ama sadece bu numaralardaki kayıtlar döner.
+    public string?  FaturaNoListesiRaw { get; set; }
+
+    public string[] FaturaNolariCoz()
+    {
+        if (string.IsNullOrWhiteSpace(FaturaNoListesiRaw)) return Array.Empty<string>();
+        return FaturaNoListesiRaw
+            .Split(new[] { '\n', '\r', ',', ';', '\t', ' ' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(s => s.Trim())
+            .Where(s => s.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
 }
 
 public class EFaturaListItem
@@ -39,6 +55,7 @@ public class EFaturaListItem
     // Logo Tiger LG_211_CLCARD lookup (VKN üzerinden)
     public string    LogoCariKod     { get; set; } = "";
     public string    LogoCariUnvan   { get; set; } = "";
+    public string    LogoCariOzelKod { get; set; } = "";   // CLCARD.SPECODE (Özel Kod)
     // UBL XML'inden parse edilmiş fatura toplamları (listede gösterilir)
     public string    Doviz           { get; set; } = "";
     public decimal   Matrah          { get; set; }   // TaxExclusiveAmount

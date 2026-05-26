@@ -1,0 +1,198 @@
+@inject LogoIslemleriService Logo
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center" style="gap:8px;">
+            <MudIcon Icon="@Icons.Material.Filled.ReceiptLong" Color="Color.Primary" />
+            <span>
+                <b>Fiş Detayı</b>
+                @if (_detay != null && !string.IsNullOrEmpty(_detay.FisNo))
+                {
+                    <span class="ml-2" style="color:#1976d2;">#@_detay.FisNo</span>
+                }
+                @if (_detay != null)
+                {
+                    <span class="ml-2" style="color:#555; font-weight:normal;">
+                        (@_detay.Modul / @_detay.FisTuru)
+                    </span>
+                }
+            </span>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (_yukleniyor)
+        {
+            <div class="d-flex justify-center pa-4">
+                <MudProgressCircular Indeterminate="true" />
+                <span class="ml-3" style="line-height:32px;">Logo'dan çekiliyor…</span>
+            </div>
+        }
+        else if (_hata != null)
+        {
+            <MudAlert Severity="Severity.Error">@_hata</MudAlert>
+        }
+        else if (_detay == null)
+        {
+            <MudAlert Severity="Severity.Warning">Detay bulunamadı.</MudAlert>
+        }
+        else
+        {
+            <div class="fd-card mb-3">
+                <div class="fd-row">
+                    <div><b>Tarih:</b> @_detay.Tarih.ToString("dd.MM.yyyy")</div>
+                    <div><b>İşlem Tipi:</b> @_detay.FisTuru (TRCODE @_detay.TrCode)</div>
+                    <div><b>Modül:</b> @_detay.Modul</div>
+                    @if (_detay.Iptal)
+                    {
+                        <div style="color:#c62828;"><b>● İPTAL EDİLMİŞ</b></div>
+                    }
+                </div>
+                @if (!string.IsNullOrWhiteSpace(_detay.Aciklama1) ||
+                     !string.IsNullOrWhiteSpace(_detay.Aciklama2) ||
+                     !string.IsNullOrWhiteSpace(_detay.Aciklama3))
+                {
+                    <div class="fd-row" style="margin-top:6px;">
+                        <div style="flex:1;">
+                            <b>Fiş Açıklaması:</b>
+                            <div style="white-space:pre-wrap;">@_detay.Aciklama1</div>
+                            @if (!string.IsNullOrWhiteSpace(_detay.Aciklama2))
+                            { <div style="white-space:pre-wrap;">@_detay.Aciklama2</div> }
+                            @if (!string.IsNullOrWhiteSpace(_detay.Aciklama3))
+                            { <div style="white-space:pre-wrap;">@_detay.Aciklama3</div> }
+                        </div>
+                    </div>
+                }
+                <div class="fd-row" style="margin-top:6px;">
+                    <div><b>Borç Toplam:</b> @_detay.BorcToplam.ToString("N2") ₺</div>
+                    <div><b>Alacak Toplam:</b> @_detay.AlacakToplam.ToString("N2") ₺</div>
+                    @if (!string.IsNullOrWhiteSpace(_detay.KullaniciOlusturan))
+                    {
+                        <div><b>Oluşturan:</b> @_detay.KullaniciOlusturan @(_detay.OlusturmaZamani?.ToString(" dd.MM.yyyy HH:mm"))</div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_detay.KullaniciDegistiren))
+                    {
+                        <div><b>Değiştiren:</b> @_detay.KullaniciDegistiren @(_detay.DegistirmeZamani?.ToString(" dd.MM.yyyy HH:mm"))</div>
+                    }
+                </div>
+            </div>
+
+            <div style="overflow:auto; max-height:520px;">
+                <table class="fd-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Açıklama</th>
+                            <th>B/A</th>
+                            <th class="num">Tutar</th>
+                            <th>Döviz</th>
+                            <th class="num">Kur</th>
+                            <th class="num">Döviz Tutar</th>
+                            <th>Cari Kod</th>
+                            <th>Cari Ünvan</th>
+                            <th>Banka Kod</th>
+                            <th>Banka Adı</th>
+                            @if (_detay.Modul == "KASA")
+                            {
+                                <th>Kasa Kodu</th>
+                                <th>Kasa Adı</th>
+                            }
+                            <th>Muh. Kod</th>
+                            <th>Muh. Adı</th>
+                            <th>Proje</th>
+                            <th>Özel Kod</th>
+                            <th>İşlem No</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var s in _detay.Satirlar)
+                        {
+                            <tr class="@(s.SecilenSatir ? "fd-secili" : "")">
+                                <td>@s.Sira</td>
+                                <td>@s.Aciklama</td>
+                                <td>
+                                    @if (s.IslemTipi == "BORÇ")  { <span class="fd-chip fd-borc">BORÇ</span> }
+                                    else                          { <span class="fd-chip fd-alacak">ALACAK</span> }
+                                </td>
+                                <td class="num">@s.Tutar.ToString("N2")</td>
+                                <td>@s.DovizKodu</td>
+                                <td class="num">@(s.DovizKuru != 0 ? s.DovizKuru.ToString("N4") : "")</td>
+                                <td class="num">@(s.DovizTutari != 0 ? s.DovizTutari.ToString("N2") : "")</td>
+                                <td>@s.CariKodu</td>
+                                <td>@s.CariUnvani</td>
+                                <td>@s.BankaKodu</td>
+                                <td>@s.BankaAdi</td>
+                                @if (_detay.Modul == "KASA")
+                                {
+                                    <td>@s.KasaKodu</td>
+                                    <td>@s.KasaAdi</td>
+                                }
+                                <td>@s.MuhasebeKodu</td>
+                                <td>@s.MuhasebeAdi</td>
+                                <td>
+                                    @s.ProjeKodu
+                                    @if (!string.IsNullOrEmpty(s.ProjeAdi)) { <span style="color:#888;"> — @s.ProjeAdi</span> }
+                                </td>
+                                <td>@s.OzelKod</td>
+                                <td>@s.IslemNo</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <MudText Typo="Typo.caption" Class="mt-2" Style="color:#888;">
+                Tıklanan satır mavi renkle vurgulandı. Toplam @_detay.Satirlar.Count satır.
+            </MudText>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Kapat" Color="Color.Default">Kapat</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<style>
+    .fd-card  { background:#F5F9FF; border:1px solid #BBDEFB; border-radius:6px; padding:10px 14px; font-size:0.88rem; }
+    .fd-row   { display:flex; flex-wrap:wrap; gap:16px 24px; }
+    .fd-table { width:100%; border-collapse:collapse; font-size:0.8rem; }
+    .fd-table thead th {
+        position:sticky; top:0; background:#1976d2; color:#fff; padding:6px 8px;
+        border:1px solid #1565c0; text-align:left; font-weight:600;
+    }
+    .fd-table tbody td { padding:4px 8px; border:1px solid #eee; vertical-align:top; }
+    .fd-table tbody tr:nth-child(odd) { background:#fafafa; }
+    .fd-table .num { text-align:right; }
+    .fd-table tr.fd-secili td { background:#FFF59D !important; font-weight:600; }
+    .fd-chip   { padding:2px 8px; border-radius:10px; font-size:0.7rem; font-weight:600; color:#fff; }
+    .fd-borc   { background:#1565c0; }
+    .fd-alacak { background:#2e7d32; }
+</style>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public int    LogicalRef { get; set; }
+    [Parameter] public string Modul      { get; set; } = "";
+
+    private bool       _yukleniyor = true;
+    private string?    _hata;
+    private FisDetay?  _detay;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _detay = await Logo.FisDetayAsync(LogicalRef, Modul);
+            if (_detay == null)
+                _hata = $"Logo'da LOGICALREF={LogicalRef} ({Modul}) için kayıt bulunamadı.";
+        }
+        catch (Exception ex)
+        {
+            _hata = ex.Message;
+        }
+        finally
+        {
+            _yukleniyor = false;
+        }
+    }
+
+    private void Kapat() => MudDialog.Close(DialogResult.Ok(true));
+}

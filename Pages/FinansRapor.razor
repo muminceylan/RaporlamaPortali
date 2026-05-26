@@ -6,6 +6,7 @@
 @inject ExcelExportService Excel
 @inject IJSRuntime JS
 @inject ISnackbar Snackbar
+@inject IDialogService DialogService
 
 <PageTitle>Finans Raporu</PageTitle>
 
@@ -238,7 +239,9 @@
                             <tbody>
                                 @foreach (var x in etilAlkol)
                                 {
-                                    <tr>
+                                    var row = x;
+                                    <tr class="finans-row" title="Detay için çift tıklayın"
+                                        @ondblclick="@(() => FisDetayAc(row))">
                                         <td>@x.Tarih.ToString("dd.MM.yyyy")</td>
                                         <td>@x.ChKod</td>
                                         <td>@x.ChUnvani</td>
@@ -320,8 +323,10 @@
                             <tbody>
                                 @foreach (var x in kk)
                                 {
+                                    var row = x;
                                     var tutar = x.Havale + x.Cek + x.Devir + x.Diger;
-                                    <tr>
+                                    <tr class="finans-row" title="Detay için çift tıklayın"
+                                        @ondblclick="@(() => FisDetayAc(row))">
                                         <td>@x.Tarih.ToString("dd.MM.yyyy")</td>
                                         <td>@x.ChKod</td>
                                         <td>@x.ChUnvani</td>
@@ -402,7 +407,9 @@
                 <tbody>
                     @foreach (var x in filtreli)
                     {
-                        <tr>
+                        var row = x;
+                        <tr class="finans-row" title="Detay için çift tıklayın"
+                            @ondblclick="@(() => FisDetayAc(row))">
                             <td>@x.Tarih.ToString("dd.MM.yyyy")</td>
                             <td>@x.Yil</td>
                             <td>@x.Ay</td>
@@ -480,6 +487,8 @@ else if (!_yukleniyor)
     .finans-table tbody td { padding:4px 8px; border:1px solid #eee; }
     .finans-table tbody tr:nth-child(odd) { background:#fafafa; }
     .finans-table tbody tr:hover { background:#e3f2fd; }
+    .finans-table tbody tr.finans-row { cursor:pointer; }
+    .finans-table tbody tr.finans-row:hover { background:#bbdefb; }
     .finans-table .num { text-align:right; }
     .finans-table tfoot .toplam-row td {
         background:#FFFDE7; font-weight:bold; padding:6px 8px; border-top:2px solid #1976d2;
@@ -634,6 +643,29 @@ else if (!_yukleniyor)
         _kkBankaKod = _kkBankaAcik = "";
         _kkProjeKod = _kkIslemNo = _kkFisTuru = "";
         _kkTutar = "";
+    }
+
+    private async Task FisDetayAc(FinansRaporSatiri satir)
+    {
+        if (satir == null || satir.LogicalRef <= 0)
+        {
+            Snackbar.Add("Bu satır için Logo referansı yok (LOGICALREF=0).", Severity.Warning);
+            return;
+        }
+
+        var parametreler = new DialogParameters
+        {
+            ["LogicalRef"] = satir.LogicalRef,
+            ["Modul"]      = satir.Modul ?? ""
+        };
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.ExtraLarge,
+            FullWidth = true,
+            CloseButton = true,
+            CloseOnEscapeKey = true
+        };
+        await DialogService.ShowAsync<FisDetayDialog>("Fiş Detayı", parametreler, options);
     }
 
     private async Task EtilAlkolExcelIndir()

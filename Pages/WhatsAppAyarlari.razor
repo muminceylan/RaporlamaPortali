@@ -245,7 +245,7 @@
             </MudItem>
             <MudItem xs="12" md="4" Class="d-flex align-center">
                 <MudText Typo="Typo.caption" Color="Color.Secondary">
-                    Son 10 kayıt her zaman gösterilir. Tarih aralığı 10. kayıttan öncesini filtreler.
+                    Tarih aralığı girilmediğinde son 10 kayıt; girildiğinde aralıktaki tüm kayıtlar gösterilir.
                 </MudText>
             </MudItem>
         </MudGrid>
@@ -299,24 +299,23 @@
     private DateTime? _logBaslangic;
     private DateTime? _logBitis;
 
-    // _loglar en yeni → eskiye sıralı. Son 10 her zaman görünür.
-    // Tarih aralığı yoksa SADECE son 10; varsa 10 + aralığa düşen eskiler.
+    // _loglar en yeni → eskiye sıralı.
+    // Tarih aralığı yoksa: son 10 kayıt.
+    // Tarih aralığı varsa: aralığa düşen TÜM kayıtlar (limit yok).
     private List<WhatsAppLogKayit> FiltreliLoglar
     {
         get
         {
-            if (_loglar.Count <= 10) return _loglar;
-            var sabit = _loglar.Take(10).ToList();
             if (!_logBaslangic.HasValue && !_logBitis.HasValue)
-                return sabit;
-            var eskiler = _loglar.Skip(10).Where(l =>
+                return _loglar.Take(10).ToList();
+
+            return _loglar.Where(l =>
             {
                 var yerelTarih = l.Tarih.ToLocalTime().Date;
                 if (_logBaslangic.HasValue && yerelTarih < _logBaslangic.Value.Date) return false;
                 if (_logBitis.HasValue     && yerelTarih > _logBitis.Value.Date)     return false;
                 return true;
-            });
-            return sabit.Concat(eskiler).ToList();
+            }).ToList();
         }
     }
 
