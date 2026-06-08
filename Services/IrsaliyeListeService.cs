@@ -233,7 +233,7 @@ SELECT
     Tip       = SF.TRCODE,
     Tarih     = SF.DATE_,
     Ambar     = SF.SOURCEINDEX,
-    Fabrika   = ISNULL(SF.GENEXCTYP, 17),
+    Fabrika   = ISNULL(SF.FACTORYNR, 17),
     Aciklama1 = SF.GENEXP1,
     Aciklama2 = SF.GENEXP2,
     BelgeNo   = SF.FICHENO
