@@ -142,6 +142,11 @@ public class VoiceCommandService
         sb.AppendLine("- Komut belirsizse, en yakın tool'u seç ve `_onay_metni`'nde varsayımını belirt.");
         sb.AppendLine("- Komut hiçbir tool'la eşleşmiyorsa, `bilinmeyen_komut` tool'unu çağır ve sebebini yaz.");
         sb.AppendLine("- Sadece tool çağır, normal metin yanıt verme.");
+        sb.AppendLine();
+        sb.AppendLine("ÇOKLU KOMUT (önemli!):");
+        sb.AppendLine("- Kullanıcı tek nefeste birden fazla işlem söylerse (örn '1. satırı 10000 yap birim KG yap'),");
+        sb.AppendLine("  `komut_zinciri` tool'unu çağır. İçinde sırayla yapılacak aksiyonları liste olarak ver.");
+        sb.AppendLine("- Tek bir işlem varsa direkt o aksiyonun tool'unu çağır, `komut_zinciri`'ne sokma.");
 
         if (!string.IsNullOrWhiteSpace(ekContext))
         {
@@ -195,6 +200,50 @@ public class VoiceCommandService
                 }
             });
         }
+
+        // Komut zinciri — kullanıcı tek nefeste birden fazla işlem söylerse
+        liste.Add(new
+        {
+            name        = "komut_zinciri",
+            description = "Tek konuşmada birden fazla işlem yapılacağında. İçindeki aksiyonlar sırayla çalıştırılır. "
+                        + "Örnek: '1. satırı 10000 yap birim KG yap' → komut_zinciri([miktar_degistir, birim_degistir]).",
+            input_schema = new
+            {
+                type       = "object",
+                properties = new Dictionary<string, object>
+                {
+                    ["adimlar"] = new Dictionary<string, object>
+                    {
+                        ["type"]        = "array",
+                        ["description"] = "Sırayla çalıştırılacak komutlar. Her eleman {action: tool_adi, params: {...}}.",
+                        ["items"] = new Dictionary<string, object>
+                        {
+                            ["type"] = "object",
+                            ["properties"] = new Dictionary<string, object>
+                            {
+                                ["action"] = new Dictionary<string, object>
+                                {
+                                    ["type"]        = "string",
+                                    ["description"] = "Yukarıdaki tool'lardan birinin adı (örn 'miktar_degistir'). 'sayfa_git' ve 'komut_zinciri' KULLANMA."
+                                },
+                                ["params"] = new Dictionary<string, object>
+                                {
+                                    ["type"]        = "object",
+                                    ["description"] = "O tool'un parametreleri."
+                                }
+                            },
+                            ["required"] = new[] { "action" }
+                        }
+                    },
+                    ["_onay_metni"] = new Dictionary<string, object>
+                    {
+                        ["type"]        = "string",
+                        ["description"] = "Kullanıcıya gösterilecek tüm zincirin özet açıklaması."
+                    }
+                },
+                required = new[] { "adimlar", "_onay_metni" }
+            }
+        });
 
         // Genel "anlayamadım" tool'u — Claude bunu çağırırsa UI uyarı gösterir
         liste.Add(new
@@ -258,6 +307,41 @@ public class VoiceCommandService
                         Anlasildi  = false,
                         Hata       = prms.TryGetValue("sebep", out var s) ? s?.ToString() : "Komut anlaşılamadı.",
                         OnayMetni  = onay,
+                    };
+                }
+
+                if (toolAdi == "komut_zinciri")
+                {
+                    var adimlar = new List<VoiceIntent>();
+                    if (input.TryGetProperty("adimlar", out var adimlarEl) && adimlarEl.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var a in adimlarEl.EnumerateArray())
+                        {
+                            if (a.ValueKind != JsonValueKind.Object) continue;
+                            if (!a.TryGetProperty("action", out var actEl)) continue;
+                            var altAct = actEl.GetString() ?? "";
+                            if (string.IsNullOrWhiteSpace(altAct)) continue;
+                            var altParams = new Dictionary<string, object?>();
+                            if (a.TryGetProperty("params", out var pEl) && pEl.ValueKind == JsonValueKind.Object)
+                            {
+                                foreach (var pp in pEl.EnumerateObject())
+                                    altParams[pp.Name] = JsonElementToObject(pp.Value);
+                            }
+                            adimlar.Add(new VoiceIntent
+                            {
+                                Action    = altAct,
+                                Params    = altParams,
+                                OnayMetni = altAct,
+                                Anlasildi = true,
+                            });
+                        }
+                    }
+                    return new VoiceIntent
+                    {
+                        Action    = "komut_zinciri",
+                        OnayMetni = string.IsNullOrWhiteSpace(onay) ? $"{adimlar.Count} işlem zinciri" : onay,
+                        Adimlar   = adimlar,
+                        Anlasildi = true,
                     };
                 }
 

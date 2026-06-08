@@ -23,6 +23,12 @@ public class VoiceIntent
 
     /// <summary>Anlaşılmadıysa açıklama (Claude'dan gelen).</summary>
     public string? Hata { get; set; }
+
+    /// <summary>
+    /// Komut zinciri — Action="komut_zinciri" olduğunda sırayla çalıştırılacak alt komutlar.
+    /// Her eleman bir VoiceIntent (kendi Action + Params + OnayMetni).
+    /// </summary>
+    public List<VoiceIntent>? Adimlar { get; set; }
 }
 
 /// <summary>

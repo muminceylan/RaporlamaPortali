@@ -419,10 +419,21 @@
             else
             {
                 // Onay gerektiren listede mi? Liste boşsa tümü onay ister (eski davranış).
+                // Komut zinciri ise: içindeki herhangi bir adım onay gerektiriyorsa zincirin tamamı onay ister.
                 var effOnay = EffOnay;
-                bool onayGerek = effOnay == null
-                                 || effOnay.Count == 0
-                                 || effOnay.Contains(intent.Action);
+                bool onayGerek;
+                if (intent.Action == "komut_zinciri" && intent.Adimlar != null && intent.Adimlar.Count > 0)
+                {
+                    onayGerek = effOnay == null
+                                || effOnay.Count == 0
+                                || intent.Adimlar.Any(a => effOnay.Contains(a.Action));
+                }
+                else
+                {
+                    onayGerek = effOnay == null
+                                || effOnay.Count == 0
+                                || effOnay.Contains(intent.Action);
+                }
 
                 if (onayGerek)
                 {
@@ -466,10 +477,24 @@
 
     /// <summary>
     /// Aksiyonu sayfa tarafına ilet — önce parametre handler (varsa), yoksa
-    /// VoiceContextService'deki handler.
+    /// VoiceContextService'deki handler. Komut zinciri ise sırayla işle.
     /// </summary>
     private async Task AksiyonuCalistir(VoiceIntent intent)
     {
+        // Komut zinciri — her adımı sırayla çalıştır
+        if (intent.Action == "komut_zinciri" && intent.Adimlar != null && intent.Adimlar.Count > 0)
+        {
+            int i = 0;
+            foreach (var adim in intent.Adimlar)
+            {
+                i++;
+                Snackbar.Add($"[{i}/{intent.Adimlar.Count}] {adim.Action}", Severity.Info);
+                await AksiyonuCalistir(adim);
+                await Task.Delay(150); // UI güncellenmesi için kısa gecikme
+            }
+            return;
+        }
+
         if (OnAksiyon.HasDelegate)
         {
             await OnAksiyon.InvokeAsync(intent);
