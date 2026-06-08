@@ -189,6 +189,13 @@ public class ZamanliMailService : BackgroundService
         => await PancarRaporGonderAsync(services);
 
     /// <summary>
+    /// Özet Rapor (Yan Ürünler + Şeker + Alkol) manuel mail gönderimi.
+    /// YanUrunler.razor sayfasındaki "Mail Gönder" butonu bunu çağırır.
+    /// </summary>
+    public async Task<bool> OzetRaporManuelGonder(IServiceProvider services)
+        => await GunlukRaporGonderAsync(services);
+
+    /// <summary>
     /// Outlook uygulaması üzerinden mail gönderir (VBA'daki gibi)
     /// Şifre gerektirmez, bilgisayardaki Outlook hesabını kullanır
     /// </summary>

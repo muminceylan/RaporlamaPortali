@@ -1,6 +1,8 @@
 @inherits LayoutComponentBase
 @implements IDisposable
 @using System.Reflection
+@using RaporlamaPortali.Services
+@inject VoiceContextService VoiceCtx
 
 <MudLayout>
     <MudAppBar Elevation="4" Style="background:linear-gradient(90deg,#0d47a1 0%,#1976d2 40%,#1565c0 100%);">
@@ -227,6 +229,9 @@
 
     <MudMainContent Style="background:linear-gradient(135deg,#f5f7fa 0%,#e8eef5 50%,#eef2f7 100%); min-height:100vh;">
         <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
+            @* Global sesli komut paneli — her sayfada görünür. Sayfa kendi tool'larını
+               VoiceCtx.Register() ile kayıt eder; panel onları otomatik okur. *@
+            <SesliKomutPanel />
             @Body
         </MudContainer>
     </MudMainContent>
@@ -302,6 +307,9 @@
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
     {
         SenkronizeEt(e.Location);
+        // Sayfa değişti — önceki sayfanın voice tool kayıtlarını temizle.
+        // Yeni sayfanın OnInitialized'i Register'lar.
+        VoiceCtx.Clear();
         InvokeAsync(StateHasChanged);
     }
 

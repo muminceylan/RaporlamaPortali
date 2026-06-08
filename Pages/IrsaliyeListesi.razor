@@ -3,6 +3,7 @@
 @using RaporlamaPortali.Models
 @inject IrsaliyeListeService IrsaliyeServ
 @inject AfyonAmbarService AmbarServ
+@inject VoiceContextService VoiceCtx
 @inject NavigationManager Nav
 @inject IDialogService Dialog
 @inject ISnackbar Snackbar
@@ -15,10 +16,6 @@
     @_baslik
 </MudText>
 
-<SesliKomutPanel SayfaAdi="@_baslik"
-                 ToolListesi="@_voiceTools"
-                 EkContext="@VoiceContextOlustur()"
-                 OnAksiyon="@SesliAksiyonCalistir" />
 
 <MudPaper Class="pa-4 mb-3">
     <MudGrid AlignItems="Center">
@@ -197,6 +194,9 @@ else if (_satirlar != null)
     {
         ResolveModFromUrl();
         Nav.LocationChanged += OnLocationChanged;
+        VoiceCtx.Register(_voiceTools, _baslik,
+            getEkContext: VoiceContextOlustur,
+            onAksiyon:    SesliAksiyonCalistir);
     }
 
     protected override async Task OnInitializedAsync()

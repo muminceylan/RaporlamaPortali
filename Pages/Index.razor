@@ -1,5 +1,4 @@
 @page "/"
-@using RaporlamaPortali.Models
 
 <PageTitle>Ana Sayfa - Raporlama Portali</PageTitle>
 
@@ -7,12 +6,6 @@
     <MudIcon Icon="@Icons.Material.Filled.Dashboard" Class="mr-2" />
     Hoş Geldiniz
 </MudText>
-
-@* Sesli komut: ana sayfada sadece "X sayfasına git" komutları. Sayfaya gittiğinde orada
-   o sayfanın kendi tool'ları aktif olur (örn. Üretim Fişi'nde "Logo'ya gönder"). *@
-<SesliKomutPanel SayfaAdi="Ana Sayfa"
-                 ToolListesi="@(new List<SesliKomutTool>())"
-                 OnAksiyon="@((VoiceIntent _) => Task.CompletedTask)" />
 
 <MudText Typo="Typo.h6" Class="mb-3" Style="color:#1B5E20;">
     <MudIcon Icon="@Icons.Material.Filled.Assessment" Class="mr-2" />

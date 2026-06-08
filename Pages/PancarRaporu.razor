@@ -5,6 +5,8 @@
 @inject HtmlRaporService HtmlService
 @inject ZamanliMailService MailService
 @inject IServiceProvider Services
+@inject ISnackbar Snackbar
+@inject VoiceContextService VoiceCtx
 
 <PageTitle>Pancar Raporu</PageTitle>
 
@@ -408,7 +410,60 @@ else
         ("Fatura Edilen Söküm Avansı","Fatura Edilen Söküm Avansı"), ("Söküm Avansı","Söküm Avansı"),
     };
 
-    protected override async Task OnInitializedAsync() => await YenileAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        VoiceCtx.Register(_voiceTools, "Pancar Raporu",
+            onayList: _voiceOnayAksiyonlar,
+            onAksiyon: SesliAksiyonCalistir);
+        await YenileAsync();
+    }
+
+    // ============================================================
+    // SESLİ KOMUT
+    // ============================================================
+
+    // Mail gönderme onay ister, diğerleri direkt çalışır
+    private static readonly HashSet<string> _voiceOnayAksiyonlar = new() { "mail_gonder" };
+
+    private List<SesliKomutTool> _voiceTools => new()
+    {
+        new SesliKomutTool
+        {
+            Ad        = "yenile",
+            Aciklama  = "Pancar raporunu yeniden hesaplar (Yenile butonuna basmakla aynı).",
+        },
+        new SesliKomutTool
+        {
+            Ad        = "mail_gonder",
+            Aciklama  = "Pancar raporunu mail olarak gönderir (Mail Gönder butonu).",
+        },
+    };
+
+    private async Task SesliAksiyonCalistir(VoiceIntent intent)
+    {
+        try
+        {
+            switch (intent.Action)
+            {
+                case "yenile":
+                    Snackbar.Add("Pancar raporu yenileniyor...", Severity.Info);
+                    await YenileAsync();
+                    break;
+                case "mail_gonder":
+                    Snackbar.Add("Mail gönderiliyor...", Severity.Info);
+                    await MailGonderAsync();
+                    break;
+                default:
+                    Snackbar.Add($"Bilinmeyen aksiyon: {intent.Action}", Severity.Warning);
+                    break;
+            }
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Aksiyon hatası: {ex.Message}", Severity.Error);
+        }
+    }
 
     private async Task YenileAsync()
     {

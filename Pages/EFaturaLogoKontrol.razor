@@ -6,6 +6,7 @@
 @inject ExcelExportService Excel
 @inject IJSRuntime JS
 @inject ISnackbar Snackbar
+@inject VoiceContextService VoiceCtx
 
 <PageTitle>Gelen e-Fatura — Logo İşleme Kontrolü</PageTitle>
 
@@ -23,10 +24,6 @@
     </MudAlert>
 }
 
-<SesliKomutPanel SayfaAdi="e-Fatura Logo Kontrolü"
-                 ToolListesi="@_voiceTools"
-                 EkContext="@VoiceContextOlustur()"
-                 OnAksiyon="@SesliAksiyonCalistir" />
 
 <MudPaper Class="pa-3 mb-3" Elevation="3" Style="border-left:4px solid #1976d2;">
     <MudGrid Spacing="2">
@@ -288,6 +285,13 @@ else
             "Kesin"     => _kayitlar.Where(x => x.LogoDurum == LogoIslemDurumu.Kesin    && !x.RedEdildi),
             _           => _kayitlar,
         };
+
+    protected override void OnInitialized()
+    {
+        VoiceCtx.Register(_voiceTools, "e-Fatura Logo Kontrolü",
+            getEkContext: VoiceContextOlustur,
+            onAksiyon:    SesliAksiyonCalistir);
+    }
 
     private async Task Sorgula()
     {

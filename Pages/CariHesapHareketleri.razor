@@ -5,6 +5,7 @@
 @inject ExcelExportService ExcelExportService
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
+@inject VoiceContextService VoiceCtx
 
 <PageTitle>Cari Hesap Hareketleri</PageTitle>
 
@@ -18,10 +19,6 @@
     tarih aralığındaki BORÇ / ALACAK hareketleri ve kümülatif BAKİYE değeri listelenir.
 </MudAlert>
 
-<SesliKomutPanel SayfaAdi="Cari Hesap Hareketleri"
-                 ToolListesi="@_voiceTools"
-                 EkContext="@VoiceContextOlustur()"
-                 OnAksiyon="@SesliAksiyonCalistir" />
 
 <MudPaper Class="pa-3 mb-3">
     <MudGrid>
@@ -174,6 +171,9 @@
 
     protected override async Task OnInitializedAsync()
     {
+        VoiceCtx.Register(_voiceTools, "Cari Hesap Hareketleri",
+            getEkContext: VoiceContextOlustur,
+            onAksiyon:    SesliAksiyonCalistir);
         try
         {
             _tumCariler = await Logo.CariSecenekleriAsync();

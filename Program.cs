@@ -178,6 +178,7 @@ builder.Services.AddScoped<IsletmeMalzemeleriService>();
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<ClaudeService>();
 builder.Services.AddScoped<VoiceCommandService>();
+builder.Services.AddScoped<VoiceContextService>();
 builder.Services.AddScoped<MutabakatService>();
 builder.Services.AddScoped<KarsiFirmaKurFarkiService>();
 

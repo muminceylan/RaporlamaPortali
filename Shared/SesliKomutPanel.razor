@@ -2,6 +2,7 @@
 @using RaporlamaPortali.Services
 @inject IJSRuntime JS
 @inject VoiceCommandService Voice
+@inject VoiceContextService VoiceCtx
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
 @implements IAsyncDisposable
@@ -143,8 +144,10 @@
 </style>
 
 @code {
-    [Parameter] public string SayfaAdi { get; set; } = "Sayfa";
-    [Parameter] public List<SesliKomutTool> ToolListesi { get; set; } = new();
+    // Parametreler artık opsiyonel. Verilmezse VoiceContextService'den okur
+    // (MainLayout'taki global panel bu yolu kullanır).
+    [Parameter] public string? SayfaAdi { get; set; }
+    [Parameter] public List<SesliKomutTool>? ToolListesi { get; set; }
     [Parameter] public string? EkContext { get; set; }
     [Parameter] public EventCallback<VoiceIntent> OnAksiyon { get; set; }
 
@@ -154,6 +157,12 @@
     /// Boş bırakılırsa (default) tüm aksiyonlar onay ister.
     /// </summary>
     [Parameter] public HashSet<string>? OnayGerektirenAksiyonlar { get; set; }
+
+    // Effective değerler — parametre verilmişse onu, yoksa servisten oku
+    private string                   EffSayfaAdi  => SayfaAdi ?? VoiceCtx.SayfaAdi;
+    private List<SesliKomutTool>     EffTools     => ToolListesi ?? VoiceCtx.Tools;
+    private string?                  EffEkContext => EkContext ?? VoiceCtx.GetEkContext?.Invoke();
+    private HashSet<string>?         EffOnay      => OnayGerektirenAksiyonlar ?? VoiceCtx.OnayGerektirenAksiyonlar;
 
     private bool?            _destekVarMi;
     private bool             _dinleniyor;
@@ -166,6 +175,16 @@
     private DialogOptions    _onayOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
 
     private DotNetObjectReference<SesliKomutPanel>? _dotnetRef;
+
+    protected override void OnInitialized()
+    {
+        VoiceCtx.Changed += OnContextChanged;
+    }
+
+    private void OnContextChanged()
+    {
+        InvokeAsync(StateHasChanged);
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -187,6 +206,7 @@
 
     public async ValueTask DisposeAsync()
     {
+        VoiceCtx.Changed -= OnContextChanged;
         try { await JS.InvokeVoidAsync("sesliKomutDurdur"); } catch { }
         _dotnetRef?.Dispose();
     }
@@ -262,10 +282,10 @@
             ["sayfa_kodu"] = new SesliKomutParam
             {
                 Tip = "string", Zorunlu = true,
-                Aciklama = "Gidilecek sayfanın kodu. Tam liste:\n" +
-                           "  - 'anasayfa' (Ana Sayfa)\n" +
-                           "  - 'uretim-giris' (Üretimden Giriş Fişi)\n" +
-                           "  - 'promosyon-cikis' (Promosyon Çıkış Fişi)\n" +
+                Aciklama = "Gidilecek sayfanın kodu. Tam liste (parantez içi takma adlar da kabul):\n" +
+                           "  - 'anasayfa' (Ana Sayfa / başlangıç)\n" +
+                           "  - 'uretim-giris' (Üretimden Giriş Fişi / üretim fişi)\n" +
+                           "  - 'promosyon-cikis' (Promosyon Çıkış Fişi / sarf fişi / sarf)\n" +
                            "  - 'satinalma-irsaliyeleri' (Satın Alma İrsaliyeleri)\n" +
                            "  - 'toptan-satis-irsaliyeleri' (Toptan Satış İrsaliyeleri)\n" +
                            "  - 'kasa-hareketleri'\n  - 'kur-bilgileri'\n  - 'stok-durumu'\n" +
@@ -278,9 +298,25 @@
                            "  - 'efatura-aktar' (e-Fatura Aktar)\n" +
                            "  - 'efatura-logo-kontrol' (e-Fatura Logo Kontrolü)\n" +
                            "  - 'seker-dairesi' (Şeker Dairesi Raporu)\n" +
-                           "  - 'pancar' (Pancar Raporu)\n  - 'yan-urunler' (Yan Ürünler Raporu)\n" +
-                           "  - 'mutabakat'\n  - 'kur-farki'\n  - 'odeme-kontrol'\n" +
-                           "  - 'ayarlar'\n  - 'sirlar'",
+                           "  - 'pancar' (Pancar Raporu / pancar rapor)\n" +
+                           "  - 'ozet-rapor' (Özet Rapor / Yan Ürünler Raporu — aynı sayfa)\n" +
+                           "  - 'tarim-kredi' (Tarım Kredi Raporu)\n" +
+                           "  - 'sabnet-kantar' (Kantar SabNet Hareketleri)\n" +
+                           "  - 'mustahsil' (Müstahsil Karşılaştırma)\n" +
+                           "  - 'finans-rapor' (Finans Raporu)\n" +
+                           "  - 'mutabakat'\n  - 'kur-farki' (Karşı Firma Kur Farkı)\n" +
+                           "  - 'odeme-kontrol'\n  - 'odeme-dosyasi' (Ödeme Dosyası Hazırla)\n" +
+                           "  - 'odeme-karsilastir' (Ödeme Karşılaştır)\n" +
+                           "  - 'satis-faturasi-aktar' (Satış Faturası → Logo)\n" +
+                           "  - 'ayarlar'\n  - 'mail-ayarlari' (Mail Ayarları)\n" +
+                           "  - 'whatsapp-ayarlari' (WhatsApp Ayarları)\n" +
+                           "  - 'banka-hesap-ayarlari' (Banka Hesap Ayarları)\n" +
+                           "  - 'sirlar' (Sırlar / şifreler / API key)\n" +
+                           "  - 'evrak-arsivi' (Evrak Arşivi)\n  - 'evrak-ekle' (Yeni Evrak Ekle)\n" +
+                           "  - 'tesisler' (Tesis Tanımları)\n  - 'belge-tipleri'\n" +
+                           "  - 'isletme-malzemeleri' (İşletme Malzemeleri Raporu)\n" +
+                           "  - 'kantar-logo-karsilastirma' (Kantar Logo Karşılaştırma)\n" +
+                           "  - 'sabnet-logo-karsilastir' (SabNet Logo Karşılaştır)",
                 Secenekler = new()
                 {
                     "anasayfa", "uretim-giris", "promosyon-cikis",
@@ -289,9 +325,15 @@
                     "gubre-stok", "gubre-ciro", "cay-durum",
                     "cari-bakiye", "cari-hareket", "malzeme-hareket",
                     "efatura", "efatura-aktar", "efatura-logo-kontrol",
-                    "seker-dairesi", "pancar", "yan-urunler",
-                    "mutabakat", "kur-farki", "odeme-kontrol",
-                    "ayarlar", "sirlar"
+                    "seker-dairesi", "pancar", "ozet-rapor", "tarim-kredi",
+                    "sabnet-kantar", "mustahsil", "finans-rapor",
+                    "mutabakat", "kur-farki", "odeme-kontrol", "odeme-dosyasi",
+                    "odeme-karsilastir", "satis-faturasi-aktar",
+                    "ayarlar", "mail-ayarlari", "whatsapp-ayarlari",
+                    "banka-hesap-ayarlari", "sirlar",
+                    "evrak-arsivi", "evrak-ekle", "tesisler", "belge-tipleri",
+                    "isletme-malzemeleri", "kantar-logo-karsilastirma",
+                    "sabnet-logo-karsilastir"
                 },
             }
         }
@@ -319,11 +361,29 @@
         ["seker-dairesi"]             = "/seker-dairesi",
         ["pancar"]                    = "/pancar-raporu",
         ["yan-urunler"]               = "/yan-urunler",
+        ["ozet-rapor"]                = "/yan-urunler",   // alias: Özet Rapor = Yan Ürünler
+        ["tarim-kredi"]               = "/tarim-kredi-raporu",
+        ["sabnet-kantar"]             = "/sabnet-kantar-hareketleri",
+        ["mustahsil"]                 = "/mustahsil-karsilastirma",
+        ["finans-rapor"]              = "/finans-raporu",
         ["mutabakat"]                 = "/mutabakat",
         ["kur-farki"]                 = "/karsi-firma-kur-farki",
         ["odeme-kontrol"]             = "/odeme-kontrol",
+        ["odeme-dosyasi"]             = "/odeme-dosyasi",
+        ["odeme-karsilastir"]         = "/odeme-karsilastir",
+        ["satis-faturasi-aktar"]      = "/satis-faturasi-aktar",
         ["ayarlar"]                   = "/ayarlar",
+        ["mail-ayarlari"]             = "/mail-ayarlari",
+        ["whatsapp-ayarlari"]         = "/whatsapp-ayarlari",
+        ["banka-hesap-ayarlari"]      = "/banka-hesap-ayarlari",
         ["sirlar"]                    = "/sirlar",
+        ["evrak-arsivi"]              = "/evrak-arsivi",
+        ["evrak-ekle"]                = "/evrak-ekle",
+        ["tesisler"]                  = "/tesisler",
+        ["belge-tipleri"]             = "/belge-tipleri",
+        ["isletme-malzemeleri"]       = "/isletme-malzemeleri-raporu",
+        ["kantar-logo-karsilastirma"] = "/kantar-logo-karsilastirma",
+        ["sabnet-logo-karsilastir"]   = "/sabnet-logo-karsilastir",
     };
 
     private async Task KomutuYorumla(string metin)
@@ -333,8 +393,8 @@
         try
         {
             // Sayfanın tool'larına global navigasyon tool'unu otomatik ekle
-            var birlesik = new List<SesliKomutTool>(ToolListesi) { _navigasyonTool };
-            var intent = await Voice.KomutuYorumlaAsync(metin, SayfaAdi, birlesik, EkContext);
+            var birlesik = new List<SesliKomutTool>(EffTools) { _navigasyonTool };
+            var intent = await Voice.KomutuYorumlaAsync(metin, EffSayfaAdi, birlesik, EffEkContext);
 
             // Navigasyon aksiyonu — sayfa-bazlı handler'a gönderme, doğrudan yönlendir
             if (intent.Anlasildi && intent.Action == "sayfa_git")
@@ -359,9 +419,10 @@
             else
             {
                 // Onay gerektiren listede mi? Liste boşsa tümü onay ister (eski davranış).
-                bool onayGerek = OnayGerektirenAksiyonlar == null
-                                 || OnayGerektirenAksiyonlar.Count == 0
-                                 || OnayGerektirenAksiyonlar.Contains(intent.Action);
+                var effOnay = EffOnay;
+                bool onayGerek = effOnay == null
+                                 || effOnay.Count == 0
+                                 || effOnay.Contains(intent.Action);
 
                 if (onayGerek)
                 {
@@ -372,8 +433,7 @@
                 {
                     // Anında çalıştır — kısa bir bilgi mesajı göster
                     Snackbar.Add(intent.OnayMetni, Severity.Info);
-                    if (OnAksiyon.HasDelegate)
-                        await OnAksiyon.InvokeAsync(intent);
+                    await AksiyonuCalistir(intent);
                 }
             }
         }
@@ -401,9 +461,26 @@
         _onayAcik = false;
         _bekleyenIntent = null;
         StateHasChanged();
-        if (intent != null && OnAksiyon.HasDelegate)
+        if (intent != null) await AksiyonuCalistir(intent);
+    }
+
+    /// <summary>
+    /// Aksiyonu sayfa tarafına ilet — önce parametre handler (varsa), yoksa
+    /// VoiceContextService'deki handler.
+    /// </summary>
+    private async Task AksiyonuCalistir(VoiceIntent intent)
+    {
+        if (OnAksiyon.HasDelegate)
         {
             await OnAksiyon.InvokeAsync(intent);
+        }
+        else if (VoiceCtx.OnAksiyon != null)
+        {
+            await VoiceCtx.OnAksiyon(intent);
+        }
+        else
+        {
+            Snackbar.Add("Bu sayfa bu aksiyonu desteklemiyor.", Severity.Warning);
         }
     }
 }

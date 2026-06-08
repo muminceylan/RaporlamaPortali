@@ -7,6 +7,7 @@
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
 @inject IDialogService DialogService
+@inject VoiceContextService VoiceCtx
 
 <PageTitle>e-Fatura Görüntüleme</PageTitle>
 
@@ -24,10 +25,6 @@
     </MudAlert>
 }
 
-<SesliKomutPanel SayfaAdi="e-Fatura Görüntüleme"
-                 ToolListesi="@_voiceTools"
-                 EkContext="@VoiceContextOlustur()"
-                 OnAksiyon="@SesliAksiyonCalistir" />
 
 <MudPaper Class="pa-3 mb-3" Elevation="3" Style="border-left:4px solid #1976d2;">
     <MudGrid Spacing="2">
@@ -666,6 +663,9 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        VoiceCtx.Register(_voiceTools, "e-Fatura Görüntüleme",
+            getEkContext: VoiceContextOlustur,
+            onAksiyon:    SesliAksiyonCalistir);
         if (Svc.BaglantiTanimliMi)
         {
             try

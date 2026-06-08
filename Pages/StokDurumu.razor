@@ -6,6 +6,7 @@
 @inject AfyonAmbarService AfyonAmbar
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
+@inject VoiceContextService VoiceCtx
 
 <PageTitle>Stok Durumu</PageTitle>
 
@@ -14,10 +15,6 @@
     Stok Durumu
 </MudText>
 
-<SesliKomutPanel SayfaAdi="Stok Durumu"
-                 ToolListesi="@_voiceTools"
-                 EkContext="@VoiceContextOlustur()"
-                 OnAksiyon="@SesliAksiyonCalistir" />
 
 <MudPaper Class="pa-3 mb-3">
     <MudGrid>
@@ -204,6 +201,9 @@
 
     protected override async Task OnInitializedAsync()
     {
+        VoiceCtx.Register(_voiceTools, "Stok Durumu",
+            getEkContext: VoiceContextOlustur,
+            onAksiyon:    SesliAksiyonCalistir);
         _ambarlar = await Logo.AmbarSecenekleriAsync();
         _afyonListe = AfyonAmbar.Liste.ToList();
         await VeriYukle();

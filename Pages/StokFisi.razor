@@ -7,6 +7,7 @@
 @inject LogoOrgLookupService Org
 @inject LogoMasterKartLookupService Lookup
 @inject IrsaliyeListeService FisServ
+@inject VoiceContextService VoiceCtx
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
 @implements IDisposable
@@ -20,11 +21,6 @@
              Icon="@Icons.Material.Filled.Storage">Logo Unity COM</MudChip>
 </MudText>
 
-<SesliKomutPanel SayfaAdi="@_baslik"
-                 ToolListesi="@_voiceTools"
-                 EkContext="@VoiceContextOlustur()"
-                 OnayGerektirenAksiyonlar="@_voiceOnayAksiyonlar"
-                 OnAksiyon="@SesliAksiyonCalistir" />
 
 <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
     @if (_tip == 13)
@@ -374,6 +370,11 @@
     {
         ResolveModFromUrl();
         Nav.LocationChanged += OnLocationChanged;
+
+        VoiceCtx.Register(_voiceTools, _baslik,
+            getEkContext: VoiceContextOlustur,
+            onayList:     _voiceOnayAksiyonlar,
+            onAksiyon:    SesliAksiyonCalistir);
 
         _ambarlar   = await Org.AmbarlarAsync();
         _fabrikalar = await Org.FabrikalarAsync();
