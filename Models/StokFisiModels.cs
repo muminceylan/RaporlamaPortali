@@ -47,6 +47,21 @@ public class StokFisiSatir
     public string? Aciklama { get; set; }
 }
 
+// "Son Fişlerim" panelinde gösterilen özet
+public class StokFisiOzet
+{
+    public int      LogicalRef    { get; set; }
+    public string   FisNo         { get; set; } = "";
+    public DateTime Tarih         { get; set; }
+    public int      Trcode        { get; set; }
+    public int      Ambar         { get; set; }
+    public string   AmbarAdi      { get; set; } = "";
+    public int      Fabrika       { get; set; }
+    public int      SatirSayisi   { get; set; }
+    public decimal  ToplamMiktar  { get; set; }
+    public string?  Aciklama1     { get; set; }
+}
+
 // Aktarım sonucu
 public class StokFisiAktarimSonuc
 {

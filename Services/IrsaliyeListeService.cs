@@ -160,4 +160,113 @@ ORDER BY ST.LOGICALREF";
 
         return bas;
     }
+
+    // ============================================================================
+    // STOK FİŞİ "Kopyala" desteği
+    // ----------------------------------------------------------------------------
+    // Üretimden Giriş (TRCODE=13) ve Sarf/Promosyon (TRCODE=22) fişleri için
+    // kullanıcının geçmiş kayıtlarını listele + bir fişi forma yüklenebilecek
+    // şekilde StokFisiModel olarak döndür.
+    // Kullanıcı eşlemesi: L_CAPIUSER.NAME = secrets'taki LogoUnityKullanici.
+    // ============================================================================
+
+    public async Task<List<StokFisiOzet>> KullaniciStokFisleriAsync(
+        int trcode,
+        string kullaniciAdi,
+        int limit = 30,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(kullaniciAdi)) return new();
+
+        var stficheTbl = _db.GetPeriodTableName("STFICHE");
+        var stlineTbl  = _db.GetPeriodTableName("STLINE");
+
+        var sql = $@"
+;WITH MeUser AS (
+    SELECT TOP 1 NR
+    FROM L_CAPIUSER WITH(NOLOCK)
+    WHERE LTRIM(RTRIM(NAME)) = LTRIM(RTRIM(@Kullanici))
+)
+SELECT TOP (@Lim)
+    LogicalRef   = SF.LOGICALREF,
+    FisNo        = ISNULL(SF.FICHENO, ''),
+    Tarih        = SF.DATE_,
+    Trcode       = SF.TRCODE,
+    Ambar        = SF.SOURCEINDEX,
+    AmbarAdi     = ISNULL(CW.NAME, ''),
+    Fabrika      = ISNULL(SF.GENEXCTYP, 17),  -- STFICHE'de fabrika alanı yok, varsayılan
+    SatirSayisi  = (SELECT COUNT(*) FROM {stlineTbl} ST2 WITH(NOLOCK)
+                    WHERE ST2.STFICHEREF = SF.LOGICALREF AND ST2.CANCELLED = 0 AND ST2.LPRODSTAT = 0),
+    ToplamMiktar = ISNULL((SELECT SUM(ST2.AMOUNT) FROM {stlineTbl} ST2 WITH(NOLOCK)
+                    WHERE ST2.STFICHEREF = SF.LOGICALREF AND ST2.CANCELLED = 0 AND ST2.LPRODSTAT = 0), 0),
+    Aciklama1    = SF.GENEXP1
+FROM {stficheTbl} SF WITH(NOLOCK)
+INNER JOIN MeUser MU ON SF.CAPIBLOCK_CREATEDBY = MU.NR
+LEFT JOIN L_CAPIWHOUSE CW WITH(NOLOCK) ON CW.FIRMNR = @Firma AND CW.NR = SF.SOURCEINDEX
+WHERE SF.CANCELLED = 0 AND SF.TRCODE = @Trcode
+ORDER BY SF.DATE_ DESC, SF.LOGICALREF DESC";
+
+        using var conn = _db.CreateConnection();
+        var cmd = new CommandDefinition(sql, new
+        {
+            Firma     = _db.FirmaNo,
+            Trcode    = trcode,
+            Kullanici = kullaniciAdi,
+            Lim       = limit,
+        }, commandTimeout: 60, cancellationToken: ct);
+
+        return (await conn.QueryAsync<StokFisiOzet>(cmd)).AsList();
+    }
+
+    /// <summary>
+    /// Var olan bir STFICHE kaydını forma yüklenecek StokFisiModel'e dönüştürür.
+    /// "Kopyala" akışında belge no temizlenir, sadece içerik kopyalanır.
+    /// </summary>
+    public async Task<StokFisiModel?> StokFisiYukleAsync(int logicalRef, CancellationToken ct = default)
+    {
+        var stficheTbl = _db.GetPeriodTableName("STFICHE");
+        var stlineTbl  = _db.GetPeriodTableName("STLINE");
+        var itemsTbl   = _db.GetTableName("ITEMS");
+
+        var basSql = $@"
+SELECT
+    Tip       = SF.TRCODE,
+    Tarih     = SF.DATE_,
+    Ambar     = SF.SOURCEINDEX,
+    Fabrika   = ISNULL(SF.GENEXCTYP, 17),
+    Aciklama1 = SF.GENEXP1,
+    Aciklama2 = SF.GENEXP2,
+    BelgeNo   = SF.FICHENO
+FROM {stficheTbl} SF WITH(NOLOCK)
+WHERE SF.LOGICALREF = @Ref";
+
+        var satirSql = $@"
+SELECT
+    MalzemeKodu = ISNULL(IT.CODE, ''),
+    MalzemeAdi  = ISNULL(IT.NAME, ''),
+    Birim       = '',
+    Miktar      = ISNULL(ST.AMOUNT, 0),
+    Aciklama    = NULLIF(ST.LINEEXP, '')
+FROM {stlineTbl} ST WITH(NOLOCK)
+LEFT JOIN {itemsTbl} IT WITH(NOLOCK) ON ST.STOCKREF = IT.LOGICALREF
+WHERE ST.STFICHEREF = @Ref
+  AND ST.CANCELLED = 0
+  AND ST.LPRODSTAT = 0
+ORDER BY ST.LOGICALREF";
+
+        using var conn = _db.CreateConnection();
+        var bas = await conn.QueryFirstOrDefaultAsync<StokFisiModel>(
+            new CommandDefinition(basSql, new { Ref = logicalRef }, cancellationToken: ct));
+        if (bas == null) return null;
+
+        bas.Satirlar = (await conn.QueryAsync<StokFisiSatir>(
+            new CommandDefinition(satirSql, new { Ref = logicalRef }, cancellationToken: ct))).AsList();
+
+        // Kopyala akışı: belge no boş — Logo yeniden otomatik versin
+        bas.BelgeNo = null;
+        // Tarihi bugüne çek
+        bas.Tarih = DateTime.Today;
+
+        return bas;
+    }
 }

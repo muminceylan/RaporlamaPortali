@@ -6,6 +6,7 @@
 @inject LogoUnityComService Unity
 @inject LogoOrgLookupService Org
 @inject LogoMasterKartLookupService Lookup
+@inject IrsaliyeListeService FisServ
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
 @implements IDisposable
@@ -30,6 +31,89 @@
     }
     Fiyat girilmez — Logo otomatik maliyetlendirme yapar.
 </MudAlert>
+
+<MudPaper Class="mb-3" Elevation="2">
+    <div class="sf-sonfis-header" @onclick="@(() => _sonFislerimAcik = !_sonFislerimAcik)">
+        <MudIcon Icon="@Icons.Material.Filled.History" Class="mr-2" />
+        <b>Son Fişlerim</b>
+        <span style="color:#666; margin-left:8px;">
+            (@_sonFislerim.Count adet — kopyalanacak fişi seç)
+        </span>
+        <MudSpacer />
+        <MudIconButton Icon="@(_sonFislerimAcik ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
+                       Size="Size.Small" Color="Color.Default" />
+    </div>
+    @if (_sonFislerimAcik)
+    {
+        <div class="pa-3">
+            @if (_sonFislerYukleniyor)
+            {
+                <div class="d-flex justify-center pa-2">
+                    <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+                </div>
+            }
+            else if (string.IsNullOrWhiteSpace(SecretsService.LogoUnityKullanici))
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true">
+                    Logo Unity kullanıcı adı tanımlı değil — Sırlar sayfasından gir, sonra geçmiş fişler listelensin.
+                </MudAlert>
+            }
+            else if (_sonFislerim.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true">
+                    <b>@SecretsService.LogoUnityKullanici</b> kullanıcısı ile oluşturulmuş
+                    @(_tip == 13 ? "üretim giriş" : "sarf/çıkış") fişi bulunamadı.
+                </MudAlert>
+            }
+            else
+            {
+                <table class="sf-sonfis-tbl">
+                    <thead>
+                        <tr>
+                            <th style="width:95px;">Tarih</th>
+                            <th style="width:165px;">Fiş No</th>
+                            <th style="width:70px; text-align:center;">Ambar</th>
+                            <th>Ambar Adı</th>
+                            <th style="width:70px; text-align:center;">Satır</th>
+                            <th style="width:120px; text-align:right;">Toplam Miktar</th>
+                            <th>Açıklama</th>
+                            <th style="width:100px; text-align:center;">İşlem</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var f in _sonFislerim)
+                        {
+                            <tr @ondblclick="@(() => KopyalaFis(f))"
+                                style="cursor:pointer;"
+                                title="Çift tıkla → forma kopyala">
+                                <td>@f.Tarih.ToString("dd.MM.yyyy")</td>
+                                <td><b>@f.FisNo</b></td>
+                                <td style="text-align:center;">@(f.Ambar == 0 ? "" : f.Ambar.ToString())</td>
+                                <td>@f.AmbarAdi</td>
+                                <td style="text-align:center;">@f.SatirSayisi</td>
+                                <td style="text-align:right;">@f.ToplamMiktar.ToString("N3")</td>
+                                <td style="color:#666;">@f.Aciklama1</td>
+                                <td style="text-align:center;">
+                                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                                               StartIcon="@Icons.Material.Filled.ContentCopy"
+                                               OnClick="@(() => KopyalaFis(f))"
+                                               Disabled="_kopyalaniyor">
+                                        Kopyala
+                                    </MudButton>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <div class="mt-2" style="font-size:0.8rem; color:#666;">
+                    <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" Style="vertical-align:-3px;" />
+                    Kopyala'ya tıkla veya satıra <b>çift tık</b> — fiş başlığı (ambar, fabrika, açıklamalar) ve
+                    satırlar (malzeme + miktar) forma yüklenir. Belge No boş kalır, tarih bugüne gelir.
+                </div>
+            }
+        </div>
+    }
+</MudPaper>
 
 <MudPaper Class="pa-4 mb-3" Elevation="2">
     <MudGrid Spacing="2">
@@ -237,6 +321,25 @@
     .sf-tablo tbody td { padding:4px 6px; border-bottom:1px solid #eee; vertical-align:middle; }
     .sf-tablo tbody tr:nth-child(even) { background:#fafafa; }
     .sf-tablo tfoot td { background:#ECEFF1; padding:8px; border-top:2px solid #1976d2; font-weight:600; }
+
+    .sf-sonfis-header {
+        background: linear-gradient(90deg, #E3F2FD, #BBDEFB);
+        padding: 10px 14px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        font-size: 0.95rem;
+        border-bottom: 1px solid #90caf9;
+    }
+    .sf-sonfis-header:hover { background: linear-gradient(90deg, #BBDEFB, #90CAF9); }
+    .sf-sonfis-tbl { width:100%; border-collapse:collapse; font-size:0.85rem; }
+    .sf-sonfis-tbl thead th {
+        background:#37474F; color:#fff; padding:6px 8px;
+        text-align:left; font-weight:600; font-size:0.78rem;
+    }
+    .sf-sonfis-tbl tbody td { padding:5px 8px; border-bottom:1px solid #eee; }
+    .sf-sonfis-tbl tbody tr:nth-child(even) { background:#fafafa; }
+    .sf-sonfis-tbl tbody tr:hover { background:#FFF9C4 !important; }
 </style>
 
 @code {
@@ -255,6 +358,12 @@
     private bool                 _gonderiliyor;
     private StokFisiAktarimSonuc? _sonuc;
 
+    // "Son Fişlerim" paneli state
+    private List<StokFisiOzet>  _sonFislerim      = new();
+    private bool                _sonFislerimAcik  = false;
+    private bool                _sonFislerYukleniyor;
+    private bool                _kopyalaniyor;
+
     protected override async Task OnInitializedAsync()
     {
         ResolveModFromUrl();
@@ -263,11 +372,98 @@
         _ambarlar   = await Org.AmbarlarAsync();
         _fabrikalar = await Org.FabrikalarAsync();
 
-        // Varsayılan ambar = Afyon ambar listesinden ilk eleman (varsa)
-        if (_model.Ambar == 0 && _ambarlar.Count > 0)
-            _model.Ambar = int.Parse(_ambarlar[0].Kod);
-        if (_model.Fabrika == 0 && _fabrikalar.Count > 0)
-            _model.Fabrika = int.Parse(_fabrikalar[0].Kod);
+        // Varsayılanlar: Ambar=152, Fabrika=17 (Afyon Şeker Fabrikası).
+        // Listede yoksa ilk elemana düş.
+        if (_model.Ambar == 0)
+        {
+            _model.Ambar = _ambarlar.Any(a => a.Kod == "152")
+                ? 152
+                : (_ambarlar.Count > 0 ? int.Parse(_ambarlar[0].Kod) : 0);
+        }
+        if (_model.Fabrika == 0)
+        {
+            _model.Fabrika = _fabrikalar.Any(f => f.Kod == "17")
+                ? 17
+                : (_fabrikalar.Count > 0 ? int.Parse(_fabrikalar[0].Kod) : 0);
+        }
+
+        await SonFislerimYukle();
+    }
+
+    private async Task SonFislerimYukle()
+    {
+        var kullanici = SecretsService.LogoUnityKullanici;
+        if (string.IsNullOrWhiteSpace(kullanici))
+        {
+            _sonFislerim = new();
+            return;
+        }
+        _sonFislerYukleniyor = true;
+        try
+        {
+            _sonFislerim = await FisServ.KullaniciStokFisleriAsync(_tip, kullanici, 30);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Geçmiş fişler yüklenemedi: {ex.Message}", Severity.Warning);
+            _sonFislerim = new();
+        }
+        finally
+        {
+            _sonFislerYukleniyor = false;
+        }
+    }
+
+    private async Task KopyalaFis(StokFisiOzet ozet)
+    {
+        _kopyalaniyor = true;
+        try
+        {
+            var yuk = await FisServ.StokFisiYukleAsync(ozet.LogicalRef);
+            if (yuk == null)
+            {
+                Snackbar.Add($"Fiş bulunamadı (LOGICALREF={ozet.LogicalRef}).", Severity.Warning);
+                return;
+            }
+
+            // Forma uygula
+            _model.TarihNullable = yuk.Tarih;
+            _model.Ambar         = yuk.Ambar > 0 ? yuk.Ambar : _model.Ambar;
+            _model.Fabrika       = yuk.Fabrika > 0 ? yuk.Fabrika : _model.Fabrika;
+            _model.Aciklama1     = yuk.Aciklama1;
+            _model.Aciklama2     = yuk.Aciklama2;
+            _model.BelgeNo       = null;   // boş - Logo yeniden versin
+
+            _model.Satirlar = yuk.Satirlar.Select(s => new StokFisiSatir
+            {
+                MalzemeKodu = s.MalzemeKodu,
+                MalzemeAdi  = s.MalzemeAdi,
+                Birim       = s.Birim,
+                Miktar      = s.Miktar,
+                Aciklama    = s.Aciklama,
+            }).ToList();
+
+            // Autocomplete _secimler dizisini de doldur
+            _secimler = _model.Satirlar
+                .Select(s => (LogoMasterKartLookupService.MasterKart?)new LogoMasterKartLookupService.MasterKart
+                {
+                    Kod      = s.MalzemeKodu,
+                    Aciklama = s.MalzemeAdi,
+                })
+                .ToList();
+
+            _sonuc = null;
+            _sonFislerimAcik = false;   // panel kapansın, kullanıcı forma odaklansın
+            Snackbar.Add($"Fiş kopyalandı — {yuk.Satirlar.Count} satır. Sadece miktarları kontrol et / değiştir, sonra gönder.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Kopyalama hatası: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _kopyalaniyor = false;
+        }
     }
 
     public void Dispose()
@@ -279,7 +475,16 @@
     {
         var eski = _tip;
         ResolveModFromUrl();
-        if (_tip != eski) { Temizle(); StateHasChanged(); }
+        if (_tip != eski)
+        {
+            Temizle();
+            InvokeAsync(async () =>
+            {
+                StateHasChanged();
+                await SonFislerimYukle();
+                StateHasChanged();
+            });
+        }
     }
 
     private void ResolveModFromUrl()
@@ -337,8 +542,10 @@
     {
         _model = new StokFisiModelView
         {
-            Ambar   = _ambarlar.Count   > 0 ? int.Parse(_ambarlar[0].Kod)   : 0,
-            Fabrika = _fabrikalar.Count > 0 ? int.Parse(_fabrikalar[0].Kod) : 0,
+            Ambar   = _ambarlar.Any(a => a.Kod == "152") ? 152
+                                                         : (_ambarlar.Count > 0 ? int.Parse(_ambarlar[0].Kod) : 0),
+            Fabrika = _fabrikalar.Any(f => f.Kod == "17") ? 17
+                                                         : (_fabrikalar.Count > 0 ? int.Parse(_fabrikalar[0].Kod) : 0),
         };
         _secimler = new();
         _sonuc    = null;
@@ -411,6 +618,8 @@
             if (_sonuc.Basarili)
             {
                 Snackbar.Add($"Logo'ya gönderildi. Fiş No: {_sonuc.LogoFisNo}", Severity.Success);
+                // Yeni fişi listeye yansıt
+                await SonFislerimYukle();
             }
             else
             {
