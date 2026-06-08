@@ -1,0 +1,442 @@
+@page "/uretimden-giris-fisi"
+@page "/promosyon-cikis-fisi"
+@using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
+@using RaporlamaPortali.Services.Logo
+@inject LogoUnityComService Unity
+@inject LogoOrgLookupService Org
+@inject LogoMasterKartLookupService Lookup
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@implements IDisposable
+
+<PageTitle>@_baslik</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-3 d-flex align-center">
+    <MudIcon Icon="@_iconYol" Class="mr-2" />
+    @_baslik
+    <MudChip T="string" Size="Size.Small" Color="Color.Default" Class="ml-3"
+             Icon="@Icons.Material.Filled.Storage">Logo Unity COM</MudChip>
+</MudText>
+
+<MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+    @if (_tip == 13)
+    {
+        <span>Üretim ambarına stok girişi yaparak fiş oluşturur (TYPE=13, doMaterialSlip).</span>
+    }
+    else
+    {
+        <span>Promosyon/sarf çıkışı olarak stoktan düşüm yapar (TYPE=22, doMaterialSlip).</span>
+    }
+    Fiyat girilmez — Logo otomatik maliyetlendirme yapar.
+</MudAlert>
+
+<MudPaper Class="pa-4 mb-3" Elevation="2">
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="3">
+            <MudDatePicker Label="Tarih" @bind-Date="_model.TarihNullable"
+                           DateFormat="dd.MM.yyyy" Editable="true"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudSelect T="int" Label="Ambar (SOURCE_WH)" @bind-Value="_model.Ambar"
+                       Variant="Variant.Outlined" Margin="Margin.Dense"
+                       Dense="true">
+                @foreach (var a in _ambarlar)
+                {
+                    var nr = int.Parse(a.Kod);
+                    <MudSelectItem Value="@nr">@a.Etiket</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudSelect T="int" Label="Fabrika (FACTORYNR)" @bind-Value="_model.Fabrika"
+                       Variant="Variant.Outlined" Margin="Margin.Dense"
+                       Dense="true">
+                @foreach (var f in _fabrikalar)
+                {
+                    var nr = int.Parse(f.Kod);
+                    <MudSelectItem Value="@nr">@f.Etiket</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudTextField @bind-Value="_model.BelgeNo" Label="Belge No (opsiyonel)"
+                          HelperText="Boş bırakılırsa Logo otomatik verir"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudTextField @bind-Value="_model.Aciklama1" Label="Açıklama 1"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudTextField @bind-Value="_model.Aciklama2" Label="Açıklama 2"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudPaper Class="pa-3 mb-3" Elevation="2">
+    <div class="d-flex align-center mb-2">
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.FormatListBulleted" Class="mr-1" />
+            Satırlar (@_model.Satirlar.Count)
+        </MudText>
+        <MudSpacer />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="SatirEkle">
+            Satır Ekle
+        </MudButton>
+    </div>
+
+    @if (_model.Satirlar.Count == 0)
+    {
+        <MudAlert Severity="Severity.Warning" Dense="true">
+            Henüz satır yok. "Satır Ekle" ile başla.
+        </MudAlert>
+    }
+    else
+    {
+        <table class="sf-tablo">
+            <thead>
+                <tr>
+                    <th style="width:36px;">#</th>
+                    <th style="width:230px;">Malzeme Kodu</th>
+                    <th>Malzeme Adı</th>
+                    <th style="width:140px; text-align:right;">Miktar</th>
+                    <th style="width:80px;">Birim</th>
+                    <th>Satır Açıklaması</th>
+                    <th style="width:40px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @for (int i = 0; i < _model.Satirlar.Count; i++)
+                {
+                    var idx = i;
+                    var s = _model.Satirlar[idx];
+                    <tr>
+                        <td>@(idx + 1)</td>
+                        <td>
+                            <MudAutocomplete T="LogoMasterKartLookupService.MasterKart"
+                                             Value="@(_secimler[idx])"
+                                             ValueChanged="@(v => MalzemeSecildi(idx, v))"
+                                             SearchFunc="MalzemeAraAsync"
+                                             ToStringFunc="@(x => x?.Kod ?? "")"
+                                             ResetValueOnEmptyText="false"
+                                             ShowProgressIndicator="true"
+                                             Placeholder="Kod veya isim ile ara…"
+                                             Dense="true" Margin="Margin.Dense"
+                                             Variant="Variant.Outlined"
+                                             MaxItems="50" Immediate="true">
+                                <ItemTemplate Context="kart">
+                                    <div>
+                                        <b>@kart.Kod</b>
+                                        <span style="color:#666; margin-left:8px;">@kart.Aciklama</span>
+                                    </div>
+                                </ItemTemplate>
+                                <NoItemsTemplate>
+                                    <div style="padding:6px 12px; color:#999;">Eşleşme yok</div>
+                                </NoItemsTemplate>
+                            </MudAutocomplete>
+                        </td>
+                        <td>@s.MalzemeAdi</td>
+                        <td style="text-align:right;">
+                            <MudNumericField T="decimal" Value="@s.Miktar"
+                                             ValueChanged="@((decimal v) => { s.Miktar = v; })"
+                                             Variant="Variant.Outlined" Margin="Margin.Dense"
+                                             HideSpinButtons="true" Min="0" Format="N3" />
+                        </td>
+                        <td>
+                            <MudTextField Value="@s.Birim"
+                                          ValueChanged="@((string v) => { s.Birim = v ?? ""; })"
+                                          T="string"
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </td>
+                        <td>
+                            <MudTextField Value="@s.Aciklama"
+                                          ValueChanged="@((string v) => { s.Aciklama = v; })"
+                                          T="string"
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </td>
+                        <td>
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                           Size="Size.Small"
+                                           OnClick="@(() => SatirSil(idx))" />
+                        </td>
+                    </tr>
+                }
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td colspan="3" style="text-align:right;">Toplam (@_model.Satirlar.Count satır):</td>
+                    <td style="text-align:right;"><b>@(_model.Satirlar.Sum(s => s.Miktar).ToString("N3"))</b></td>
+                    <td colspan="3"></td>
+                </tr>
+            </tfoot>
+        </table>
+    }
+</MudPaper>
+
+<MudPaper Class="pa-3 mb-3" Elevation="0" Style="background:#f5f5f5;">
+    <div class="d-flex align-center" style="gap:12px;">
+        <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Large"
+                   StartIcon="@Icons.Material.Filled.CloudUpload"
+                   Disabled="_gonderiliyor || _model.Satirlar.Count == 0"
+                   OnClick="LogoyaGonder">
+            @if (_gonderiliyor)
+            {
+                <MudProgressCircular Indeterminate="true" Size="Size.Small" Class="mr-2" />
+            }
+            Logo'ya Gönder
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Default"
+                   StartIcon="@Icons.Material.Filled.RestartAlt"
+                   Disabled="_gonderiliyor"
+                   OnClick="Temizle">
+            Formu Temizle
+        </MudButton>
+        @if (_sonuc != null && !string.IsNullOrWhiteSpace(_sonuc.LogoFisNo))
+        {
+            <MudChip T="string" Color="Color.Success" Icon="@Icons.Material.Filled.CheckCircle">
+                Logo Fiş No: @_sonuc.LogoFisNo
+            </MudChip>
+        }
+    </div>
+</MudPaper>
+
+@if (_sonuc != null)
+{
+    @if (_sonuc.Basarili)
+    {
+        <MudAlert Severity="Severity.Success" Class="mb-3">
+            <b>Başarılı!</b> Fiş Logo'ya kaydedildi.
+            @if (!string.IsNullOrWhiteSpace(_sonuc.LogoFisNo)) { <span>Fiş No: <b>@_sonuc.LogoFisNo</b></span> }
+        </MudAlert>
+    }
+    else
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-3">
+            <b>Hata:</b> @(_sonuc.LoginHata ?? _sonuc.Hata)
+            @if (!string.IsNullOrWhiteSpace(_sonuc.DiagLog))
+            {
+                <details class="mt-2">
+                    <summary style="cursor:pointer;">Detay</summary>
+                    <pre style="font-size:0.75rem; white-space:pre-wrap;">@_sonuc.DiagLog</pre>
+                </details>
+            }
+        </MudAlert>
+    }
+}
+
+<style>
+    .sf-tablo { width:100%; border-collapse:collapse; font-size:0.88rem; }
+    .sf-tablo thead th {
+        background:#1976d2; color:#fff; padding:8px;
+        text-align:left; font-weight:600; border:1px solid #1565c0;
+    }
+    .sf-tablo tbody td { padding:4px 6px; border-bottom:1px solid #eee; vertical-align:middle; }
+    .sf-tablo tbody tr:nth-child(even) { background:#fafafa; }
+    .sf-tablo tfoot td { background:#ECEFF1; padding:8px; border-top:2px solid #1976d2; font-weight:600; }
+</style>
+
+@code {
+    private int      _tip;
+    private string   _baslik  = "Stok Fişi";
+    private string   _iconYol = Icons.Material.Filled.Inventory2;
+
+    private StokFisiModelView _model = new();
+    // MudAutocomplete'in Value parametresi için her satıra paralel bir kart listesi tutuyoruz
+    // (s.MalzemeKodu string ama MasterKart object — autocomplete obje ister).
+    private List<LogoMasterKartLookupService.MasterKart?> _secimler = new();
+
+    private List<LogoOrgLookupService.KodAd> _ambarlar   = new();
+    private List<LogoOrgLookupService.KodAd> _fabrikalar = new();
+
+    private bool                 _gonderiliyor;
+    private StokFisiAktarimSonuc? _sonuc;
+
+    protected override async Task OnInitializedAsync()
+    {
+        ResolveModFromUrl();
+        Nav.LocationChanged += OnLocationChanged;
+
+        _ambarlar   = await Org.AmbarlarAsync();
+        _fabrikalar = await Org.FabrikalarAsync();
+
+        // Varsayılan ambar = Afyon ambar listesinden ilk eleman (varsa)
+        if (_model.Ambar == 0 && _ambarlar.Count > 0)
+            _model.Ambar = int.Parse(_ambarlar[0].Kod);
+        if (_model.Fabrika == 0 && _fabrikalar.Count > 0)
+            _model.Fabrika = int.Parse(_fabrikalar[0].Kod);
+    }
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        var eski = _tip;
+        ResolveModFromUrl();
+        if (_tip != eski) { Temizle(); StateHasChanged(); }
+    }
+
+    private void ResolveModFromUrl()
+    {
+        var uri = new Uri(Nav.Uri);
+        if (uri.AbsolutePath.Contains("promosyon", StringComparison.OrdinalIgnoreCase))
+        {
+            _tip = 22;
+            _baslik = "Promosyon - Çıkış Fişi";
+            _iconYol = Icons.Material.Filled.Outbox;
+        }
+        else
+        {
+            _tip = 13;
+            _baslik = "Üretimden Giriş Fişi";
+            _iconYol = Icons.Material.Filled.Inbox;
+        }
+    }
+
+    private void SatirEkle()
+    {
+        _model.Satirlar.Add(new StokFisiSatir());
+        _secimler.Add(null);
+    }
+
+    private void SatirSil(int idx)
+    {
+        if (idx < 0 || idx >= _model.Satirlar.Count) return;
+        _model.Satirlar.RemoveAt(idx);
+        _secimler.RemoveAt(idx);
+    }
+
+    private async Task<IEnumerable<LogoMasterKartLookupService.MasterKart>> MalzemeAraAsync(string? q)
+    {
+        return await Lookup.MalzemeAraAsync(q, 50);
+    }
+
+    private void MalzemeSecildi(int idx, LogoMasterKartLookupService.MasterKart? kart)
+    {
+        if (idx < 0 || idx >= _model.Satirlar.Count) return;
+        _secimler[idx] = kart;
+        if (kart != null)
+        {
+            _model.Satirlar[idx].MalzemeKodu = kart.Kod;
+            _model.Satirlar[idx].MalzemeAdi  = kart.Aciklama;
+        }
+        else
+        {
+            _model.Satirlar[idx].MalzemeKodu = "";
+            _model.Satirlar[idx].MalzemeAdi  = "";
+        }
+    }
+
+    private void Temizle()
+    {
+        _model = new StokFisiModelView
+        {
+            Ambar   = _ambarlar.Count   > 0 ? int.Parse(_ambarlar[0].Kod)   : 0,
+            Fabrika = _fabrikalar.Count > 0 ? int.Parse(_fabrikalar[0].Kod) : 0,
+        };
+        _secimler = new();
+        _sonuc    = null;
+    }
+
+    private async Task LogoyaGonder()
+    {
+        // Doğrulama
+        if (_model.Satirlar.Count == 0)
+        {
+            Snackbar.Add("En az 1 satır eklemelisin.", Severity.Warning);
+            return;
+        }
+        var bosKodlu = _model.Satirlar.Any(s => string.IsNullOrWhiteSpace(s.MalzemeKodu));
+        if (bosKodlu)
+        {
+            Snackbar.Add("Tüm satırlarda malzeme kodu seçilmeli.", Severity.Warning);
+            return;
+        }
+        var bosMiktarli = _model.Satirlar.Any(s => s.Miktar <= 0);
+        if (bosMiktarli)
+        {
+            Snackbar.Add("Tüm satırlarda miktar > 0 olmalı.", Severity.Warning);
+            return;
+        }
+        if (_model.Ambar <= 0)
+        {
+            Snackbar.Add("Ambar seçilmeli.", Severity.Warning);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(SecretsService.LogoUnityKullanici) ||
+            string.IsNullOrWhiteSpace(SecretsService.LogoUnitySifre))
+        {
+            Snackbar.Add("Logo Unity kullanıcı bilgileri ayarlanmamış — Sırlar sayfasından gir.", Severity.Error);
+            return;
+        }
+
+        var cred = new LogoUnityCredentials
+        {
+            Kullanici = SecretsService.LogoUnityKullanici!,
+            Sifre     = SecretsService.LogoUnitySifre!,
+            FirmaNo   = 211,
+        };
+
+        var modelToSend = new StokFisiModel
+        {
+            Tip       = _tip,
+            Tarih     = _model.TarihNullable ?? DateTime.Today,
+            Ambar     = _model.Ambar,
+            Fabrika   = _model.Fabrika,
+            Aciklama1 = _model.Aciklama1,
+            Aciklama2 = _model.Aciklama2,
+            BelgeNo   = _model.BelgeNo,
+            Satirlar  = _model.Satirlar.Select(s => new StokFisiSatir
+            {
+                MalzemeKodu = s.MalzemeKodu,
+                MalzemeAdi  = s.MalzemeAdi,
+                Birim       = s.Birim,
+                Miktar      = s.Miktar,
+                Aciklama    = s.Aciklama,
+            }).ToList(),
+        };
+
+        _gonderiliyor = true;
+        _sonuc = null;
+        StateHasChanged();
+        try
+        {
+            _sonuc = await Unity.StokFisiAktarAsync(cred, modelToSend);
+            if (_sonuc.Basarili)
+            {
+                Snackbar.Add($"Logo'ya gönderildi. Fiş No: {_sonuc.LogoFisNo}", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add(_sonuc.LoginHata ?? _sonuc.Hata ?? "Bilinmeyen hata.", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            _sonuc = new StokFisiAktarimSonuc { Hata = ex.Message };
+            Snackbar.Add($"Beklenmedik hata: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _gonderiliyor = false;
+        }
+    }
+
+    // UI tarafındaki nullable Tarih için view-model
+    private class StokFisiModelView
+    {
+        public DateTime?            TarihNullable { get; set; } = DateTime.Today;
+        public int                  Ambar         { get; set; }
+        public int                  Fabrika       { get; set; }
+        public string?              Aciklama1     { get; set; }
+        public string?              Aciklama2     { get; set; }
+        public string?              BelgeNo       { get; set; }
+        public List<StokFisiSatir>  Satirlar      { get; set; } = new();
+    }
+}

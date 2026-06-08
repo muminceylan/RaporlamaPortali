@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
+using RaporlamaPortali.Models;
 
 namespace RaporlamaPortali.Services.Logo;
 
@@ -2187,6 +2188,263 @@ public class LogoUnityComService
             return $"ErrorCode={code} ErrorDesc={desc} DBErrorDesc={dbDesc}";
         }
         catch { return "(ErrorCode okunamadı)"; }
+    }
+
+    // ============================================================================
+    // STOK FİŞİ AKTARIMI (doMaterialSlip = 1)
+    // ----------------------------------------------------------------------------
+    // Üretimden Giriş Fişi (TYPE=13) ve Promosyon/Çıkış Fişi (TYPE=22) için.
+    // KeyNet decompile enum'undan: doMaterial=0, doMaterialSlip=1, ...
+    // XML referansı: <MATERIAL_SLIPS / SLIP / TRANSACTIONS>
+    //
+    // Fatura aktarımına göre çok daha basit:
+    //   - Cari (ARP_CODE) yok
+    //   - Fiyat / Tutar / KDV yok (stok hareketi, maliyet Logo'da otomatik)
+    //   - Döviz hesapları yok (sadece TL)
+    //   - GRPCODE=3 (XML'de görüldü), POST_FLAGS yok (default OK)
+    // ============================================================================
+
+    private const int DO_MATERIAL_SLIP = 1;
+
+    public Task<StokFisiAktarimSonuc> StokFisiAktarAsync(
+        LogoUnityCredentials cred,
+        StokFisiModel model,
+        CancellationToken ct = default)
+    {
+        var tcs = new TaskCompletionSource<StokFisiAktarimSonuc>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var th = new Thread(() =>
+        {
+            try
+            {
+                var sonuc = ExecuteStokFisiOnStaThread(cred, model, ct);
+                tcs.TrySetResult(sonuc);
+            }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "Logo Unity StokFisi hata");
+                tcs.TrySetException(ex);
+            }
+        });
+        th.SetApartmentState(ApartmentState.STA);
+        th.IsBackground = true;
+        th.Name = "LogoUnityStaThread-StokFisi";
+        th.Start();
+        return tcs.Task;
+    }
+
+    private StokFisiAktarimSonuc ExecuteStokFisiOnStaThread(
+        LogoUnityCredentials cred,
+        StokFisiModel model,
+        CancellationToken ct)
+    {
+        var sonuc = new StokFisiAktarimSonuc();
+        object? app = null;
+        bool loggedIn = false;
+        var diag = new System.Text.StringBuilder();
+
+        try
+        {
+            app = CreateUnityApp();
+
+            bool ok;
+            try { ok = (bool)(Inv(app, "Login", cred.Kullanici, cred.Sifre, cred.FirmaNo) ?? false); }
+            catch (Exception ex) { sonuc.LoginHata = $"Login çağrısı başarısız: {ex.Message}"; return sonuc; }
+
+            if (!ok)
+            {
+                sonuc.LoginHata = $"Logo Login reddetti. {GetStr(app, "GetLastError")} - {GetStr(app, "GetLastErrorString")}";
+                return sonuc;
+            }
+            loggedIn = true;
+            sonuc.LoginBasarili = true;
+
+            ct.ThrowIfCancellationRequested();
+
+            object? slip = null;
+            try
+            {
+                slip = Inv(app, "NewDataObject", DO_MATERIAL_SLIP);
+                if (slip == null)
+                {
+                    sonuc.Hata = $"NewDataObject({DO_MATERIAL_SLIP}=doMaterialSlip) null döndü.";
+                    return sonuc;
+                }
+
+                try { Inv(slip, "New"); }
+                catch (Exception ex) { diag.AppendLine($"New(): {ex.Message}"); }
+
+                // ---- HEADER ----
+                // GROUP=3 — XML referansından (her iki örnek dosyada GROUP=3)
+                SetHeaderField(slip, "GROUP",   3);
+                SetHeaderField(slip, "TYPE",    model.Tip);   // 13=Üretim, 22=Sarf
+
+                if (!string.IsNullOrWhiteSpace(model.BelgeNo))
+                    SetHeaderField(slip, "NUMBER", model.BelgeNo);
+
+                SetHeaderField(slip, "DATE",              model.Tarih);
+                SetHeaderField(slip, "SOURCE_WH",         model.Ambar);
+                SetHeaderField(slip, "SOURCE_FACTORY_NR", model.Fabrika);
+
+                // TIME (Logo encoded) — 12:00:00 default
+                int LogoTimeEncode(int h, int mi, int s) => h * 16777216 + mi * 65536 + s * 256;
+                int headerTime = LogoTimeEncode(12, 0, 0);
+                try { SetHeaderField(slip, "TIME", headerTime); } catch { }
+
+                if (!string.IsNullOrWhiteSpace(model.Aciklama1))
+                    try { SetHeaderField(slip, "GENEXP1", model.Aciklama1); } catch { }
+                if (!string.IsNullOrWhiteSpace(model.Aciklama2))
+                    try { SetHeaderField(slip, "GENEXP2", model.Aciklama2); } catch { }
+
+                // EBOOK_DOCTYPE=99 (XML referansından)
+                try { SetHeaderField(slip, "EBOOK_DOCTYPE", 99); } catch { }
+
+                // CURRSEL_TOTALS=1 (XML referansından — raporlama dövizi)
+                try { SetHeaderField(slip, "CURRSEL_TOTALS", 1); } catch { }
+
+                // ---- TRANSACTIONS (satırlar) ----
+                object? dfRaw = GetProp(slip, "DataFields");
+                if (dfRaw == null)
+                    throw new InvalidOperationException("DataFields null döndü.");
+
+                object? txField = FieldByName(slip, dfRaw, "TRANSACTIONS");
+                if (txField == null)
+                    throw new InvalidOperationException("TRANSACTIONS alanı bulunamadı.");
+
+                object? txItems = GetProp(txField, "DataFields");
+                if (txItems == null)
+                    throw new InvalidOperationException("TRANSACTIONS.DataFields null.");
+
+                int sira = 0;
+                foreach (var sat in model.Satirlar)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    sira++;
+
+                    // Yeni satır ekle
+                    object? satirRow = Inv(txField, "Append");
+                    if (satirRow == null)
+                    {
+                        // Bazı Logo sürümlerinde Append() yerine AppendRow / Item[Count] gerekebilir.
+                        // Alternatif: AppendRow
+                        try { satirRow = Inv(txField, "AppendRow"); } catch { }
+                    }
+                    if (satirRow == null)
+                        throw new InvalidOperationException($"Satır {sira}: TRANSACTIONS.Append null.");
+
+                    object? satirFields = GetProp(satirRow, "DataFields");
+                    if (satirFields == null)
+                    {
+                        // Fallback: doğrudan satırı kullan
+                        satirFields = satirRow;
+                    }
+
+                    SetSatirField(satirRow, satirFields, "LINE_TYPE",   0);
+                    SetSatirField(satirRow, satirFields, "ITEM_CODE",   sat.MalzemeKodu);
+                    SetSatirField(satirRow, satirFields, "SOURCEINDEX", model.Ambar);
+                    SetSatirField(satirRow, satirFields, "FACTORYNR",   model.Fabrika);
+                    SetSatirField(satirRow, satirFields, "LINE_NUMBER", sira);
+                    SetSatirField(satirRow, satirFields, "QUANTITY",    (double)sat.Miktar);
+                    if (!string.IsNullOrWhiteSpace(sat.Birim))
+                        try { SetSatirField(satirRow, satirFields, "UNIT_CODE", sat.Birim); } catch { }
+                    if (!string.IsNullOrWhiteSpace(sat.Aciklama))
+                        try { SetSatirField(satirRow, satirFields, "DESCRIPTION", sat.Aciklama); } catch { }
+                    // EU_VAT_STATUS=4 (XML referansından — istisna)
+                    try { SetSatirField(satirRow, satirFields, "EU_VAT_STATUS", 4); } catch { }
+                    try { SetSatirField(satirRow, satirFields, "EDT_CURR", 1); } catch { }
+                }
+
+                // ---- POST ----
+                bool posted;
+                try { posted = (bool)(Inv(slip, "Post") ?? false); }
+                catch (Exception ex)
+                {
+                    diag.AppendLine($"Post() exception: {ex.Message}");
+                    sonuc.Hata = $"Post hata: {ex.Message}";
+                    sonuc.DiagLog = diag.ToString();
+                    return sonuc;
+                }
+
+                if (!posted)
+                {
+                    var errInfo = CollectInvoiceError(slip);
+                    diag.AppendLine($"Post() false döndü. {errInfo}");
+                    sonuc.Hata = $"Post() reddedildi. {errInfo}";
+                    sonuc.DiagLog = diag.ToString();
+                    return sonuc;
+                }
+
+                // Logo'nun verdiği yeni fiş numarasını oku
+                try
+                {
+                    object? dfPost = GetProp(slip, "DataFields");
+                    if (dfPost != null)
+                    {
+                        object? noField = FieldByName(slip, dfPost, "NUMBER");
+                        if (noField != null)
+                        {
+                            object? noVal = GetProp(noField, "Value");
+                            sonuc.LogoFisNo = noVal?.ToString();
+                        }
+                    }
+                }
+                catch (Exception ex) { diag.AppendLine($"NUMBER oku: {ex.Message}"); }
+
+                sonuc.Basarili = true;
+                sonuc.DiagLog  = diag.ToString();
+                return sonuc;
+            }
+            finally
+            {
+                Release(slip);
+            }
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "StokFisi STA hata");
+            sonuc.Hata = ex.Message;
+            sonuc.DiagLog = diag.ToString();
+            return sonuc;
+        }
+        finally
+        {
+            if (loggedIn && app != null)
+            {
+                try { Inv(app, "Logout"); } catch { }
+            }
+            Release(app);
+        }
+    }
+
+    // FieldByName helper — DataFields koleksiyonundan alan ismi ile alan al
+    private object? FieldByName(object owner, object dataFields, string name)
+    {
+        try { return Inv(dataFields, "FieldByName", name); }
+        catch { }
+        try
+        {
+            int idx = Convert.ToInt32(Inv(dataFields, "GetFieldIndex", name) ?? -1);
+            if (idx >= 0)
+            {
+                object? item = IDispCall(dataFields, "Item", DISPATCH_PROPERTYGET, new object?[] { idx });
+                if (item != null) return item;
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    // Satır alanı set — önce SetHeaderField benzeri, başarısız olursa Item[].Value
+    private void SetSatirField(object satirRow, object satirFields, string name, object value)
+    {
+        try { SetHeaderField(satirRow, name, value); return; }
+        catch { }
+        try
+        {
+            object? f = FieldByName(satirRow, satirFields, name);
+            if (f != null) SetProp(f, "Value", value);
+        }
+        catch (Exception ex) { _log.LogDebug(ex, "SetSatirField({Name}) fallback başarısız", name); }
     }
 
 }
