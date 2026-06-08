@@ -183,7 +183,11 @@
 
     private void OnContextChanged()
     {
-        InvokeAsync(StateHasChanged);
+        InvokeAsync(async () =>
+        {
+            StateHasChanged();
+            await BekleyenAdimlariCalistirEgerVarsa();
+        });
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -395,21 +399,6 @@
             // Sayfanın tool'larına global navigasyon tool'unu otomatik ekle
             var birlesik = new List<SesliKomutTool>(EffTools) { _navigasyonTool };
             var intent = await Voice.KomutuYorumlaAsync(metin, EffSayfaAdi, birlesik, EffEkContext);
-
-            // Navigasyon aksiyonu — sayfa-bazlı handler'a gönderme, doğrudan yönlendir
-            if (intent.Anlasildi && intent.Action == "sayfa_git")
-            {
-                var kod = (intent.Params.GetValueOrDefault("sayfa_kodu") as string ?? "").ToLower();
-                if (_navigasyonUrlMap.TryGetValue(kod, out var url))
-                {
-                    Snackbar.Add(intent.OnayMetni, Severity.Info);
-                    Nav.NavigateTo(url);
-                    return;
-                }
-                _sonHata = $"Bilinmeyen sayfa kodu: {kod}";
-                StateHasChanged();
-                return;
-            }
             if (!intent.Anlasildi)
             {
                 _sonHata = intent.Hata ?? "Komut anlaşılamadı.";
@@ -478,20 +467,54 @@
     /// <summary>
     /// Aksiyonu sayfa tarafına ilet — önce parametre handler (varsa), yoksa
     /// VoiceContextService'deki handler. Komut zinciri ise sırayla işle.
+    /// `sayfa_git` özel olarak Navigation yapar; komut zinciri içinde gelirse
+    /// sonraki adımlar BekleyenAdimlar kuyruğuna kaydedilir.
     /// </summary>
     private async Task AksiyonuCalistir(VoiceIntent intent)
     {
-        // Komut zinciri — her adımı sırayla çalıştır
+        // Komut zinciri — sayfa_git dahil sırayla işle, sayfa_git'ten sonrası kuyruğa
         if (intent.Action == "komut_zinciri" && intent.Adimlar != null && intent.Adimlar.Count > 0)
         {
-            int i = 0;
-            foreach (var adim in intent.Adimlar)
+            for (int i = 0; i < intent.Adimlar.Count; i++)
             {
-                i++;
-                Snackbar.Add($"[{i}/{intent.Adimlar.Count}] {adim.Action}", Severity.Info);
+                var adim = intent.Adimlar[i];
+
+                if (adim.Action == "sayfa_git")
+                {
+                    // Sonraki adımları kuyruğa kaydet (yeni sayfada çalışacaklar)
+                    var kalan = intent.Adimlar.Skip(i + 1).ToList();
+                    if (kalan.Count > 0)
+                    {
+                        VoiceCtx.BekleyenAdimlar = new Queue<VoiceIntent>(kalan);
+                        Snackbar.Add($"[{i + 1}/{intent.Adimlar.Count}] Sayfa değiştiriliyor — {kalan.Count} işlem yeni sayfada çalışacak.",
+                                     Severity.Info);
+                    }
+                    else
+                    {
+                        Snackbar.Add($"[{i + 1}/{intent.Adimlar.Count}] Sayfa değiştiriliyor.", Severity.Info);
+                    }
+                    await AksiyonuCalistir(adim); // sayfa_git burada Navigation yapar
+                    return;                       // Sayfa değişti, kalan adımlar yeni sayfada çalışacak
+                }
+
+                Snackbar.Add($"[{i + 1}/{intent.Adimlar.Count}] {adim.Action}", Severity.Info);
                 await AksiyonuCalistir(adim);
-                await Task.Delay(150); // UI güncellenmesi için kısa gecikme
+                await Task.Delay(150);
             }
+            return;
+        }
+
+        // Navigasyon — sayfa-bazlı handler'a gönderme, doğrudan yönlendir
+        if (intent.Action == "sayfa_git")
+        {
+            var kod = (intent.Params.GetValueOrDefault("sayfa_kodu") as string ?? "").ToLower();
+            if (_navigasyonUrlMap.TryGetValue(kod, out var url))
+            {
+                Snackbar.Add(intent.OnayMetni, Severity.Info);
+                Nav.NavigateTo(url);
+                return;
+            }
+            Snackbar.Add($"Bilinmeyen sayfa kodu: {kod}", Severity.Warning);
             return;
         }
 
@@ -506,6 +529,34 @@
         else
         {
             Snackbar.Add("Bu sayfa bu aksiyonu desteklemiyor.", Severity.Warning);
+        }
+    }
+
+    /// <summary>
+    /// Yeni sayfa Register edince çağrılır — VoiceCtx.BekleyenAdimlar varsa,
+    /// onları kuyruktan çıkar ve sırayla çalıştır.
+    /// </summary>
+    private async Task BekleyenAdimlariCalistirEgerVarsa()
+    {
+        // Yeni sayfa tool register etmiş olmalı (Tools dolu); yoksa nav olmadı sayma
+        if (VoiceCtx.BekleyenAdimlar == null || VoiceCtx.BekleyenAdimlar.Count == 0) return;
+        if (VoiceCtx.Tools.Count == 0) return;
+
+        var kuyruk = VoiceCtx.BekleyenAdimlar;
+        VoiceCtx.BekleyenAdimlar = null;
+
+        // Sayfa data'sının yüklenmesi için kısa gecikme
+        await Task.Delay(700);
+
+        int total = kuyruk.Count;
+        int i = 0;
+        while (kuyruk.Count > 0)
+        {
+            i++;
+            var adim = kuyruk.Dequeue();
+            Snackbar.Add($"[{i}/{total}] {adim.Action}", Severity.Info);
+            await AksiyonuCalistir(adim);
+            await Task.Delay(200);
         }
     }
 }

@@ -27,6 +27,13 @@ public sealed class VoiceContextService
     public HashSet<string>?          OnayGerektirenAksiyonlar { get; private set; }
     public Func<VoiceIntent, Task>?  OnAksiyon                { get; private set; }
 
+    /// <summary>
+    /// Sayfa-arası komut zincirinde, navigation sonrası yeni sayfada çalıştırılacak
+    /// kalan adımlar. Clear() bu kuyruğa dokunmaz; sadece yeni sayfa Register edince
+    /// boşaltılır.
+    /// </summary>
+    public Queue<VoiceIntent>?       BekleyenAdimlar          { get; set; }
+
     /// <summary>Tools veya handler değiştiğinde fırlatılır (UI yeniden render için).</summary>
     public event Action? Changed;
 
