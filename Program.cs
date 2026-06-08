@@ -177,6 +177,7 @@ builder.Services.AddScoped<IsletmeMalzemeleriService>();
 // Cari Mutabakatı — AI destekli (Anthropic Claude API ile PDF/Excel parse)
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<ClaudeService>();
+builder.Services.AddScoped<VoiceCommandService>();
 builder.Services.AddScoped<MutabakatService>();
 builder.Services.AddScoped<KarsiFirmaKurFarkiService>();
 

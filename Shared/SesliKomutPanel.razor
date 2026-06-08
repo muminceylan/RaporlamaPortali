@@ -1,0 +1,296 @@
+@using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
+@inject IJSRuntime JS
+@inject VoiceCommandService Voice
+@inject ISnackbar Snackbar
+@implements IAsyncDisposable
+
+@*
+    Yeniden kullanılabilir sesli komut paneli.
+    Sayfa kullanımı:
+
+        <SesliKomutPanel SayfaAdi="Üretimden Giriş Fişi"
+                         ToolListesi="@_voiceTools"
+                         EkContext="@_voiceContext"
+                         OnAksiyon="@OnSesliAksiyon" />
+
+    Sayfa:
+      - _voiceTools içinde sayfanın desteklediği aksiyonları SesliKomutTool listesi olarak verir
+      - OnAksiyon: VoiceIntent → Task şeklinde handler — kullanıcı onaylayınca çağrılır
+      - EkContext: opsiyonel — Claude'a sunulan ek bilgi (örn aktif fiş listesi)
+*@
+
+<MudPaper Class="vc-panel" Elevation="2">
+    <div class="vc-baslik">
+        <MudIcon Icon="@Icons.Material.Filled.Mic" Color="Color.Primary" Class="mr-2" />
+        <b>Sesli Komut</b>
+        <MudSpacer />
+        @if (_destekVarMi == false)
+        {
+            <MudChip T="string" Size="Size.Small" Color="Color.Default" Icon="@Icons.Material.Filled.MicOff">
+                Tarayıcı desteklemiyor
+            </MudChip>
+        }
+        else
+        {
+            <MudIconButton Icon="@(_dinleniyor ? Icons.Material.Filled.MicOff : Icons.Material.Filled.Mic)"
+                           Color="@(_dinleniyor ? Color.Error : Color.Primary)"
+                           Variant="Variant.Filled"
+                           Size="Size.Large"
+                           Disabled="@(_isleniyor)"
+                           OnClick="@MikrofonTikla"
+                           Title="@(_dinleniyor ? "Durdur" : "Konuşmaya başla")" />
+        }
+    </div>
+
+    @if (_dinleniyor || !string.IsNullOrEmpty(_dinlenenMetin))
+    {
+        <div class="vc-transkript">
+            @if (_dinleniyor)
+            {
+                <MudIcon Icon="@Icons.Material.Filled.GraphicEq" Color="Color.Error"
+                         Class="vc-puls" Size="Size.Small" />
+            }
+            <span style="@(_finalAlindi ? "color:#000;font-weight:600;" : "color:#666;font-style:italic;")">
+                @(_dinlenenMetin ?? "Dinleniyor…")
+            </span>
+        </div>
+    }
+
+    @if (_isleniyor)
+    {
+        <div class="vc-isleniyor">
+            <MudProgressCircular Indeterminate="true" Size="Size.Small" Class="mr-2" />
+            <span>Komut yorumlanıyor (Claude AI)...</span>
+        </div>
+    }
+
+    @if (_sonHata != null)
+    {
+        <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">
+            @_sonHata
+        </MudAlert>
+    }
+
+    <MudText Typo="Typo.caption" Class="vc-ipucu">
+        <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" Style="vertical-align:-3px;" />
+        Mikrofona tıkla, Türkçe komutunu söyle.
+        Örnek: <i>"Dünkü fişi kopyala"</i>, <i>"İkinci satırın miktarını yüz yap"</i>, <i>"Logo'ya gönder"</i>
+    </MudText>
+</MudPaper>
+
+@* --- Onay Dialog --- *@
+<MudDialog @bind-IsVisible="_onayAcik" Options="@_onayOptions">
+    <TitleContent>
+        <div class="d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.QuestionAnswer" Class="mr-2" Color="Color.Primary" />
+            <b>Komutu Onayla</b>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (_bekleyenIntent != null)
+        {
+            <MudText Typo="Typo.body1" Class="mb-3">
+                <b>Algılanan komut:</b> <i>"@_dinlenenMetin"</i>
+            </MudText>
+            <MudPaper Class="pa-3 mb-3" Style="background:#E3F2FD; border-left:4px solid #1976d2;">
+                <MudText Typo="Typo.body1">
+                    <MudIcon Icon="@Icons.Material.Filled.PlayArrow" Class="mr-1" Style="vertical-align:-5px;" />
+                    @_bekleyenIntent.OnayMetni
+                </MudText>
+            </MudPaper>
+            @if (_bekleyenIntent.Params.Count > 0)
+            {
+                <MudText Typo="Typo.caption" Style="color:#666;">
+                    <b>Detaylar:</b>
+                </MudText>
+                <table class="vc-param-tbl">
+                    @foreach (var kvp in _bekleyenIntent.Params)
+                    {
+                        <tr>
+                            <td>@kvp.Key</td>
+                            <td>@(kvp.Value?.ToString() ?? "—")</td>
+                        </tr>
+                    }
+                </table>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Color="Color.Default" OnClick="OnayIptal">İptal</MudButton>
+        <MudButton Color="Color.Success" Variant="Variant.Filled"
+                   StartIcon="@Icons.Material.Filled.Check"
+                   OnClick="OnayEvet">Evet, Yap</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<style>
+    .vc-panel       { padding: 12px 16px; background: linear-gradient(90deg, #E8F5E9, #C8E6C9);
+                      border-left: 4px solid #1B5E20; margin-bottom: 12px; }
+    .vc-baslik      { display: flex; align-items: center; font-size: 0.95rem; }
+    .vc-transkript  { background: #fff; padding: 8px 12px; margin-top: 8px;
+                      border-radius: 4px; border: 1px solid #C8E6C9;
+                      display: flex; align-items: center; gap: 8px; min-height: 34px; }
+    .vc-isleniyor   { display: flex; align-items: center; padding: 6px 12px; margin-top: 6px;
+                      color: #1976d2; font-size: 0.9rem; }
+    .vc-ipucu       { display: block; color: #555; margin-top: 8px; font-size: 0.78rem; }
+    .vc-puls        { animation: vc-pulse 1s ease-in-out infinite; }
+    @@keyframes vc-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+    .vc-param-tbl   { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    .vc-param-tbl td:first-child { color: #555; padding: 4px 8px; width: 40%; }
+    .vc-param-tbl td             { padding: 4px 8px; border-bottom: 1px solid #eee; }
+</style>
+
+@code {
+    [Parameter] public string SayfaAdi { get; set; } = "Sayfa";
+    [Parameter] public List<SesliKomutTool> ToolListesi { get; set; } = new();
+    [Parameter] public string? EkContext { get; set; }
+    [Parameter] public EventCallback<VoiceIntent> OnAksiyon { get; set; }
+
+    private bool?            _destekVarMi;
+    private bool             _dinleniyor;
+    private bool             _isleniyor;
+    private string?          _dinlenenMetin;
+    private bool             _finalAlindi;
+    private string?          _sonHata;
+    private VoiceIntent?     _bekleyenIntent;
+    private bool             _onayAcik;
+    private DialogOptions    _onayOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
+
+    private DotNetObjectReference<SesliKomutPanel>? _dotnetRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                _destekVarMi = await JS.InvokeAsync<bool>("sesliKomutDesteklimi");
+                _dotnetRef = DotNetObjectReference.Create(this);
+                StateHasChanged();
+            }
+            catch (Exception ex)
+            {
+                _destekVarMi = false;
+                _sonHata = "JS bağlantısı kurulamadı: " + ex.Message;
+            }
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await JS.InvokeVoidAsync("sesliKomutDurdur"); } catch { }
+        _dotnetRef?.Dispose();
+    }
+
+    private async Task MikrofonTikla()
+    {
+        if (_dinleniyor)
+        {
+            await JS.InvokeVoidAsync("sesliKomutDurdur");
+            return;
+        }
+        _sonHata = null;
+        _dinlenenMetin = null;
+        _finalAlindi = false;
+        try
+        {
+            await JS.InvokeVoidAsync("sesliKomutBaslat", _dotnetRef);
+        }
+        catch (Exception ex)
+        {
+            _sonHata = "Mikrofon başlatılamadı: " + ex.Message;
+        }
+    }
+
+    // ===== JS → .NET callback'leri =====
+
+    [JSInvokable]
+    public void DinlemeBasladi()
+    {
+        _dinleniyor = true;
+        _dinlenenMetin = "";
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void AraSonuc(string metin, bool final)
+    {
+        _dinlenenMetin = metin;
+        _finalAlindi   = final;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task SesYakalandi(string metin)
+    {
+        _dinleniyor = false;
+        if (string.IsNullOrWhiteSpace(metin))
+        {
+            _sonHata = "Ses algılanamadı.";
+            StateHasChanged();
+            return;
+        }
+        _dinlenenMetin = metin;
+        await KomutuYorumla(metin);
+    }
+
+    [JSInvokable]
+    public void SesHata(string mesaj)
+    {
+        _dinleniyor = false;
+        _sonHata = mesaj;
+        StateHasChanged();
+    }
+
+    private async Task KomutuYorumla(string metin)
+    {
+        _isleniyor = true;
+        StateHasChanged();
+        try
+        {
+            var intent = await Voice.KomutuYorumlaAsync(metin, SayfaAdi, ToolListesi, EkContext);
+            if (!intent.Anlasildi)
+            {
+                _sonHata = intent.Hata ?? "Komut anlaşılamadı.";
+                if (!string.IsNullOrWhiteSpace(intent.OnayMetni))
+                    _sonHata += " — " + intent.OnayMetni;
+            }
+            else
+            {
+                _bekleyenIntent = intent;
+                _onayAcik = true;
+                // Onay metnini sesli okumak istersen aşağıyı aç:
+                // await JS.InvokeVoidAsync("sesliOku", intent.OnayMetni);
+            }
+        }
+        catch (Exception ex)
+        {
+            _sonHata = "Yorumlama hata: " + ex.Message;
+        }
+        finally
+        {
+            _isleniyor = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OnayIptal()
+    {
+        _onayAcik = false;
+        _bekleyenIntent = null;
+        Snackbar.Add("Komut iptal edildi.", Severity.Info);
+    }
+
+    private async Task OnayEvet()
+    {
+        var intent = _bekleyenIntent;
+        _onayAcik = false;
+        _bekleyenIntent = null;
+        StateHasChanged();
+        if (intent != null && OnAksiyon.HasDelegate)
+        {
+            await OnAksiyon.InvokeAsync(intent);
+        }
+    }
+}

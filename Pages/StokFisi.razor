@@ -20,6 +20,11 @@
              Icon="@Icons.Material.Filled.Storage">Logo Unity COM</MudChip>
 </MudText>
 
+<SesliKomutPanel SayfaAdi="@_baslik"
+                 ToolListesi="@_voiceTools"
+                 EkContext="@VoiceContextOlustur()"
+                 OnAksiyon="@SesliAksiyonCalistir" />
+
 <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
     @if (_tip == 13)
     {
@@ -635,6 +640,237 @@
         {
             _gonderiliyor = false;
         }
+    }
+
+    // ============================================================
+    // SESLİ KOMUT ENTEGRASYONU
+    // ============================================================
+
+    private List<SesliKomutTool> _voiceTools => new()
+    {
+        new SesliKomutTool
+        {
+            Ad        = "kopyala_fis",
+            Aciklama  = "Son Fişlerim listesinden bir fişi forma kopyalar.",
+            Parametreler = new()
+            {
+                ["secim_turu"] = new SesliKomutParam
+                {
+                    Tip = "string", Zorunlu = true,
+                    Aciklama = "Hangi fiş kopyalanacak: 'ilk' (en yeni / dünkü), 'fis_no' (belirli fiş numarası), 'sira' (1. fiş, 2. fiş vs.)",
+                    Secenekler = new() { "ilk", "fis_no", "sira" },
+                },
+                ["fis_no"] = new SesliKomutParam
+                {
+                    Tip = "string", Zorunlu = false,
+                    Aciklama = "Eğer secim_turu='fis_no' ise — kopyalanacak fişin numarası.",
+                },
+                ["sira"] = new SesliKomutParam
+                {
+                    Tip = "integer", Zorunlu = false,
+                    Aciklama = "Eğer secim_turu='sira' ise — listedeki sıra (1=en yeni).",
+                },
+            }
+        },
+        new SesliKomutTool
+        {
+            Ad        = "satir_ekle",
+            Aciklama  = "Yeni boş bir satır ekler.",
+        },
+        new SesliKomutTool
+        {
+            Ad        = "satir_sil",
+            Aciklama  = "Belirli sıradaki satırı siler.",
+            Parametreler = new()
+            {
+                ["sira"] = new SesliKomutParam
+                {
+                    Tip = "integer", Zorunlu = true,
+                    Aciklama = "Silinecek satırın 1-tabanlı sırası.",
+                },
+            }
+        },
+        new SesliKomutTool
+        {
+            Ad        = "miktar_degistir",
+            Aciklama  = "Bir satırın miktarını değiştirir.",
+            Parametreler = new()
+            {
+                ["sira"] = new SesliKomutParam
+                {
+                    Tip = "integer", Zorunlu = true,
+                    Aciklama = "Hangi satır (1-tabanlı).",
+                },
+                ["miktar"] = new SesliKomutParam
+                {
+                    Tip = "number", Zorunlu = true,
+                    Aciklama = "Yeni miktar (sayı).",
+                },
+            }
+        },
+        new SesliKomutTool
+        {
+            Ad        = "ambar_degistir",
+            Aciklama  = "Fiş ambarını değiştirir.",
+            Parametreler = new()
+            {
+                ["ambar_no"] = new SesliKomutParam
+                {
+                    Tip = "integer", Zorunlu = true,
+                    Aciklama = "Yeni ambar numarası (örn 152, 803).",
+                },
+            }
+        },
+        new SesliKomutTool
+        {
+            Ad        = "logo_ya_gonder",
+            Aciklama  = "Hazır formu Logo'ya gönderir.",
+        },
+        new SesliKomutTool
+        {
+            Ad        = "formu_temizle",
+            Aciklama  = "Tüm formu sıfırlar.",
+        },
+    };
+
+    private string VoiceContextOlustur()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"Fiş tipi: {(_tip == 13 ? "Üretimden Giriş (TYPE=13)" : "Promosyon/Sarf Çıkış (TYPE=22)")}");
+        sb.AppendLine($"Mevcut ambar: {_model.Ambar}, fabrika: {_model.Fabrika}");
+        sb.AppendLine($"Mevcut satır sayısı: {_model.Satirlar.Count}");
+
+        if (_sonFislerim.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"Son fişlerim ({_sonFislerim.Count} adet, en yeni üstte):");
+            int idx = 0;
+            foreach (var f in _sonFislerim.Take(10))
+            {
+                idx++;
+                sb.AppendLine($"  {idx}. Fiş No: {f.FisNo}, Tarih: {f.Tarih:dd.MM.yyyy}, Ambar: {f.Ambar}, Satır: {f.SatirSayisi}");
+            }
+        }
+        return sb.ToString();
+    }
+
+    private async Task SesliAksiyonCalistir(VoiceIntent intent)
+    {
+        try
+        {
+            switch (intent.Action)
+            {
+                case "kopyala_fis":
+                    await SesliKopyalaFis(intent);
+                    break;
+                case "satir_ekle":
+                    SatirEkle();
+                    Snackbar.Add("Yeni satır eklendi.", Severity.Success);
+                    break;
+                case "satir_sil":
+                {
+                    var sira = IntParam(intent, "sira") ?? 0;
+                    if (sira < 1 || sira > _model.Satirlar.Count)
+                    {
+                        Snackbar.Add($"Geçersiz sıra: {sira}", Severity.Warning);
+                        return;
+                    }
+                    SatirSil(sira - 1);
+                    Snackbar.Add($"Satır {sira} silindi.", Severity.Success);
+                    break;
+                }
+                case "miktar_degistir":
+                {
+                    var sira = IntParam(intent, "sira") ?? 0;
+                    var miktar = DecimalParam(intent, "miktar") ?? 0m;
+                    if (sira < 1 || sira > _model.Satirlar.Count)
+                    {
+                        Snackbar.Add($"Geçersiz sıra: {sira}", Severity.Warning);
+                        return;
+                    }
+                    _model.Satirlar[sira - 1].Miktar = miktar;
+                    Snackbar.Add($"Satır {sira} miktarı {miktar} olarak değiştirildi.", Severity.Success);
+                    break;
+                }
+                case "ambar_degistir":
+                {
+                    var ambar = IntParam(intent, "ambar_no") ?? 0;
+                    if (ambar <= 0)
+                    {
+                        Snackbar.Add("Geçersiz ambar.", Severity.Warning);
+                        return;
+                    }
+                    _model.Ambar = ambar;
+                    Snackbar.Add($"Ambar {ambar} olarak ayarlandı.", Severity.Success);
+                    break;
+                }
+                case "logo_ya_gonder":
+                    await LogoyaGonder();
+                    break;
+                case "formu_temizle":
+                    Temizle();
+                    Snackbar.Add("Form temizlendi.", Severity.Info);
+                    break;
+                default:
+                    Snackbar.Add($"Bilinmeyen aksiyon: {intent.Action}", Severity.Warning);
+                    break;
+            }
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Aksiyon hatası: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task SesliKopyalaFis(VoiceIntent intent)
+    {
+        if (_sonFislerim.Count == 0)
+        {
+            Snackbar.Add("Son fişlerim listesi boş.", Severity.Warning);
+            return;
+        }
+        var secim = (intent.Params.GetValueOrDefault("secim_turu") as string ?? "ilk").ToLower();
+        StokFisiOzet? hedef = null;
+        if (secim == "fis_no")
+        {
+            var no = (intent.Params.GetValueOrDefault("fis_no") as string ?? "").Trim();
+            hedef = _sonFislerim.FirstOrDefault(f => f.FisNo.EndsWith(no, StringComparison.OrdinalIgnoreCase));
+        }
+        else if (secim == "sira")
+        {
+            var s = IntParam(intent, "sira") ?? 1;
+            if (s >= 1 && s <= _sonFislerim.Count) hedef = _sonFislerim[s - 1];
+        }
+        else
+        {
+            hedef = _sonFislerim[0];
+        }
+        if (hedef == null)
+        {
+            Snackbar.Add("Belirtilen fiş bulunamadı.", Severity.Warning);
+            return;
+        }
+        await KopyalaFis(hedef);
+    }
+
+    private static int? IntParam(VoiceIntent intent, string ad)
+    {
+        if (!intent.Params.TryGetValue(ad, out var v) || v == null) return null;
+        if (v is long l) return (int)l;
+        if (v is double d) return (int)d;
+        if (int.TryParse(v.ToString(), out var i)) return i;
+        return null;
+    }
+
+    private static decimal? DecimalParam(VoiceIntent intent, string ad)
+    {
+        if (!intent.Params.TryGetValue(ad, out var v) || v == null) return null;
+        if (v is double d) return (decimal)d;
+        if (v is long l) return l;
+        if (decimal.TryParse(v.ToString(), System.Globalization.NumberStyles.Any,
+                             System.Globalization.CultureInfo.InvariantCulture, out var x)) return x;
+        return null;
     }
 
     // UI tarafındaki nullable Tarih için view-model
