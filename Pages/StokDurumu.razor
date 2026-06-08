@@ -14,6 +14,11 @@
     Stok Durumu
 </MudText>
 
+<SesliKomutPanel SayfaAdi="Stok Durumu"
+                 ToolListesi="@_voiceTools"
+                 EkContext="@VoiceContextOlustur()"
+                 OnAksiyon="@SesliAksiyonCalistir" />
+
 <MudPaper Class="pa-3 mb-3">
     <MudGrid>
         <MudItem xs="12" md="5">
@@ -312,6 +317,129 @@
         catch (Exception ex)
         {
             Snackbar.Add($"Excel hatası: {ex.Message}", Severity.Error);
+        }
+    }
+
+    // ============================================================
+    // SESLİ KOMUT
+    // ============================================================
+
+    private List<SesliKomutTool> _voiceTools => new()
+    {
+        new SesliKomutTool
+        {
+            Ad        = "ambar_filtre",
+            Aciklama  = "Belirli ambar(lar)ı filtreler. Kullanıcı '152 ambar', '152 ve 803 ambar', "
+                      + "'Afyon ambarları' (tanımlı listem) veya 'tüm ambarlar' diyebilir.",
+            Parametreler = new()
+            {
+                ["ambar_no"] = new SesliKomutParam
+                {
+                    Tip = "integer", Zorunlu = false,
+                    Aciklama = "Tek bir ambar numarası (örn 152, 803). Birden çoksa boş bırak.",
+                },
+                ["afyon_secili"] = new SesliKomutParam
+                {
+                    Tip = "boolean", Zorunlu = false,
+                    Aciklama = "true → 'Afyon ambarlarım' setini seç; false → temizle.",
+                },
+            }
+        },
+        new SesliKomutTool
+        {
+            Ad        = "malzeme_ara",
+            Aciklama  = "Malzeme kodu veya adına göre listeyi filtreler.",
+            Parametreler = new()
+            {
+                ["kod"] = new SesliKomutParam { Tip = "string", Aciklama = "Malzeme kodu (parçası)." },
+                ["ad"]  = new SesliKomutParam { Tip = "string", Aciklama = "Malzeme adı (parçası — örn 'şeker', 'küspe')." },
+            }
+        },
+        new SesliKomutTool
+        {
+            Ad        = "sifirlari_goster",
+            Aciklama  = "'Sıfır stokları göster/gizle' toggle'ı.",
+            Parametreler = new()
+            {
+                ["goster"] = new SesliKomutParam
+                {
+                    Tip = "boolean", Zorunlu = true,
+                    Aciklama = "true → sıfırlar gösterilsin; false → gizle.",
+                },
+            }
+        },
+        new SesliKomutTool
+        {
+            Ad        = "sorgula",
+            Aciklama  = "Sorguyu çalıştırır.",
+        },
+    };
+
+    private string VoiceContextOlustur()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"Seçili ambarlar: {(_secilenAmbarlar.Any() ? string.Join(", ", _secilenAmbarlar) : "(tümü)")}");
+        sb.AppendLine($"Afyon ambar seti aktif: {_afyonSecili}");
+        sb.AppendLine($"Kod ara: '{_aramaKod}', Ad ara: '{_aramaAd}'");
+        sb.AppendLine($"Sıfırları gizle: {_sifirlariGizle}");
+        sb.AppendLine($"Tanımlı ambar listesi (Afyon): {_afyonListe.Count} ambar.");
+        sb.AppendLine($"Toplam {_stoklar.Count} kayıt yüklü.");
+        return sb.ToString();
+    }
+
+    private async Task SesliAksiyonCalistir(VoiceIntent intent)
+    {
+        try
+        {
+            switch (intent.Action)
+            {
+                case "ambar_filtre":
+                {
+                    var afyon = intent.Params.GetValueOrDefault("afyon_secili");
+                    if (afyon is bool b && b)
+                    {
+                        AfyonToggle(true);
+                        Snackbar.Add($"Afyon ambar seti aktif ({_afyonListe.Count} ambar).", Severity.Success);
+                    }
+                    else
+                    {
+                        var no = intent.Params.GetValueOrDefault("ambar_no");
+                        if (no is long l) { _secilenAmbarlar = new HashSet<int> { (int)l }; Snackbar.Add($"Ambar {l}", Severity.Success); }
+                        else if (no is double d) { _secilenAmbarlar = new HashSet<int> { (int)d }; Snackbar.Add($"Ambar {(int)d}", Severity.Success); }
+                        else { _secilenAmbarlar = new HashSet<int>(); Snackbar.Add("Tüm ambarlar.", Severity.Success); }
+                        _afyonSecili = false;
+                    }
+                    break;
+                }
+                case "malzeme_ara":
+                {
+                    var kod = intent.Params.GetValueOrDefault("kod") as string;
+                    var ad  = intent.Params.GetValueOrDefault("ad")  as string;
+                    if (!string.IsNullOrWhiteSpace(kod)) _aramaKod = kod;
+                    if (!string.IsNullOrWhiteSpace(ad))  _aramaAd  = ad;
+                    Snackbar.Add($"Filtre: kod='{_aramaKod}', ad='{_aramaAd}'", Severity.Success);
+                    break;
+                }
+                case "sifirlari_goster":
+                {
+                    var g = intent.Params.GetValueOrDefault("goster");
+                    _sifirlariGizle = !(g is bool b && b);
+                    Snackbar.Add(_sifirlariGizle ? "Sıfırlar gizli" : "Sıfırlar gösteriliyor", Severity.Success);
+                    await VeriYukle();
+                    break;
+                }
+                case "sorgula":
+                    await VeriYukle();
+                    break;
+                default:
+                    Snackbar.Add($"Bilinmeyen aksiyon: {intent.Action}", Severity.Warning);
+                    break;
+            }
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Aksiyon hatası: {ex.Message}", Severity.Error);
         }
     }
 }

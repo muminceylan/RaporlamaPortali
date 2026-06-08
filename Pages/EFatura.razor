@@ -24,6 +24,11 @@
     </MudAlert>
 }
 
+<SesliKomutPanel SayfaAdi="e-Fatura Görüntüleme"
+                 ToolListesi="@_voiceTools"
+                 EkContext="@VoiceContextOlustur()"
+                 OnAksiyon="@SesliAksiyonCalistir" />
+
 <MudPaper Class="pa-3 mb-3" Elevation="3" Style="border-left:4px solid #1976d2;">
     <MudGrid Spacing="2">
         <MudItem xs="12" md="3">
@@ -792,4 +797,153 @@ else
         "RED"          => Color.Error,
         _              => Color.Default,
     };
+
+    // ============================================================
+    // SESLİ KOMUT
+    // ============================================================
+
+    private List<SesliKomutTool> _voiceTools => new()
+    {
+        new SesliKomutTool
+        {
+            Ad        = "yon_degistir",
+            Aciklama  = "Gelen/Giden faturalar arasında geçiş.",
+            Parametreler = new()
+            {
+                ["yon"] = new SesliKomutParam
+                {
+                    Tip = "string", Zorunlu = true,
+                    Aciklama = "'gelen' veya 'giden'.",
+                    Secenekler = new() { "gelen", "giden" },
+                },
+            }
+        },
+        new SesliKomutTool
+        {
+            Ad        = "tarih_araligi",
+            Aciklama  = "Tarih aralığını ayarlar (bu ay, geçen ay, son 30 gün vb).",
+            Parametreler = new()
+            {
+                ["aralik"] = new SesliKomutParam
+                {
+                    Tip = "string", Zorunlu = true,
+                    Aciklama = "Hangi aralık.",
+                    Secenekler = new() { "bugun", "dun", "bu_hafta", "bu_ay", "gecen_ay",
+                                         "bu_yil", "son_7_gun", "son_30_gun", "son_90_gun" },
+                },
+            }
+        },
+        new SesliKomutTool
+        {
+            Ad        = "cari_filtre",
+            Aciklama  = "Gönderen/Alıcı ünvanı, VKN, fatura no veya Logo cari kodu ile filtreleme. "
+                      + "Kullanıcı 'X firmasının faturalarını göster', 'Doğuş Çay'a göre filtrele' gibi diyebilir. "
+                      + "İlgili alanı doldur.",
+            Parametreler = new()
+            {
+                ["unvan"]    = new SesliKomutParam { Tip = "string", Aciklama = "Karşı firma ünvanı (parçası — LIKE)." },
+                ["vkn"]      = new SesliKomutParam { Tip = "string", Aciklama = "VKN veya TCKN." },
+                ["fatura_no"] = new SesliKomutParam { Tip = "string", Aciklama = "Fatura numarası (parçası)." },
+                ["logo_kod"] = new SesliKomutParam { Tip = "string", Aciklama = "Logo cari kodu (örn 320.06)." },
+            }
+        },
+        new SesliKomutTool
+        {
+            Ad        = "filtre_sifirla",
+            Aciklama  = "Tüm filtreleri sıfırlar. Kullanıcı 'temizle', 'sıfırla' derse.",
+        },
+        new SesliKomutTool
+        {
+            Ad        = "sorgula",
+            Aciklama  = "Sorguyu çalıştırır.",
+        },
+    };
+
+    private string VoiceContextOlustur()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"Yön: {_filtre.Yon} (Gelen=gelen faturalar, Giden=biz kestiklerimiz)");
+        sb.AppendLine($"Tarih: {_bas:dd.MM.yyyy} - {_bit:dd.MM.yyyy}");
+        if (!string.IsNullOrWhiteSpace(_filtre.KarsiUnvan)) sb.AppendLine($"Ünvan filtresi: {_filtre.KarsiUnvan}");
+        if (!string.IsNullOrWhiteSpace(_filtre.KarsiVKN))   sb.AppendLine($"VKN filtresi: {_filtre.KarsiVKN}");
+        if (!string.IsNullOrWhiteSpace(_filtre.FaturaNo))   sb.AppendLine($"Fatura no filtresi: {_filtre.FaturaNo}");
+        sb.AppendLine($"Listede {_kayitlar.Count} kayıt var.");
+        return sb.ToString();
+    }
+
+    private async Task SesliAksiyonCalistir(VoiceIntent intent)
+    {
+        try
+        {
+            switch (intent.Action)
+            {
+                case "yon_degistir":
+                {
+                    var yon = (intent.Params.GetValueOrDefault("yon") as string ?? "").ToLower();
+                    _filtre.Yon = yon == "giden" ? EFaturaYon.Giden : EFaturaYon.Gelen;
+                    Snackbar.Add($"Yön: {_filtre.Yon}", Severity.Success);
+                    await Sorgula();
+                    break;
+                }
+                case "tarih_araligi":
+                {
+                    var aralik = (intent.Params.GetValueOrDefault("aralik") as string ?? "").ToLower();
+                    var (b, t) = TarihAraligiCevir(aralik);
+                    if (b == null) { Snackbar.Add("Aralık anlaşılamadı.", Severity.Warning); return; }
+                    _bas = b; _bit = t;
+                    Snackbar.Add($"Tarih: {b:dd.MM.yyyy} - {t:dd.MM.yyyy}", Severity.Success);
+                    await Sorgula();
+                    break;
+                }
+                case "cari_filtre":
+                {
+                    var unvan    = intent.Params.GetValueOrDefault("unvan")    as string;
+                    var vkn      = intent.Params.GetValueOrDefault("vkn")      as string;
+                    var faturaNo = intent.Params.GetValueOrDefault("fatura_no") as string;
+                    var logoKod  = intent.Params.GetValueOrDefault("logo_kod") as string;
+                    if (!string.IsNullOrWhiteSpace(unvan))    _filtre.KarsiUnvan    = unvan;
+                    if (!string.IsNullOrWhiteSpace(vkn))      _filtre.KarsiVKN      = vkn;
+                    if (!string.IsNullOrWhiteSpace(faturaNo)) _filtre.FaturaNo      = faturaNo;
+                    if (!string.IsNullOrWhiteSpace(logoKod))  _filtre.LogoCariKodu  = logoKod;
+                    Snackbar.Add("Filtre uygulandı.", Severity.Success);
+                    await Sorgula();
+                    break;
+                }
+                case "filtre_sifirla":
+                    FiltreSifirla();
+                    Snackbar.Add("Filtreler sıfırlandı.", Severity.Info);
+                    break;
+                case "sorgula":
+                    await Sorgula();
+                    break;
+                default:
+                    Snackbar.Add($"Bilinmeyen aksiyon: {intent.Action}", Severity.Warning);
+                    break;
+            }
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Aksiyon hatası: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private static (DateTime? bas, DateTime? bit) TarihAraligiCevir(string kod)
+    {
+        var bugun = DateTime.Today;
+        return kod switch
+        {
+            "bugun"      => ((DateTime?)bugun, (DateTime?)bugun),
+            "dun"        => (bugun.AddDays(-1), bugun.AddDays(-1)),
+            "bu_hafta"   => (bugun.AddDays(-(((int)bugun.DayOfWeek + 6) % 7)), bugun),
+            "bu_ay"      => (new DateTime(bugun.Year, bugun.Month, 1), bugun),
+            "gecen_ay"   => (new DateTime(bugun.Year, bugun.Month, 1).AddMonths(-1),
+                             new DateTime(bugun.Year, bugun.Month, 1).AddDays(-1)),
+            "bu_yil"     => (new DateTime(bugun.Year, 1, 1), bugun),
+            "son_7_gun"  => (bugun.AddDays(-7),  bugun),
+            "son_30_gun" => (bugun.AddDays(-30), bugun),
+            "son_90_gun" => (bugun.AddDays(-90), bugun),
+            _ => (null, null),
+        };
+    }
 }

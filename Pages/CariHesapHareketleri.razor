@@ -18,6 +18,11 @@
     tarih aralığındaki BORÇ / ALACAK hareketleri ve kümülatif BAKİYE değeri listelenir.
 </MudAlert>
 
+<SesliKomutPanel SayfaAdi="Cari Hesap Hareketleri"
+                 ToolListesi="@_voiceTools"
+                 EkContext="@VoiceContextOlustur()"
+                 OnAksiyon="@SesliAksiyonCalistir" />
+
 <MudPaper Class="pa-3 mb-3">
     <MudGrid>
         <MudItem xs="12" md="3">
@@ -271,6 +276,128 @@
         catch (Exception ex)
         {
             Snackbar.Add($"Excel hatası: {ex.Message}", Severity.Error);
+        }
+    }
+
+    // ============================================================
+    // SESLİ KOMUT
+    // ============================================================
+
+    private List<SesliKomutTool> _voiceTools => new()
+    {
+        new SesliKomutTool
+        {
+            Ad        = "tarih_araligi",
+            Aciklama  = "Tarih aralığını ayarlar (bu ay, geçen ay, son 30 gün, bu yıl vb).",
+            Parametreler = new()
+            {
+                ["aralik"] = new SesliKomutParam
+                {
+                    Tip = "string", Zorunlu = true,
+                    Secenekler = new() { "bugun", "dun", "bu_hafta", "bu_ay", "gecen_ay",
+                                         "bu_yil", "son_7_gun", "son_30_gun", "son_90_gun" },
+                    Aciklama = "Hangi aralık."
+                }
+            }
+        },
+        new SesliKomutTool
+        {
+            Ad        = "cari_sec",
+            Aciklama  = "Belirli bir cari hesabı seçer. Kullanıcı 'Doğuş Çay'ı seç', '320.02 ile başlayan cari', "
+                      + "'Mehmet Bey'in kartı' gibi söylerse — sayfaya tanımlı carilerden EN UYGUN olanı bul. "
+                      + "Sayfa context'inde mevcut cari listesi yok ama Logo CLCARD'a göre eşleştir.",
+            Parametreler = new()
+            {
+                ["arama"] = new SesliKomutParam
+                {
+                    Tip = "string", Zorunlu = true,
+                    Aciklama = "Aranan cari kodu / ünvan parçası (örn '320.02', 'Doğuş', 'Toyota')."
+                }
+            }
+        },
+        new SesliKomutTool
+        {
+            Ad        = "sorgula",
+            Aciklama  = "Sorguyu çalıştırır.",
+        },
+        new SesliKomutTool
+        {
+            Ad        = "excel_indir",
+            Aciklama  = "Sonuçları Excel olarak indirir.",
+        },
+    };
+
+    private string VoiceContextOlustur()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"Tarih: {_baslangic:dd.MM.yyyy} - {_bitis:dd.MM.yyyy}");
+        sb.AppendLine($"Seçili cari: {(_seciliCari == null ? "(yok)" : _seciliCari.Kod + " " + _seciliCari.Unvan)}");
+        sb.AppendLine($"Toplam cari kart sayısı: {_tumCariler.Count}");
+        sb.AppendLine($"Listede {_hareketler.Count} hareket var.");
+        return sb.ToString();
+    }
+
+    private async Task SesliAksiyonCalistir(VoiceIntent intent)
+    {
+        try
+        {
+            switch (intent.Action)
+            {
+                case "tarih_araligi":
+                {
+                    var aralik = (intent.Params.GetValueOrDefault("aralik") as string ?? "").ToLower();
+                    var bugun = DateTime.Today;
+                    (DateTime? b, DateTime? t) = aralik switch
+                    {
+                        "bugun"      => ((DateTime?)bugun, (DateTime?)bugun),
+                        "dun"        => (bugun.AddDays(-1), bugun.AddDays(-1)),
+                        "bu_hafta"   => (bugun.AddDays(-(((int)bugun.DayOfWeek + 6) % 7)), bugun),
+                        "bu_ay"      => (new DateTime(bugun.Year, bugun.Month, 1), bugun),
+                        "gecen_ay"   => (new DateTime(bugun.Year, bugun.Month, 1).AddMonths(-1),
+                                         new DateTime(bugun.Year, bugun.Month, 1).AddDays(-1)),
+                        "bu_yil"     => (new DateTime(bugun.Year, 1, 1), bugun),
+                        "son_7_gun"  => (bugun.AddDays(-7),  bugun),
+                        "son_30_gun" => (bugun.AddDays(-30), bugun),
+                        "son_90_gun" => (bugun.AddDays(-90), bugun),
+                        _ => (null, null),
+                    };
+                    if (b == null) { Snackbar.Add("Aralık anlaşılamadı.", Severity.Warning); return; }
+                    _baslangic = b; _bitis = t;
+                    Snackbar.Add($"Tarih: {b:dd.MM.yyyy} - {t:dd.MM.yyyy}", Severity.Success);
+                    break;
+                }
+                case "cari_sec":
+                {
+                    var arama = (intent.Params.GetValueOrDefault("arama") as string ?? "").Trim();
+                    if (string.IsNullOrEmpty(arama)) { Snackbar.Add("Aranan terim boş.", Severity.Warning); return; }
+                    // Önce kodla başlayanları, sonra ünvanda geçenleri ara
+                    var aday = _tumCariler.FirstOrDefault(c => c.Kod.StartsWith(arama, StringComparison.OrdinalIgnoreCase))
+                            ?? _tumCariler.FirstOrDefault(c => Icerir(c.Kod, arama) || Icerir(c.Unvan, arama));
+                    if (aday == null)
+                    {
+                        Snackbar.Add($"'{arama}' ile eşleşen cari bulunamadı.", Severity.Warning);
+                        return;
+                    }
+                    _seciliCari = aday;
+                    Snackbar.Add($"Seçildi: {aday.Kod} — {aday.Unvan}", Severity.Success);
+                    await VeriYukle();
+                    break;
+                }
+                case "sorgula":
+                    await VeriYukle();
+                    break;
+                case "excel_indir":
+                    await ExcelIndir();
+                    break;
+                default:
+                    Snackbar.Add($"Bilinmeyen aksiyon: {intent.Action}", Severity.Warning);
+                    break;
+            }
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Aksiyon hatası: {ex.Message}", Severity.Error);
         }
     }
 }
