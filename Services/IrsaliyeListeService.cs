@@ -194,7 +194,7 @@ SELECT TOP (@Lim)
     Trcode       = SF.TRCODE,
     Ambar        = SF.SOURCEINDEX,
     AmbarAdi     = ISNULL(CW.NAME, ''),
-    Fabrika      = ISNULL(SF.GENEXCTYP, 17),  -- STFICHE'de fabrika alanı yok, varsayılan
+    Fabrika      = ISNULL(SF.FACTORYNR, 17),  -- DB'de gerçek fabrika kolonu
     SatirSayisi  = (SELECT COUNT(*) FROM {stlineTbl} ST2 WITH(NOLOCK)
                     WHERE ST2.STFICHEREF = SF.LOGICALREF AND ST2.CANCELLED = 0 AND ST2.LPRODSTAT = 0),
     ToplamMiktar = ISNULL((SELECT SUM(ST2.AMOUNT) FROM {stlineTbl} ST2 WITH(NOLOCK)
