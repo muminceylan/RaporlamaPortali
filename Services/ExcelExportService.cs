@@ -2359,4 +2359,149 @@ public class ExcelExportService
             _                        => (XLColor.White, XLColor.Black)
         };
     }
+
+    // ====================================================================
+    //   İşletme Malzemeleri Raporu — 3 sayfa (Yakıtlar / Torbalar / Kimyasallar)
+    //   "Malzeme 2025-2026 YILI.XLS" formatına birebir uyumlu üretilir.
+    // ====================================================================
+    public byte[] ExportIsletmeMalzemeleri(
+        List<IsletmeMalzemeSatiri> yakitlar,
+        List<IsletmeMalzemeSatiri> torbalar,
+        List<IsletmeMalzemeSatiri> kimyasallar,
+        DateTime devirTarihi,
+        DateTime? kampanyaBas,
+        DateTime? kampanyaBitis,
+        DateTime? gunlukGelenTarihi)
+    {
+        using var wb = new XLWorkbook();
+        IsletmeSayfaOlustur(wb, "YAKITLAR",       "MALZEME AMBARI - KÖMÜR, KİREÇ TAŞI, DİĞER YAKITLAR", yakitlar,    devirTarihi, kampanyaBas, kampanyaBitis, gunlukGelenTarihi);
+        IsletmeSayfaOlustur(wb, "TORBALAR-FB",    "MALZEME AMBARI - TORBALAR, FİLTRE BEZLERİ",          torbalar,    devirTarihi, kampanyaBas, kampanyaBitis, gunlukGelenTarihi);
+        IsletmeSayfaOlustur(wb, "KIMYASALLAR",    "MALZEME AMBARI - KİMYASALLAR",                       kimyasallar, devirTarihi, kampanyaBas, kampanyaBitis, gunlukGelenTarihi);
+
+        using var ms = new MemoryStream();
+        wb.SaveAs(ms);
+        return ms.ToArray();
+    }
+
+    private void IsletmeSayfaOlustur(
+        XLWorkbook wb, string sheetAdi, string altBaslik,
+        List<IsletmeMalzemeSatiri> veriler,
+        DateTime devirTarihi, DateTime? kampBas, DateTime? kampBit, DateTime? gunlukGelenTarihi)
+    {
+        var ws = wb.Worksheets.Add(sheetAdi);
+        var sonKolon = 11; // A..K
+
+        // Üst başlık bloğu
+        ws.Cell("A1").Value = "DOĞUŞ ÇAY VE GIDA MAD.ÜRT.PAZ.İTH.İHR. A.Ş.";
+        ws.Range(1, 1, 1, sonKolon).Merge().Style.Font.SetBold().Font.SetFontSize(13)
+            .Fill.SetBackgroundColor(XLColor.FromHtml("#1B5E20"))
+            .Font.SetFontColor(XLColor.White)
+            .Alignment.SetHorizontal(XLAlignmentHorizontalValues.Center);
+
+        ws.Cell("A2").Value = "AFYON ŞEKER FABRİKASI";
+        ws.Range(2, 1, 2, sonKolon).Merge().Style.Font.SetBold().Font.SetFontSize(12)
+            .Fill.SetBackgroundColor(XLColor.FromHtml("#2E7D32"))
+            .Font.SetFontColor(XLColor.White)
+            .Alignment.SetHorizontal(XLAlignmentHorizontalValues.Center);
+
+        ws.Cell("A3").Value = altBaslik;
+        ws.Range(3, 1, 3, sonKolon).Merge().Style.Font.SetBold()
+            .Fill.SetBackgroundColor(XLColor.FromHtml("#C8E6C9"))
+            .Alignment.SetHorizontal(XLAlignmentHorizontalValues.Center);
+
+        ws.Cell("A4").Value = $"Devir Tarihi: {devirTarihi:dd.MM.yyyy}";
+        ws.Cell("F4").Value = kampBas.HasValue && kampBit.HasValue
+                                ? $"Kampanya: {kampBas:dd.MM.yyyy} - {kampBit:dd.MM.yyyy}"
+                                : "Kampanya aralığı belirtilmedi";
+        ws.Cell("J4").Value = $"Rapor: {DateTime.Today:dd.MM.yyyy}";
+        ws.Range(4, 1, 4, sonKolon).Style.Font.SetItalic();
+
+        // Kolon başlıkları
+        int row = 6;
+        string gunlukBaslik = gunlukGelenTarihi.HasValue
+                                ? $"{gunlukGelenTarihi:dd.MM.yyyy}\nGELEN"
+                                : "GÜNLÜK\nGELEN";
+        string[] basliklar = {
+            "MALZEME ADI", "BİRİM", "ÜRÜN KODU",
+            gunlukBaslik, "GELEN TOPLAM", "GEÇEN KAMP. DEVİR",
+            "KAMPANYA DIŞI SARF", "KAMPANYA SARFİYATI", "TOPLAM SARFİYAT", "MEVCUT", "Açıklama"
+        };
+        for (int i = 0; i < basliklar.Length; i++)
+        {
+            var c = ws.Cell(row, i + 1);
+            c.Value = basliklar[i];
+            c.Style.Font.SetBold();
+            c.Style.Fill.SetBackgroundColor(XLColor.FromHtml("#BBDEFB"));
+            c.Style.Alignment.SetHorizontal(XLAlignmentHorizontalValues.Center);
+            c.Style.Alignment.SetVertical(XLAlignmentVerticalValues.Center);
+            c.Style.Alignment.SetWrapText(true);
+            c.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+        }
+        ws.Row(row).Height = 36;
+
+        // Veri satırları
+        row++;
+        decimal tGunluk = 0, tGelen = 0, tDevir = 0, tKampDisi = 0, tKamp = 0, tToplamSarf = 0, tMevcut = 0;
+        foreach (var x in veriler)
+        {
+            ws.Cell(row, 1).Value = x.MalzemeAdi;
+            ws.Cell(row, 2).Value = x.Birim;
+            ws.Cell(row, 3).Value = x.MalzemeKodu;
+            ws.Cell(row, 4).Value  = x.GunlukGelen;
+            ws.Cell(row, 5).Value  = x.GelenToplam;
+            ws.Cell(row, 6).Value  = x.DevirStogu;
+            ws.Cell(row, 7).Value  = x.KampanyaDisiSarf;
+            ws.Cell(row, 8).Value  = x.KampanyaSarfiyati;
+            ws.Cell(row, 9).Value  = x.ToplamSarfiyat;
+            ws.Cell(row, 10).Value = x.Mevcut;
+            ws.Cell(row, 11).Value = x.Aciklama;
+
+            // Sayısal kolonlar
+            for (int c = 4; c <= 10; c++)
+                ws.Cell(row, c).Style.NumberFormat.SetFormat("#,##0.00;-#,##0.00;\" \"");
+
+            // Mevcut sütununu vurgula
+            ws.Cell(row, 10).Style.Font.SetBold().Fill.SetBackgroundColor(XLColor.FromHtml("#FFF9C4"));
+
+            tGunluk     += x.GunlukGelen;
+            tGelen      += x.GelenToplam;
+            tDevir      += x.DevirStogu;
+            tKampDisi   += x.KampanyaDisiSarf;
+            tKamp       += x.KampanyaSarfiyati;
+            tToplamSarf += x.ToplamSarfiyat;
+            tMevcut     += x.Mevcut;
+            row++;
+        }
+
+        // Toplam satırı
+        ws.Cell(row, 1).Value = $"TOPLAM ({veriler.Count} kalem)";
+        ws.Range(row, 1, row, 3).Merge();
+        ws.Cell(row, 4).Value  = tGunluk;
+        ws.Cell(row, 5).Value  = tGelen;
+        ws.Cell(row, 6).Value  = tDevir;
+        ws.Cell(row, 7).Value  = tKampDisi;
+        ws.Cell(row, 8).Value  = tKamp;
+        ws.Cell(row, 9).Value  = tToplamSarf;
+        ws.Cell(row, 10).Value = tMevcut;
+        for (int c = 4; c <= 10; c++)
+            ws.Cell(row, c).Style.NumberFormat.SetFormat("#,##0.00;-#,##0.00;\" \"");
+        ws.Range(row, 1, row, sonKolon).Style
+            .Font.SetBold()
+            .Fill.SetBackgroundColor(XLColor.FromHtml("#FFFDE7"))
+            .Border.SetTopBorder(XLBorderStyleValues.Medium)
+            .Border.SetBottomBorder(XLBorderStyleValues.Medium);
+
+        // Genel kenarlık ve kolon genişlikleri
+        var veriAraligi = ws.Range(6, 1, row, sonKolon);
+        veriAraligi.Style.Border.SetOutsideBorder(XLBorderStyleValues.Thin);
+        veriAraligi.Style.Border.SetInsideBorder(XLBorderStyleValues.Thin);
+
+        ws.Column(1).Width  = 42;  // Malzeme adı
+        ws.Column(2).Width  = 8;
+        ws.Column(3).Width  = 16;
+        for (int c = 4; c <= 10; c++) ws.Column(c).Width = 14;
+        ws.Column(11).Width = 22;
+
+        ws.SheetView.FreezeRows(6);
+    }
 }

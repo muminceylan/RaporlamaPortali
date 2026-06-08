@@ -14,18 +14,21 @@ public class LogoAktarimService
     private readonly EFaturaService          _efatura;
     private readonly LogoCariLookupService   _cariSvc;
     private readonly LogoAccCodesLookupService _accSvc;
+    private readonly LogoKdvHesapLookupService _kdvSvc;
     private readonly EFaturaAktarimGecmisiService _gecmis;
     private readonly DatabaseService         _db;
     private readonly ILogger<LogoAktarimService> _log;
 
     public LogoAktarimService(EFaturaService efatura, LogoCariLookupService cariSvc,
                               LogoAccCodesLookupService accSvc,
+                              LogoKdvHesapLookupService kdvSvc,
                               EFaturaAktarimGecmisiService gecmis,
                               DatabaseService db, ILogger<LogoAktarimService> log)
     {
         _efatura = efatura;
         _cariSvc = cariSvc;
         _accSvc  = accSvc;
+        _kdvSvc  = kdvSvc;
         _gecmis  = gecmis;
         _db      = db;
         _log     = log;
@@ -198,11 +201,11 @@ public class LogoAktarimService
                     UbliAciklama     = string.IsNullOrWhiteSpace(k.StokAdi) ? k.Aciklama : k.StokAdi,
                 };
 
-                // KDV indirilecek hesabı (191.01.xx / 192.02.xx)
-                ks.KdvHesabi = LogoHesapKoduMaps.KdvHesabiBul(k.KdvOran, tevkifatVar);
+                // KDV indirilecek hesabı (191.01.xx / 192.02.xxx) — Logo hesap planından dinamik
+                ks.KdvHesabi = await _kdvSvc.KdvHesabiBulAsync(k.KdvOran, tevkifatVar);
                 if (tevkifatVar)
                 {
-                    ks.TevkifatKdvHesabi = LogoHesapKoduMaps.KdvHesabiBul(k.KdvOran, tevkifatli: true);
+                    ks.TevkifatKdvHesabi = await _kdvSvc.KdvHesabiBulAsync(k.KdvOran, tevkifatli: true);
                     ks.SorumluKdvHesabi  = LogoHesapKoduMaps.SorumlulukHesabiBul(pay, payda);
 
                     if (string.IsNullOrWhiteSpace(ks.TevkifatKdvHesabi))
@@ -335,6 +338,7 @@ public class LogoAktarimService
 
         // Başarılı her satır için yerel aktarım geçmişine kayıt — "E-Fatura Aktar"
         // menüsünde aynı faturanın tekrar aktarılmasını engeller.
+        // (EINVOICETYP artık LogoUnityComService.AktarFatura içinde Unity COM ile set ediliyor.)
         foreach (var f in sonuc.Faturalar.Where(x => x.Basarili))
         {
             try

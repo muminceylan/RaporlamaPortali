@@ -1,0 +1,305 @@
+@page "/satinalma-irsaliyeleri"
+@page "/toptan-satis-irsaliyeleri"
+@using RaporlamaPortali.Models
+@inject IrsaliyeListeService IrsaliyeServ
+@inject AfyonAmbarService AmbarServ
+@inject NavigationManager Nav
+@inject IDialogService Dialog
+@inject ISnackbar Snackbar
+@implements IDisposable
+
+<PageTitle>@_baslik</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-3">
+    <MudIcon Icon="@_iconYol" Class="mr-2" />
+    @_baslik
+</MudText>
+
+<MudPaper Class="pa-4 mb-3">
+    <MudGrid AlignItems="Center">
+        <MudItem xs="12" md="3">
+            <MudDatePicker Label="Başlangıç" @bind-Date="_baslangic"
+                           DateFormat="dd.MM.yyyy" Editable="true" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudDatePicker Label="Bitiş" @bind-Date="_bitis"
+                           DateFormat="dd.MM.yyyy" Editable="true" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudSwitch T="bool" @bind-Value="_tumAmbarlar"
+                       Label="@(_tumAmbarlar ? "Tüm Ambarlar" : $"Tanımlı Ambarlarım ({AmbarServ.Liste.Count})")"
+                       Color="Color.Primary" />
+            <div class="d-flex align-center" style="gap:6px;">
+                <MudText Typo="Typo.caption" Style="color:#666;">
+                    @(_tumAmbarlar
+                        ? "Logo'daki tüm ambar hareketleri"
+                        : "Sadece ayarlardaki ambar listesi")
+                </MudText>
+                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Edit"
+                           OnClick="AmbarlariDuzenle"
+                           Style="padding:0 6px; min-width:auto;">
+                    Düzenle
+                </MudButton>
+            </div>
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudSwitch T="bool" @bind-Value="_sadeceFaturalanmamis"
+                       Label="Faturalanmamış İrsaliyeleri Göster"
+                       Color="Color.Warning" />
+            <MudText Typo="Typo.caption" Style="color:#666;">
+                @(_sadeceFaturalanmamis
+                    ? "Yalnızca BILLED = 0 olanlar"
+                    : "Hepsi (sol F harfi faturalanmış demek)")
+            </MudText>
+        </MudItem>
+        <MudItem xs="12" Class="d-flex gap-2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Search"
+                       Disabled="_yukleniyor"
+                       OnClick="Sorgula">
+                @if (_yukleniyor) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+                Sorgula
+            </MudButton>
+            <MudText Typo="Typo.caption" Class="ml-auto" Style="line-height:36px; color:#666;">
+                @if (_satirlar != null)
+                {
+                    <span>Toplam: <b>@_satirlar.Count</b> irsaliye</span>
+                    if (!_tumAmbarlar)
+                    {
+                        <span> · Ambar filtresi: <b>@AmbarServ.Liste.Count</b> tanımlı</span>
+                    }
+                }
+            </MudText>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@if (_hata != null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-3">@_hata</MudAlert>
+}
+
+@if (_yukleniyor)
+{
+    <div class="d-flex justify-center pa-4">
+        <MudProgressCircular Indeterminate="true" />
+    </div>
+}
+else if (_satirlar != null)
+{
+    @if (_satirlar.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info">Bu kriterlerde irsaliye bulunamadı.</MudAlert>
+    }
+    else
+    {
+        <div class="irs-info mb-2">
+            <MudIcon Icon="@Icons.Material.Filled.TouchApp" Size="Size.Small" Class="mr-1" />
+            <span>İrsaliye satırına <b>çift tıklayarak</b> detayını görebilirsiniz.</span>
+            <span class="irs-f-ornek ml-3"><span class="irs-f-badge">F</span> = Faturalanmış</span>
+        </div>
+
+        <div class="irs-tablo-wrap">
+            <table class="irs-tablo">
+                <thead>
+                    <tr>
+                        <th style="width:32px;"></th>
+                        <th style="width:110px;">Tarih</th>
+                        <th style="width:130px;">Fiş No</th>
+                        <th style="width:140px;">Cari Kod</th>
+                        <th>Cari Ünvanı</th>
+                        <th style="width:60px; text-align:center;">Ambar</th>
+                        <th>Ambar Adı</th>
+                        <th style="width:130px; text-align:right;">Net Tutar</th>
+                        <th style="width:130px; text-align:right;">Brüt Tutar</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in _satirlar)
+                    {
+                        <tr @ondblclick="@(() => DetayAc(r))" @ondblclick:preventDefault="true"
+                            style="cursor:pointer;"
+                            title="Çift tıkla → detay">
+                            <td class="irs-f-cell">
+                                @if (r.Faturalandi)
+                                {
+                                    <span class="irs-f-badge" title="Faturalanmış">F</span>
+                                }
+                            </td>
+                            <td>@r.Tarih.ToString("dd.MM.yyyy")</td>
+                            <td><b>@r.FisNo</b></td>
+                            <td>@r.CariKodu</td>
+                            <td>@r.CariUnvani</td>
+                            <td style="text-align:center;">@(r.AmbarNo == 0 ? "" : r.AmbarNo.ToString())</td>
+                            <td>@r.AmbarAdi</td>
+                            <td class="irs-num">@r.NetTutar.ToString("N2")</td>
+                            <td class="irs-num">@r.BrutTutar.ToString("N2")</td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="7" style="text-align:right;">Toplam (@_satirlar.Count adet):</td>
+                        <td class="irs-num"><b>@(_satirlar.Sum(s => s.NetTutar).ToString("N2"))</b></td>
+                        <td class="irs-num"><b>@(_satirlar.Sum(s => s.BrutTutar).ToString("N2"))</b></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    }
+}
+
+<style>
+    .irs-info        { background:#E3F2FD; border-left:4px solid #1976d2; padding:8px 12px;
+                       font-size:0.85rem; color:#0d47a1; display:flex; align-items:center; }
+    .irs-f-ornek     { font-size:0.78rem; color:#555; display:inline-flex; align-items:center; gap:4px; }
+    .irs-f-badge     { display:inline-block; width:22px; height:22px; line-height:22px;
+                       text-align:center; background:#1976d2; color:#fff; border-radius:50%;
+                       font-weight:700; font-size:0.78rem; }
+    .irs-tablo-wrap  { overflow:auto; max-height:calc(100vh - 320px);
+                       border:1px solid #ddd; border-radius:4px; }
+    .irs-tablo       { width:100%; border-collapse:collapse; font-size:0.85rem; }
+    .irs-tablo thead th {
+        position:sticky; top:0; background:#1B5E20; color:#fff; padding:6px 8px;
+        text-align:left; font-weight:600; border-right:1px solid #2E7D32;
+    }
+    .irs-tablo tbody td { padding:5px 8px; border-bottom:1px solid #eee; }
+    .irs-tablo tbody tr:nth-child(even) { background:#fafafa; }
+    .irs-tablo tbody tr:hover           { background:#FFF9C4 !important; }
+    .irs-tablo .irs-f-cell { text-align:center; padding:2px 4px; }
+    .irs-tablo .irs-num    { text-align:right; font-variant-numeric: tabular-nums; }
+    .irs-tablo tfoot td {
+        background:#ECEFF1; padding:6px 8px; border-top:2px solid #1B5E20; font-weight:600;
+    }
+</style>
+
+@code {
+    private int      _trcode;
+    private string   _baslik     = "İrsaliyeler";
+    private string   _iconYol    = Icons.Material.Filled.LocalShipping;
+
+    private DateTime? _baslangic = DateTime.Today.AddMonths(-1);
+    private DateTime? _bitis     = DateTime.Today;
+    private bool      _tumAmbarlar          = false;
+    private bool      _sadeceFaturalanmamis = false;
+
+    private bool                _yukleniyor;
+    private string?             _hata;
+    private List<IrsaliyeOzet>? _satirlar;
+
+    protected override void OnInitialized()
+    {
+        ResolveModFromUrl();
+        Nav.LocationChanged += OnLocationChanged;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Sorgula();
+    }
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        var eskiTrcode = _trcode;
+        ResolveModFromUrl();
+        if (_trcode != eskiTrcode)
+        {
+            _satirlar = null;
+            _hata = null;
+            InvokeAsync(async () =>
+            {
+                StateHasChanged();
+                await Sorgula();
+            });
+        }
+    }
+
+    private void ResolveModFromUrl()
+    {
+        var uri = new Uri(Nav.Uri);
+        if (uri.AbsolutePath.Contains("toptan-satis", StringComparison.OrdinalIgnoreCase))
+        {
+            _trcode  = 8;
+            _baslik  = "Toptan Satış İrsaliyeleri";
+            _iconYol = Icons.Material.Filled.LocalShipping;
+        }
+        else
+        {
+            _trcode  = 1;
+            _baslik  = "Satınalma İrsaliyeleri";
+            _iconYol = Icons.Material.Filled.ShoppingCart;
+        }
+    }
+
+    private async Task Sorgula()
+    {
+        if (_baslangic == null || _bitis == null)
+        {
+            Snackbar.Add("Tarih aralığı boş bırakılamaz.", Severity.Warning);
+            return;
+        }
+        _yukleniyor = true;
+        _hata       = null;
+        try
+        {
+            IReadOnlyCollection<int>? ambarlar = _tumAmbarlar ? null : AmbarServ.Liste;
+            _satirlar = await IrsaliyeServ.ListeleAsync(
+                _trcode,
+                _baslangic.Value,
+                _bitis.Value,
+                ambarlar,
+                _sadeceFaturalanmamis);
+        }
+        catch (Exception ex)
+        {
+            _hata = ex.Message;
+        }
+        finally
+        {
+            _yukleniyor = false;
+        }
+    }
+
+    private async Task AmbarlariDuzenle()
+    {
+        var opt = new DialogOptions
+        {
+            MaxWidth      = MaxWidth.Medium,
+            FullWidth     = true,
+            CloseOnEscapeKey = true,
+        };
+        var dialog = await Dialog.ShowAsync<AmbarYonetimDialog>("Tanımlı Ambarlar", opt);
+        var result = await dialog.Result;
+        if (!result.Canceled && result.Data is bool degistiMi && degistiMi && !_tumAmbarlar)
+        {
+            // Liste değişti ve ambar filtresi aktif — yeniden sorgula
+            await Sorgula();
+        }
+        else
+        {
+            // Sadece UI'ı tazele (chip sayısı)
+            StateHasChanged();
+        }
+    }
+
+    private async Task DetayAc(IrsaliyeOzet ozet)
+    {
+        var parameters = new DialogParameters
+        {
+            ["LogicalRef"] = ozet.LogicalRef,
+        };
+        var opt = new DialogOptions
+        {
+            MaxWidth      = MaxWidth.ExtraLarge,
+            FullWidth     = true,
+            CloseOnEscapeKey = true,
+        };
+        await Dialog.ShowAsync<IrsaliyeDetayDialog>($"İrsaliye Detayı — {ozet.FisNo}", parameters, opt);
+    }
+}

@@ -1,0 +1,168 @@
+@using RaporlamaPortali.Models
+@inject AfyonAmbarService AmbarServ
+@inject LogoIslemleriService LogoServ
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center" style="gap:8px;">
+            <MudIcon Icon="@Icons.Material.Filled.Warehouse" Color="Color.Primary" />
+            <span><b>Tanımlı Ambarlar</b> — listemi yönet</span>
+        </div>
+    </TitleContent>
+
+    <DialogContent>
+        @if (_yukleniyor)
+        {
+            <div class="d-flex justify-center pa-4">
+                <MudProgressCircular Indeterminate="true" />
+            </div>
+        }
+        else
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                Bu liste hem <b>Stok Durumu</b> hem <b>İrsaliye</b> sayfalarında ortak filtre olarak kullanılır.
+                Değişiklikler anında JSON'a yazılır.
+            </MudAlert>
+
+            <MudPaper Class="pa-3 mb-3" Outlined="true">
+                <MudText Typo="Typo.subtitle2" Class="mb-2">
+                    <MudIcon Icon="@Icons.Material.Filled.Add" Size="Size.Small" Class="mr-1" />
+                    Yeni ambar ekle
+                </MudText>
+                <MudGrid AlignItems="Center">
+                    <MudItem xs="12" md="7">
+                        <MudSelect T="int" Value="_seciliAmbar" ValueChanged="@((int v) => _seciliAmbar = v)"
+                                   Label="Logo'daki ambarlardan seç"
+                                   Dense="true" Clearable="true"
+                                   AnchorOrigin="Origin.BottomCenter">
+                            @foreach (var a in _logoAmbarlari.Where(a => !_liste.Contains(a.AmbarNo)).OrderBy(a => a.AmbarNo))
+                            {
+                                <MudSelectItem Value="@a.AmbarNo">@a.AmbarNo - @a.Ad</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="6" md="3">
+                        <MudNumericField T="int?" @bind-Value="_manuelNo"
+                                         Label="veya ambar no yaz"
+                                         Variant="Variant.Outlined" Margin="Margin.Dense"
+                                         Min="1" HideSpinButtons="true" />
+                    </MudItem>
+                    <MudItem xs="6" md="2">
+                        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                                   StartIcon="@Icons.Material.Filled.Add"
+                                   FullWidth="true"
+                                   OnClick="Ekle">
+                            Ekle
+                        </MudButton>
+                    </MudItem>
+                </MudGrid>
+            </MudPaper>
+
+            <div class="d-flex align-center mb-2">
+                <MudText Typo="Typo.subtitle2">
+                    Mevcut liste — <b>@_liste.Count</b> ambar
+                </MudText>
+                <MudSpacer />
+                <MudButton Size="Size.Small" Color="Color.Warning" Variant="Variant.Text"
+                           StartIcon="@Icons.Material.Filled.RestartAlt"
+                           OnClick="Sifirla">
+                    Varsayılana Sıfırla
+                </MudButton>
+            </div>
+
+            @if (_liste.Count == 0)
+            {
+                <MudAlert Severity="Severity.Warning">Liste boş. En az 1 ambar eklenmesi önerilir.</MudAlert>
+            }
+            else
+            {
+                <div class="d-flex flex-wrap gap-1">
+                    @foreach (var nr in _liste)
+                    {
+                        var ad   = _logoAmbarlari.FirstOrDefault(a => a.AmbarNo == nr)?.Ad;
+                        var etiket = string.IsNullOrEmpty(ad) ? $"{nr}" : $"{nr} — {ad}";
+                        <MudChip T="string" Color="Color.Success" Variant="Variant.Filled"
+                                 OnClose="@(() => Cikar(nr))" CloseIcon="@Icons.Material.Filled.Close">
+                            @etiket
+                        </MudChip>
+                    }
+                </div>
+            }
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Kapat" Color="Color.Primary" Variant="Variant.Filled">Kapat</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+
+    private bool                _yukleniyor = true;
+    private List<int>           _liste          = new();
+    private List<AmbarSecenek>  _logoAmbarlari  = new();
+    private int                 _seciliAmbar    = 0;
+    private int?                _manuelNo;
+    private bool                _degisiklikYapildi;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _logoAmbarlari = await LogoServ.AmbarSecenekleriAsync();
+            _liste         = AmbarServ.Liste.ToList();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Ambar listesi yüklenemedi: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _yukleniyor = false;
+        }
+    }
+
+    private void Ekle()
+    {
+        int? hedef = _seciliAmbar > 0 ? _seciliAmbar : _manuelNo;
+        if (hedef is not int nr || nr <= 0)
+        {
+            Snackbar.Add("Ambar seç veya numara yaz.", Severity.Warning);
+            return;
+        }
+        if (AmbarServ.Ekle(nr))
+        {
+            _liste = AmbarServ.Liste.ToList();
+            _degisiklikYapildi = true;
+            Snackbar.Add($"Ambar {nr} eklendi.", Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add($"Ambar {nr} zaten listede.", Severity.Info);
+        }
+        _seciliAmbar = 0;
+        _manuelNo    = null;
+    }
+
+    private void Cikar(int nr)
+    {
+        if (AmbarServ.Cikar(nr))
+        {
+            _liste = AmbarServ.Liste.ToList();
+            _degisiklikYapildi = true;
+            Snackbar.Add($"Ambar {nr} listeden çıkarıldı.", Severity.Success);
+        }
+    }
+
+    private void Sifirla()
+    {
+        AmbarServ.Sifirla();
+        _liste = AmbarServ.Liste.ToList();
+        _degisiklikYapildi = true;
+        Snackbar.Add("Varsayılan ambar listesi yüklendi.", Severity.Success);
+    }
+
+    private void Kapat() => MudDialog.Close(DialogResult.Ok(_degisiklikYapildi));
+}

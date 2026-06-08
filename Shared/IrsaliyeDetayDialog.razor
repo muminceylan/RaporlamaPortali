@@ -1,0 +1,267 @@
+@using RaporlamaPortali.Models
+@inject IrsaliyeListeService IrsaliyeServ
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center" style="gap:8px;">
+            <MudIcon Icon="@Icons.Material.Filled.ReceiptLong" Color="Color.Primary" />
+            <span>
+                <b>İrsaliye Detayı</b>
+                @if (_detay != null)
+                {
+                    <span class="ml-2" style="color:#1976d2;">#@_detay.FisNo</span>
+                    <span class="ml-2" style="color:#555; font-weight:normal;">(@_detay.FisTuru)</span>
+                    @if (_detay.Faturalandi)
+                    {
+                        <span class="id-fat-rozet ml-2">F · Faturalanmış</span>
+                    }
+                    else
+                    {
+                        <span class="id-nofat-rozet ml-2">Faturalanmamış</span>
+                    }
+                }
+            </span>
+        </div>
+    </TitleContent>
+
+    <DialogContent>
+        @if (_yukleniyor)
+        {
+            <div class="d-flex justify-center pa-4">
+                <MudProgressCircular Indeterminate="true" />
+                <span class="ml-3" style="line-height:32px;">Logo'dan çekiliyor…</span>
+            </div>
+        }
+        else if (_hata != null)
+        {
+            <MudAlert Severity="Severity.Error">@_hata</MudAlert>
+        }
+        else if (_detay == null)
+        {
+            <MudAlert Severity="Severity.Warning">İrsaliye bulunamadı.</MudAlert>
+        }
+        else
+        {
+            <div class="id-card mb-3">
+                <div class="id-row">
+                    <div><b>Fiş No:</b> <span style="color:#1565c0; font-weight:600;">@_detay.FisNo</span></div>
+                    <div><b>Tarih:</b> @_detay.Tarih.ToString("dd.MM.yyyy")</div>
+                    <div><b>Cari Kod:</b> @_detay.CariKodu</div>
+                    <div style="flex:1;"><b>Cari Ünvan:</b> @_detay.CariUnvani</div>
+                </div>
+                <div class="id-row" style="margin-top:6px;">
+                    <div>
+                        <b>Ambar:</b>
+                        @if (_detay.AmbarNo == 0)
+                        {
+                            <span style="color:#999;">— belirsiz —</span>
+                        }
+                        else
+                        {
+                            <span>@_detay.AmbarNo</span>
+                            <span style="color:#555;"> · @_detay.AmbarAdi</span>
+                        }
+                    </div>
+                    <div><b>Net Tutar:</b> @_detay.NetTutar.ToString("N2") ₺</div>
+                    <div><b>Brüt Tutar:</b> @_detay.BrutTutar.ToString("N2") ₺</div>
+                    <div><b>KDV:</b> @_detay.ToplamKdv.ToString("N2") ₺</div>
+                    @if (_detay.ToplamIskonto > 0)
+                    {
+                        <div><b>İskonto:</b> @_detay.ToplamIskonto.ToString("N2") ₺</div>
+                    }
+                </div>
+
+                @{ var aciklamalar = TumAciklamalar(_detay); }
+                @if (aciklamalar.Count > 0)
+                {
+                    <div class="id-row" style="margin-top:6px;">
+                        <div style="flex:1;">
+                            <b>Açıklama:</b>
+                            @foreach (var a in aciklamalar)
+                            {
+                                <div style="white-space:pre-wrap;">@a</div>
+                            }
+                        </div>
+                    </div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(_detay.MuafiyetKodu) ||
+                     !string.IsNullOrWhiteSpace(_detay.MuafiyetAciklama))
+                {
+                    <div class="id-muafiyet" style="margin-top:8px;">
+                        <b>KDV Muafiyeti:</b>
+                        @if (!string.IsNullOrWhiteSpace(_detay.MuafiyetKodu))
+                        {
+                            <span class="id-muaf-kod">@_detay.MuafiyetKodu</span>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_detay.MuafiyetAciklama))
+                        {
+                            <span style="margin-left:6px;">@_detay.MuafiyetAciklama</span>
+                        }
+                    </div>
+                }
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_detay.KullaniciOlusturan) ||
+                 !string.IsNullOrWhiteSpace(_detay.KullaniciDegistiren))
+            {
+                <div class="id-kayit mb-3">
+                    <div class="id-kayit-baslik">
+                        <MudIcon Icon="@Icons.Material.Filled.History" Size="Size.Small" Class="mr-1" />
+                        Kayıt Bilgisi
+                    </div>
+                    <div class="id-row" style="font-size:0.85rem;">
+                        @if (!string.IsNullOrWhiteSpace(_detay.KullaniciOlusturan))
+                        {
+                            <div>
+                                <b>Kaydeden:</b> @_detay.KullaniciOlusturan
+                                @if (_detay.OlusturmaZamani != null)
+                                {
+                                    <span style="color:#555;"> · @_detay.OlusturmaZamani.Value.ToString("dd.MM.yyyy HH:mm")</span>
+                                }
+                            </div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_detay.KullaniciDegistiren))
+                        {
+                            <div>
+                                <b>Son Değiştiren:</b> @_detay.KullaniciDegistiren
+                                @if (_detay.DegistirmeZamani != null)
+                                {
+                                    <span style="color:#555;"> · @_detay.DegistirmeZamani.Value.ToString("dd.MM.yyyy HH:mm")</span>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+
+            <div style="overflow:auto; max-height:520px;">
+                <table class="id-tablo">
+                    <thead>
+                        <tr>
+                            <th style="width:36px;">#</th>
+                            <th style="width:160px;">Malzeme Kodu</th>
+                            <th>Malzeme Adı</th>
+                            <th class="num" style="width:110px;">Miktar</th>
+                            <th class="num" style="width:110px;">Fiyat</th>
+                            <th class="num" style="width:130px;">Tutar</th>
+                            <th class="num" style="width:130px;">KDV Matrah</th>
+                            <th style="width:65px; text-align:center;">Ambar</th>
+                            <th style="width:120px;">KDV Muafiyet</th>
+                            <th>Satır Açıklama</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var s in _detay.Satirlar)
+                        {
+                            <tr>
+                                <td>@s.Sira</td>
+                                <td><b>@s.MalzemeKodu</b></td>
+                                <td>@s.MalzemeAdi</td>
+                                <td class="num">@s.Miktar.ToString("N3")</td>
+                                <td class="num">@s.Fiyat.ToString("N4")</td>
+                                <td class="num">@s.Tutar.ToString("N2")</td>
+                                <td class="num">@s.KdvMatrah.ToString("N2")</td>
+                                <td style="text-align:center;">@(s.AmbarNo == 0 ? "" : s.AmbarNo.ToString())</td>
+                                <td>
+                                    @if (!string.IsNullOrWhiteSpace(s.MuafiyetKodu))
+                                    {
+                                        <span class="id-muaf-kod-mini" title="@s.MuafiyetAciklama">@s.MuafiyetKodu</span>
+                                        @if (!string.IsNullOrWhiteSpace(s.MuafiyetAciklama))
+                                        {
+                                            <div style="font-size:0.72rem; color:#666;">@s.MuafiyetAciklama</div>
+                                        }
+                                    }
+                                </td>
+                                <td>@s.SatirAciklama</td>
+                            </tr>
+                        }
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td colspan="5" style="text-align:right;">Toplam (@_detay.Satirlar.Count satır):</td>
+                            <td class="num"><b>@(_detay.Satirlar.Sum(s => s.Tutar).ToString("N2"))</b></td>
+                            <td class="num"><b>@(_detay.Satirlar.Sum(s => s.KdvMatrah).ToString("N2"))</b></td>
+                            <td colspan="3"></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Kapat" Color="Color.Default">Kapat</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<style>
+    .id-card     { background:#F1F8E9; border:1px solid #C5E1A5; border-radius:6px;
+                   padding:10px 14px; font-size:0.88rem; }
+    .id-row      { display:flex; flex-wrap:wrap; gap:16px 24px; }
+    .id-kayit    { background:#FFF8E1; border:1px solid #FFE082; border-radius:6px;
+                   padding:8px 14px; }
+    .id-kayit-baslik { font-weight:600; font-size:0.85rem; color:#795548;
+                       margin-bottom:4px; display:flex; align-items:center; }
+    .id-muafiyet { background:#FFEBEE; border-left:4px solid #C62828;
+                   padding:6px 12px; border-radius:4px; font-size:0.85rem; }
+    .id-muaf-kod { display:inline-block; background:#C62828; color:#fff;
+                   padding:2px 8px; border-radius:4px; font-weight:600;
+                   font-family:monospace; }
+    .id-muaf-kod-mini { display:inline-block; background:#C62828; color:#fff;
+                        padding:1px 6px; border-radius:3px; font-weight:600;
+                        font-family:monospace; font-size:0.75rem; }
+    .id-fat-rozet   { background:#1B5E20; color:#fff; padding:2px 10px; border-radius:12px;
+                      font-size:0.75rem; font-weight:600; }
+    .id-nofat-rozet { background:#FF8F00; color:#fff; padding:2px 10px; border-radius:12px;
+                      font-size:0.75rem; font-weight:600; }
+    .id-tablo    { width:100%; border-collapse:collapse; font-size:0.82rem; }
+    .id-tablo thead th {
+        position:sticky; top:0; background:#1976d2; color:#fff; padding:6px 8px;
+        border:1px solid #1565c0; text-align:left; font-weight:600;
+    }
+    .id-tablo tbody td { padding:4px 8px; border:1px solid #eee; vertical-align:top; }
+    .id-tablo tbody tr:nth-child(odd) { background:#fafafa; }
+    .id-tablo .num { text-align:right; font-variant-numeric: tabular-nums; }
+    .id-tablo tfoot td { background:#ECEFF1; padding:6px 8px; border-top:2px solid #1976d2; }
+</style>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public int LogicalRef { get; set; }
+
+    private bool           _yukleniyor = true;
+    private string?        _hata;
+    private IrsaliyeDetay? _detay;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _detay = await IrsaliyeServ.DetayAsync(LogicalRef);
+            if (_detay == null)
+                _hata = $"LOGICALREF={LogicalRef} için irsaliye kaydı bulunamadı.";
+        }
+        catch (Exception ex)
+        {
+            _hata = ex.Message;
+        }
+        finally
+        {
+            _yukleniyor = false;
+        }
+    }
+
+    private void Kapat() => MudDialog.Close(DialogResult.Ok(true));
+
+    // GENEXP1-6 alanlarından boş olmayanları sırayla döndürür.
+    private static List<string> TumAciklamalar(IrsaliyeDetay d)
+    {
+        var list = new List<string>();
+        void Add(string? s) { if (!string.IsNullOrWhiteSpace(s)) list.Add(s.Trim()); }
+        Add(d.Aciklama1); Add(d.Aciklama2); Add(d.Aciklama3);
+        Add(d.Aciklama4); Add(d.Aciklama5); Add(d.Aciklama6);
+        return list;
+    }
+}

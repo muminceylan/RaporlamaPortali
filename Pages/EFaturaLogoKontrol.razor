@@ -130,7 +130,9 @@ else
     <MudTable T="EFaturaListItem" Items="FiltreliKayitlar" Dense="true" Hover="true" Bordered="true" Striped="true"
               FixedHeader="true" Height="calc(100vh - 380px)"
               Breakpoint="Breakpoint.None" RowsPerPage="100"
-              Class="lk-list-tbl">
+              Class="lk-list-tbl"
+              OnRowClick="@(args => RowClick(args.Item))"
+              RowStyle="cursor: pointer;">
         <HeaderContent>
             <MudTh Style="width:95px"><MudTableSortLabel SortBy="new Func<EFaturaListItem,object>(x=>x.Tarih)">e-Fatura Tarih</MudTableSortLabel></MudTh>
             <MudTh Style="width:155px"><MudTableSortLabel SortBy="new Func<EFaturaListItem,object>(x=>x.FaturaNo)">e-Fatura No</MudTableSortLabel></MudTh>
@@ -211,7 +213,19 @@ else
             <MudText>Filtreye uyan kayıt yok.</MudText>
         </NoRecordsContent>
     </MudTable>
+
+    <MudPaper Class="pa-2 mt-1" Elevation="0" Style="background:#fff3e0; border-left:3px solid #f57c00;">
+        <MudText Typo="Typo.caption">
+            <MudIcon Icon="@Icons.Material.Filled.TouchApp" Size="Size.Small" Style="vertical-align:-3px;" />
+            <b>İpucu:</b> Bir satıra <b>çift tıklayarak</b> fatura detayını görüntüleyebilirsiniz.
+        </MudText>
+    </MudPaper>
 }
+
+<EFaturaDetayDrawer @bind-Open="_detayAcik"
+                    Detay="_detay"
+                    Yukleniyor="_detayYukleniyor"
+                    KarsiVkn="@_detayKarsiVkn" />
 
 <style>
     .lk-list-tbl .mud-table-cell { padding: 3px 8px !important; line-height: 1.15 !important; font-size: 0.88em; }
@@ -243,6 +257,18 @@ else
     private List<EFaturaListItem> _kayitlar = new();
     private bool _yukleniyor;
     private (int Kesin, int Modifiye, int Supheli, int Yok, int Red) _sayim;
+
+    // Detay drawer state — EFatura.razor'daki "Detayı göster" ile aynı görünüm.
+    private bool          _detayAcik;
+    private bool          _detayYukleniyor;
+    private EFaturaDetay? _detay;
+    private string        _detayKarsiVkn = "";
+
+    // Çift tık tespiti: MudTable'da native double-click yok, OnRowClick içinde
+    // zaman farkına bakarak çift tıkı yakalıyoruz.
+    private DateTime _sonTikZamani = DateTime.MinValue;
+    private long     _sonTikItemId = 0;
+    private const int CiftTikEsigiMs = 400;
 
     // İşlenmedi filtresi seçildiğinde RED edilenleri DIŞLA (zaten Logo'da olmamaları normal).
     // Red filtresi seçiliyse SADECE red/iptal olanları getir.
@@ -319,6 +345,45 @@ else
         catch (Exception ex)
         {
             Snackbar.Add("Excel hatası: " + ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task RowClick(EFaturaListItem r)
+    {
+        var simdi = DateTime.UtcNow;
+        var farkMs = (simdi - _sonTikZamani).TotalMilliseconds;
+        if (_sonTikItemId == r.Id && farkMs > 0 && farkMs < CiftTikEsigiMs)
+        {
+            _sonTikItemId = 0;
+            _sonTikZamani = DateTime.MinValue;
+            await DetayAc(r);
+            return;
+        }
+        _sonTikItemId = r.Id;
+        _sonTikZamani = simdi;
+    }
+
+    private async Task DetayAc(EFaturaListItem r)
+    {
+        _detayAcik = true;
+        _detayYukleniyor = true;
+        _detay = null;
+        _detayKarsiVkn = r.KarsiVKN ?? "";
+        StateHasChanged();
+        try
+        {
+            _detay = await Svc.DetayGetirAsync(r.Id, r.KarsiVKN);
+            if (_detay == null)
+                Snackbar.Add("XML ayrıştırılamadı.", Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Detay hatası: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _detayYukleniyor = false;
+            StateHasChanged();
         }
     }
 

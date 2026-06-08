@@ -307,16 +307,24 @@ public class LogoUnityComService
             }
             // TL için: hiçbir TR* alanı set ETME, default 0 kalsın
 
-            // Raporlama Dövizi (USD) kuru — sadece KUR set et, NET hesaplamasını Logo'ya bırak.
-            // V22 (20.05.2026): DB karşılaştırması (DNZ2026000001788 vs DNZ2026000001743) gösterdi ki
-            // çalışan faturada RC_NET/REPORTNET set EDİLMEMİŞ, sadece REPORTRATE setli. Logo
-            // NETTOTAL/REPORTRATE formülüyle REPORTNET'i otomatik hesaplıyor. Biz manuel
-            // setleyince Logo "kullanıcı atadı, çevirim yapma" sayıp değeri silip 0 atıyor.
+            // Raporlama Dövizi (USD) kuru + tutar.
+            // V22 (20.05.2026): satış faturası DNZ2026000001788 ile yapılan testte REPORTNET
+            // set EDİLMEDEN de Logo'nun otomatik hesapladığı görülmüştü. AMA Alınan Hizmet
+            // faturalarında (TRCODE=4, ör. GDL2026000007098) Logo otomatik HESAPLAMIYOR →
+            // REPORTNET=0 kalıyor (Liste'de "Dövizli Tutar" boş).
+            // V23 (31.05.2026): manuel girilmiş TRCODE=4 faturalarda (TIA2026000374046,
+            // GIB2026000040005...) REPORTNET = NETTOTAL/REPORTRATE doğrulandı. Biz de hesaplayıp
+            // set ediyoruz — TRCODE'dan bağımsız tüm faturalarda güvenli.
             if (m.RaporlamaKuru > 0)
             {
                 SetHeaderField(inv, "RC_XRATE",    (double)m.RaporlamaKuru);
                 SetHeaderField(inv, "REPORTRATE",  (double)m.RaporlamaKuru);
-                // RC_NET / REPORTNET → SET ETMİYORUZ, Logo otomatik hesaplasın
+                decimal reportNet = IslemToRc(m.ToplamNet);   // (m.ToplamNet TL→) / RaporlamaKuru
+                if (reportNet > 0m)
+                {
+                    try { SetHeaderField(inv, "REPORTNET", (double)reportNet); }
+                    catch (Exception ex) { _log.LogWarning(ex, "REPORTNET header set başarısız: {V}", reportNet); }
+                }
             }
             else
             {
@@ -380,14 +388,23 @@ public class LogoUnityComService
             // V13/V14: DISPATCH'e pre-Post erişip override etmeyi denedik — Logo DISPATCH'i sadece
             // Post() içinde yaratıyor (V14 diag: count=0), pre-Post override imkansız.
             //
-            // V15 stratejisi: header EINVOICE_TYPE set edilmiyor. Line'daki VATEXCEPT_CODE Logo'ya
-            // istisnayı söylüyor zaten. Risk: 1159 dönebilir (öyleyse geri eklenir + farklı yol).
+            // V16: HEADER'A EINVOICE_TYPE SET EDİYORUZ.
+            // V15'te skip ediliyordu — DISPATCH cascade ile e-İrsaliye validation tetikleniyordu.
+            // Şimdi DISPATCH override (Validation sonrası, Post öncesi) zaten satır 670 civarında
+            // EINVOICE_TYPE=0'a çekiyor → header'da kalan değer Logo INVOICE.EINVOICETYP'i doldurur,
+            // STFICHE.EINVOICETYP=0 kalır → validation tetiklenmez.
+            // İstisna=2, Tevkifat=4 (Logo standart).
             int eInvType = 0;
             if (m.Satirlar.Any(s => !string.IsNullOrWhiteSpace(s.IstisnaKodu)))
                 eInvType = 2;
             else if (m.Tevkifatli || m.Satirlar.Any(s => s.Tevkifatli))
                 eInvType = 4;
-            string eInvFieldUsed = eInvType > 0 ? $"(V15-skipped, would-be={eInvType})" : "";
+            string eInvFieldUsed = "";
+            if (eInvType > 0)
+            {
+                try { SetHeaderField(inv, "EINVOICE_TYPE", eInvType); eInvFieldUsed = "EINVOICE_TYPE"; }
+                catch (Exception ex) { _log.LogWarning(ex, "EINVOICE_TYPE header set başarısız: {V}", eInvType); }
+            }
 
             // EINVOICE — DB kolonu smallint (0/1 flag), DateTime DEĞİL.
             // Logo XML export'unda <EINVOICE>1</EINVOICE> şeklinde (boolean flag).
@@ -688,8 +705,9 @@ public class LogoUnityComService
             try
             {
                 var logFile = System.IO.Path.Combine(AppDataPaths.DataRoot, "logo_unity_diag.txt");
+                decimal reportNetCalc = m.RaporlamaKuru > 0 ? Math.Round(m.ToplamNet / m.RaporlamaKuru, 2) : 0m;
                 System.IO.File.AppendAllText(logFile,
-                    $"---- {DateTime.Now:yyyy-MM-dd HH:mm:ss} [V22] eFaturaId={eFaturaId} Doviz={m.Doviz} TRCURR={m.EdtCurr} TRRATE={m.DovizKuru:N4} dövizli={dovizli} islemKuru={islemKuru:N4} RcKur={m.RaporlamaKuru:N4} EDTCURR={edtCurrCode} ToplamNet={m.ToplamNet:N2} (header RC_NET set EDİLMİYOR, Logo otomatik hesaplasın) ----\n");
+                    $"---- {DateTime.Now:yyyy-MM-dd HH:mm:ss} [V23] eFaturaId={eFaturaId} Doviz={m.Doviz} TRCURR={m.EdtCurr} TRRATE={m.DovizKuru:N4} dövizli={dovizli} islemKuru={islemKuru:N4} RcKur={m.RaporlamaKuru:N4} EDTCURR={edtCurrCode} ToplamNet={m.ToplamNet:N2} REPORTNET={reportNetCalc:N2} (header'a SET edildi) EINV_TYPE={eInvType} ({eInvFieldUsed}) ----\n");
             }
             catch { }
 
@@ -736,6 +754,42 @@ public class LogoUnityComService
             satir.Basarili = true;
             satir.LogoNo   = GetFieldStr(inv, "NUMBER");
             satir.LogoRef  = GetFieldLong(inv, "INTERNAL_REFERENCE");
+
+            // REPORTNET ikinci pass — Logo Post sırasında REPORTNET set'ini sessizce 0'lıyor
+            // (V18 deneyimi). Manuel formda kullanıcı Kaydet'e bastığında dolar. Aynı obje
+            // üzerinde set + Update/Save deneyelim, hangisi tutarsa o.
+            if (m.RaporlamaKuru > 0)
+            {
+                decimal reportNet = Math.Round(m.ToplamNet / m.RaporlamaKuru, 2);
+                string setMsg = "", updMsg = "";
+
+                try { SetHeaderField(inv, "REPORTNET", (double)reportNet); setMsg = "OK"; }
+                catch (Exception e1) { setMsg = "EX:" + e1.Message; }
+
+                // Önce Update dene, başarısızsa Save, başarısızsa Post(2nd) dene.
+                foreach (var method in new[] { "Update", "Save", "Post" })
+                {
+                    try
+                    {
+                        var r = Inv(inv, method);
+                        bool ok = r is bool bb && bb;
+                        updMsg += $" {method}={(ok ? "OK" : "false")}";
+                        if (ok) break;
+                    }
+                    catch (Exception ex)
+                    {
+                        updMsg += $" {method}=EX:{ex.Message.Split('\n')[0]}";
+                    }
+                }
+
+                try
+                {
+                    var logFile = System.IO.Path.Combine(AppDataPaths.DataRoot, "logo_unity_diag.txt");
+                    System.IO.File.AppendAllText(logFile,
+                        $"---- {DateTime.Now:yyyy-MM-dd HH:mm:ss} [V25-POST-UPD] eFaturaId={eFaturaId} REPORTNET={reportNet:N2} SetField={setMsg} Methods={updMsg.Trim()} LogoRef={satir.LogoRef} ----\n");
+                } catch { }
+            }
+
             return satir;
         }
         catch (Exception ex)

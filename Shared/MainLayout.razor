@@ -1,5 +1,6 @@
 @inherits LayoutComponentBase
 @implements IDisposable
+@using System.Reflection
 
 <MudLayout>
     <MudAppBar Elevation="4" Style="background:linear-gradient(90deg,#0d47a1 0%,#1976d2 40%,#1565c0 100%);">
@@ -57,6 +58,9 @@
                 <MudNavLink Href="/finans-raporu" Icon="@Icons.Material.Filled.Savings" IconColor="Color.Success">
                     Finans Raporu
                 </MudNavLink>
+                <MudNavLink Href="/isletme-malzemeleri-raporu" Icon="@Icons.Material.Filled.Factory" IconColor="Color.Success">
+                    İşletme Malzemeleri Raporu
+                </MudNavLink>
             </MudNavGroup>
 
             <MudNavGroup Title="Avans İşlemleri" Icon="@Icons.Material.Filled.Payments"
@@ -113,6 +117,12 @@
                 </MudNavLink>
                 <MudNavLink Href="/malzeme-hareket-listesi" Icon="@Icons.Material.Filled.ListAlt" IconColor="Color.Primary">
                     Malzeme Hareket Listesi
+                </MudNavLink>
+                <MudNavLink Href="/satinalma-irsaliyeleri" Icon="@Icons.Material.Filled.ShoppingCart" IconColor="Color.Primary">
+                    Satın Alma İrsaliyeleri
+                </MudNavLink>
+                <MudNavLink Href="/toptan-satis-irsaliyeleri" Icon="@Icons.Material.Filled.LocalShipping" IconColor="Color.Primary">
+                    Toptan Satış İrsaliyeleri
                 </MudNavLink>
                 <MudNavLink Href="/efatura" Icon="@Icons.Material.Filled.Receipt" IconColor="Color.Primary">
                     e-Fatura Görüntüleme
@@ -203,6 +213,10 @@
                 Çıkış Yap
             </MudNavLink>
         </MudNavMenu>
+
+        <div class="portal-version">
+            <span title="Sürüm">Version @(_versiyon)</span>
+        </div>
     </MudDrawer>
 
     <MudMainContent Style="background:linear-gradient(135deg,#f5f7fa 0%,#e8eef5 50%,#eef2f7 100%); min-height:100vh;">
@@ -230,11 +244,45 @@
     .portal-nav .mud-nav-group .mud-nav-link {
         font-weight: 500;
     }
+    /* Drawer'ı flex column yap: NavMenu üst, versiyon alta yapışır.
+       NavMenu kendi içinde scroll eder; versiyon her zaman görünür kalır. */
+    .mud-drawer .mud-drawer-content {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+    .portal-nav {
+        flex: 1 1 auto;
+        overflow-y: auto;
+        overflow-x: hidden;
+        min-height: 0;
+    }
+    .portal-version {
+        flex: 0 0 auto;
+        margin: 6px 12px 10px 12px;
+        align-self: flex-start;
+        font-size: 0.78em;
+        font-weight: 600;
+        color: #607d8b;
+        background: rgba(255,255,255,0.85);
+        padding: 2px 9px;
+        border-radius: 10px;
+        border: 1px solid #cfd8dc;
+        letter-spacing: 0.3px;
+        font-family: 'Consolas', monospace;
+    }
 </style>
 
 @code {
     private bool    _drawerOpen = true;
     private string? _acikGrup   = "raporlar"; // accordion: tek seferde sadece tek grup açık
+
+    // Assembly InformationalVersion'dan sürüm — RaporlamaPortali.csproj <Version> her değişiklikte +1
+    private static readonly string _versiyon =
+        Assembly.GetExecutingAssembly()
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+        ?? Assembly.GetExecutingAssembly().GetName().Version?.ToString(3)
+        ?? "?";
 
     [Inject]
     private NavigationManager NavigationManager { get; set; } = default!;
@@ -254,7 +302,7 @@
     private void SenkronizeEt(string uri)
     {
         var path = new Uri(uri).AbsolutePath.ToLowerInvariant().TrimEnd('/');
-        if (path is "/yan-urunler" or "/pancar-raporu" or "/seker-dairesi" or "/seker-dairesi-yan-urunler" or "/tarim-kredi-raporu" or "/finans-raporu")
+        if (path is "/yan-urunler" or "/pancar-raporu" or "/seker-dairesi" or "/seker-dairesi-yan-urunler" or "/tarim-kredi-raporu" or "/finans-raporu" or "/isletme-malzemeleri-raporu")
             _acikGrup = "raporlar";
         else if (path is "/odeme-karsilastir" or "/sabnet-logo-karsilastir" or "/odeme-kontrol" or "/odeme-dosyasi" or "/satis-faturasi-aktar" or "/banka-hesap-ayarlari")
             _acikGrup = "avans";

@@ -13,13 +13,17 @@ public static class LogoHesapKoduMaps
         [20m] = "191.01.07",
     };
 
-    // Tevkifatlı KDV → Tevkifatlı İndirilecek KDV (sınıf 192.02.xx)
+    // Tevkifatlı KDV → Tevkifatlı İndirilecek KDV (sınıf 192.02.xxx)
     // Logo, satırda GL_CODE3 olarak işliyor.
+    // DİKKAT: bu sınıfta son ek 3 hane (.001 .002 .003 .004) — 191.01 sınıfından farklı.
+    // Logo'daki gerçek kodlar (LG_211_EMUHACC):
+    //   192.02.001 → %1, 192.02.002 → %8, 192.02.003 → %10, 192.02.004 → %20
     public static readonly IReadOnlyDictionary<decimal, string> KdvTevkifatliIndirilecek = new Dictionary<decimal, string>
     {
-        [1m]  = "192.02.01",
-        [10m] = "192.02.03",
-        [20m] = "192.02.04",
+        [1m]  = "192.02.001",
+        [8m]  = "192.02.002",
+        [10m] = "192.02.003",
+        [20m] = "192.02.004",
     };
 
     // Tevkifat oranı (Pay/Payda) → Sorumlu Sıfatı ile Ödenecek KDV (sınıf 360.10.xx)

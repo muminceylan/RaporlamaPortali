@@ -1,0 +1,399 @@
+@page "/isletme-malzemeleri-raporu"
+@using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
+@inject IsletmeMalzemeleriService IsletmeService
+@inject IsletmeMalzemeleriKonfigService Konfig
+@inject ExcelExportService Excel
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>İşletme Malzemeleri Raporu</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.Factory" Class="mr-2" />
+    İşletme Malzemeleri Raporu
+</MudText>
+
+<MudPaper Class="pa-4 mb-3">
+    <MudGrid>
+        <MudItem xs="12" md="3">
+            <MudDatePicker Label="Devir Tarihi" @bind-Date="_devirTarihi"
+                           DateFormat="dd.MM.yyyy" Editable="true"
+                           PickerVariant="PickerVariant.Dialog" OpenTo="OpenTo.Year" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudDatePicker Label="Kampanya Başlangıç" @bind-Date="_kampanyaBas"
+                           DateFormat="dd.MM.yyyy" Editable="true" Clearable="true"
+                           PickerVariant="PickerVariant.Dialog" OpenTo="OpenTo.Year" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudDatePicker Label="Kampanya Bitiş" @bind-Date="_kampanyaBitis"
+                           DateFormat="dd.MM.yyyy" Editable="true" Clearable="true"
+                           PickerVariant="PickerVariant.Dialog" OpenTo="OpenTo.Year" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudDatePicker Label="Günlük GELEN tarihi" @bind-Date="_gunlukGelenTarihi"
+                           DateFormat="dd.MM.yyyy" Editable="true" Clearable="true"
+                           PickerVariant="PickerVariant.Dialog" />
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudSelect T="int" Label="Ambar (boş = tüm ambarlar)"
+                       MultiSelection="true" SelectAll="true" SelectAllText="Hepsini Seç"
+                       @bind-SelectedValues="_secilenAmbarlar"
+                       Variant="Variant.Outlined" Margin="Margin.Dense">
+                @foreach (var a in _ambarlar)
+                {
+                    <MudSelectItem T="int" Value="@a.AmbarNo">@a.AmbarNo - @a.Ad</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+
+        <MudItem xs="12" md="6" Class="d-flex align-end gap-2 flex-wrap">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Refresh"
+                       OnClick="RaporGetir" Disabled="@_yukleniyor">
+                @if (_yukleniyor) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+                Rapor Getir
+            </MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Success"
+                       StartIcon="@Icons.Material.Filled.FileDownload"
+                       OnClick="ExcelIndir"
+                       Disabled="@(_yakitlar.Count + _torbalar.Count + _kimyasallar.Count == 0)">
+                Excel
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Default"
+                       StartIcon="@Icons.Material.Filled.Tune"
+                       OnClick="@(() => _konfigAcik = !_konfigAcik)">
+                Kod Listesi
+            </MudButton>
+            <MudSwitch T="bool" @bind-Value="_hareketsizGizle"
+                       Label="Hareketsizleri gizle" Color="Color.Warning" Class="ml-2" />
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@if (_konfigAcik)
+{
+    <MudPaper Class="pa-3 mb-3" Style="border-left:4px solid #1976d2;">
+        <MudText Typo="Typo.h6" Class="mb-2">
+            <MudIcon Icon="@Icons.Material.Filled.Tune" Class="mr-1" /> Malzeme Kod Önekleri
+        </MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">
+            "208.01" veya "S.208.01" gibi serbest yazabilirsiniz; sorguda <i>%önek%</i> ile aranır,
+            S./K. öneki ile başlayan tüm varyantlar tek seferde gelir.
+        </MudText>
+
+        <MudGrid>
+            @{ var gruplar = new[] {
+                ("yakitlar",    "Yakıtlar",                 _konfig.Yakitlar),
+                ("torbalar",    "Torbalar Filtre Bezleri",  _konfig.Torbalar),
+                ("kimyasallar", "Kimyasallar",              _konfig.Kimyasallar) };
+            }
+            @foreach (var (anahtar, baslik, grup) in gruplar)
+            {
+                <MudItem xs="12" md="4">
+                    <MudText Typo="Typo.subtitle2"><b>@baslik</b> (@grup.KodOnekleri.Count kod)</MudText>
+                    <div class="d-flex flex-wrap gap-1 my-1">
+                        @foreach (var onek in grup.KodOnekleri.ToList())
+                        {
+                            <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small"
+                                     OnClose="@(() => OnekCikar(anahtar, onek))" CloseIcon="@Icons.Material.Filled.Close">
+                                @onek
+                            </MudChip>
+                        }
+                    </div>
+                    <div class="d-flex gap-1">
+                        <MudTextField T="string" Placeholder="örn 208.01"
+                                      Value="@_yeniOnek[anahtar]" ValueChanged="@(v => _yeniOnek[anahtar] = v ?? "")"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense"
+                                      Immediate="true" Class="flex-grow-1" />
+                        <MudButton Color="Color.Success" Variant="Variant.Filled" Size="Size.Small"
+                                   OnClick="@(() => OnekEkle(anahtar))" StartIcon="@Icons.Material.Filled.Add">
+                            Ekle
+                        </MudButton>
+                    </div>
+                </MudItem>
+            }
+        </MudGrid>
+    </MudPaper>
+}
+
+@if (_hata != null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-3">@_hata</MudAlert>
+}
+
+@if (_ilkYukleme)
+{
+    <MudAlert Severity="Severity.Info">
+        Devir tarihini seçip <b>Rapor Getir</b>'e basın. Eski "Logo tarihli stok yapılamaz" uyarısı
+        sadece şeker/melas yan ürünlerinde geçerliydi; işletme malzemeleri için
+        <b>LV_STINVTOT_V1</b> view'i sayesinde devir stoğu doğru hesaplanıyor.
+    </MudAlert>
+}
+else
+{
+    <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" Class="mb-4"
+             ActivePanelIndex="@_aktifSekme" ActivePanelIndexChanged="@((int i) => _aktifSekme = i)">
+        <MudTabPanel Text="@SekmeBaslik("Yakıtlar", _yakitlar)" Icon="@Icons.Material.Filled.LocalGasStation">
+            @SekmeIcerigi(Filtrele(_yakitlar))
+        </MudTabPanel>
+        <MudTabPanel Text="@SekmeBaslik("Torbalar Filtre Bezleri", _torbalar)" Icon="@Icons.Material.Filled.ShoppingBag">
+            @SekmeIcerigi(Filtrele(_torbalar))
+        </MudTabPanel>
+        <MudTabPanel Text="@SekmeBaslik("Kimyasallar", _kimyasallar)" Icon="@Icons.Material.Filled.Science">
+            @SekmeIcerigi(Filtrele(_kimyasallar))
+        </MudTabPanel>
+    </MudTabs>
+}
+
+@code {
+    RenderFragment SekmeIcerigi(List<IsletmeMalzemeSatiri> liste) => @<text>
+        @if (liste.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info">Bu grup için kayıt bulunamadı. Sol üstteki <b>Kod Listesi</b> ile öneklere ekleme yapın.</MudAlert>
+        }
+        else
+        {
+            <div style="overflow:auto; max-height:calc(100vh - 360px);">
+                <table class="im-table">
+                    <thead>
+                        <tr class="baslik-row">
+                            <th style="width:32%">Malzeme Adı</th>
+                            <th>Birim</th>
+                            <th>Ürün Kodu</th>
+                            <th class="num">@(_gunlukGelenTarihi?.ToString("dd.MM.yyyy") ?? "—")<br /><small>GELEN</small></th>
+                            <th class="num">GELEN TOPLAM</th>
+                            <th class="num">GEÇEN KAMP. DEVİR</th>
+                            <th class="num">KAMPANYA DIŞI SARF</th>
+                            <th class="num">KAMPANYA SARFİYATI</th>
+                            <th class="num">TOPLAM SARFİYAT</th>
+                            <th class="num">MEVCUT</th>
+                            <th>Açıklama</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @{
+                            decimal tGunluk = 0, tGelen = 0, tDevir = 0, tKampD = 0, tKamp = 0, tTopl = 0, tMev = 0;
+                        }
+                        @foreach (var x in liste)
+                        {
+                            tGunluk += x.GunlukGelen;
+                            tGelen  += x.GelenToplam;
+                            tDevir  += x.DevirStogu;
+                            tKampD  += x.KampanyaDisiSarf;
+                            tKamp   += x.KampanyaSarfiyati;
+                            tTopl   += x.ToplamSarfiyat;
+                            tMev    += x.Mevcut;
+                            var kod = x.MalzemeKodu;
+                            <tr>
+                                <td>@x.MalzemeAdi</td>
+                                <td>@x.Birim</td>
+                                <td>@x.MalzemeKodu</td>
+                                <td class="num">@Fmt(x.GunlukGelen)</td>
+                                <td class="num">@Fmt(x.GelenToplam)</td>
+                                <td class="num">@Fmt(x.DevirStogu)</td>
+                                <td class="num">@Fmt(x.KampanyaDisiSarf)</td>
+                                <td class="num">@Fmt(x.KampanyaSarfiyati)</td>
+                                <td class="num bold">@Fmt(x.ToplamSarfiyat)</td>
+                                <td class="num bold">@Fmt(x.Mevcut)</td>
+                                <td>
+                                    <input type="text" value="@x.Aciklama" style="width:100%; border:0; background:transparent;"
+                                           @onchange="@(e => AciklamaKaydet(kod, e.Value?.ToString() ?? ""))" />
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                    <tfoot>
+                        <tr class="toplam-row">
+                            <td colspan="3">TOPLAM (@liste.Count satır)</td>
+                            <td class="num">@Fmt(tGunluk)</td>
+                            <td class="num">@Fmt(tGelen)</td>
+                            <td class="num">@Fmt(tDevir)</td>
+                            <td class="num">@Fmt(tKampD)</td>
+                            <td class="num">@Fmt(tKamp)</td>
+                            <td class="num">@Fmt(tTopl)</td>
+                            <td class="num">@Fmt(tMev)</td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        }
+    </text>;
+
+    private DateTime? _devirTarihi      = new DateTime(2025, 10, 1);  // tipik kampanya başı
+    private DateTime? _kampanyaBas;
+    private DateTime? _kampanyaBitis;
+    private DateTime? _gunlukGelenTarihi;
+    private IEnumerable<int> _secilenAmbarlar = new HashSet<int>();
+
+    private List<AmbarSecenek> _ambarlar = new();
+    private IsletmeMalzemeleriKonfig _konfig = new();
+    private Dictionary<string, string> _yeniOnek = new()
+    {
+        { "yakitlar", "" }, { "torbalar", "" }, { "kimyasallar", "" }
+    };
+    private bool _konfigAcik = false;
+
+    private List<IsletmeMalzemeSatiri> _yakitlar    = new();
+    private List<IsletmeMalzemeSatiri> _torbalar    = new();
+    private List<IsletmeMalzemeSatiri> _kimyasallar = new();
+
+    private bool _ilkYukleme = true;
+    private bool _yukleniyor = false;
+    private string? _hata;
+    private int _aktifSekme = 0;
+
+    /// <summary>
+    /// "Hareketsizleri gizle" switch'i. Açıkken devir/gelen/sarf/mevcut sıfır olan
+    /// satırlar hem tablodan hem Excel'den hariç tutulur.
+    /// </summary>
+    private bool _hareketsizGizle = true;
+
+    private List<IsletmeMalzemeSatiri> Filtrele(List<IsletmeMalzemeSatiri> kaynak)
+    {
+        if (!_hareketsizGizle) return kaynak;
+        return kaynak.Where(x =>
+            x.DevirStogu != 0 || x.GelenToplam != 0 ||
+            x.ToplamSarfiyat != 0 || x.Mevcut != 0 ||
+            x.GunlukGelen != 0).ToList();
+    }
+
+    private string SekmeBaslik(string ad, List<IsletmeMalzemeSatiri> kaynak)
+        => _hareketsizGizle
+            ? $"{ad} ({Filtrele(kaynak).Count}/{kaynak.Count})"
+            : $"{ad} ({kaynak.Count})";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _konfig = Konfig.Mevcut;
+        if (_konfig.KampanyaBaslangic.HasValue) _kampanyaBas   = _konfig.KampanyaBaslangic;
+        if (_konfig.KampanyaBitis.HasValue)     _kampanyaBitis = _konfig.KampanyaBitis;
+        try { _ambarlar = await IsletmeService.AmbarSecenekleriAsync(); }
+        catch { /* bağlantı hatası olsa bile sayfa açılsın */ }
+    }
+
+    private async Task RaporGetir()
+    {
+        if (_devirTarihi == null)
+        { Snackbar.Add("Devir tarihi seçin.", Severity.Warning); return; }
+
+        if (_kampanyaBas.HasValue && _kampanyaBitis.HasValue && _kampanyaBitis < _kampanyaBas)
+        { Snackbar.Add("Kampanya bitiş tarihi başlangıçtan küçük olamaz.", Severity.Warning); return; }
+
+        _yukleniyor = true; _hata = null;
+        try
+        {
+            Konfig.KampanyaTarihleriKaydet(_kampanyaBas, _kampanyaBitis);
+
+            var ambarSet = _secilenAmbarlar.ToList();
+            var aciklamalar = _konfig.MalzemeAciklamalari;
+
+            var tYakitlar    = IsletmeService.RaporGetirAsync(_konfig.Yakitlar.KodOnekleri,
+                                _devirTarihi.Value, _kampanyaBas, _kampanyaBitis, _gunlukGelenTarihi,
+                                ambarSet, aciklamalar);
+            var tTorbalar    = IsletmeService.RaporGetirAsync(_konfig.Torbalar.KodOnekleri,
+                                _devirTarihi.Value, _kampanyaBas, _kampanyaBitis, _gunlukGelenTarihi,
+                                ambarSet, aciklamalar);
+            var tKimyasallar = IsletmeService.RaporGetirAsync(_konfig.Kimyasallar.KodOnekleri,
+                                _devirTarihi.Value, _kampanyaBas, _kampanyaBitis, _gunlukGelenTarihi,
+                                ambarSet, aciklamalar);
+
+            await Task.WhenAll(tYakitlar, tTorbalar, tKimyasallar);
+
+            _yakitlar    = tYakitlar.Result;
+            _torbalar    = tTorbalar.Result;
+            _kimyasallar = tKimyasallar.Result;
+            _ilkYukleme  = false;
+
+            Snackbar.Add($"Yüklendi: Yakıt {_yakitlar.Count} / Torba {_torbalar.Count} / Kimyasal {_kimyasallar.Count} satır",
+                         Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _hata = ex.Message;
+            Snackbar.Add("Hata: " + ex.Message, Severity.Error);
+        }
+        finally { _yukleniyor = false; }
+    }
+
+    private void OnekEkle(string grup)
+    {
+        var deger = _yeniOnek[grup];
+        if (string.IsNullOrWhiteSpace(deger))
+        { Snackbar.Add("Önek yazın.", Severity.Warning); return; }
+        if (Konfig.KodOnekiEkle(grup, deger))
+        {
+            _konfig = Konfig.Mevcut;
+            _yeniOnek[grup] = "";
+            Snackbar.Add($"'{deger}' eklendi.", Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add("Bu önek zaten listede.", Severity.Warning);
+        }
+    }
+
+    private void OnekCikar(string grup, string onek)
+    {
+        if (Konfig.KodOnekiCikar(grup, onek))
+        {
+            _konfig = Konfig.Mevcut;
+            Snackbar.Add($"'{onek}' kaldırıldı.", Severity.Info);
+        }
+    }
+
+    private void AciklamaKaydet(string kod, string deger)
+    {
+        Konfig.AciklamaYaz(kod, deger);
+        // Render edilen listelerdeki Aciklama'yı da güncelle
+        foreach (var l in new[] { _yakitlar, _torbalar, _kimyasallar })
+        {
+            foreach (var x in l)
+                if (x.MalzemeKodu == kod) x.Aciklama = deger;
+        }
+    }
+
+    private async Task ExcelIndir()
+    {
+        try
+        {
+            // Excel'i de switch'e göre filtrele — kullanıcı hareketsizleri görmek istemiyorsa
+            // dosyada da olmasın
+            var bytes = Excel.ExportIsletmeMalzemeleri(
+                Filtrele(_yakitlar), Filtrele(_torbalar), Filtrele(_kimyasallar),
+                _devirTarihi ?? DateTime.Today,
+                _kampanyaBas, _kampanyaBitis,
+                _gunlukGelenTarihi);
+            var dosyaAdi = $"IsletmeMalzemeleri_{_devirTarihi:yyyyMMdd}_{DateTime.Today:yyyyMMdd}.xlsx";
+            await JS.InvokeVoidAsync("downloadFile", dosyaAdi, Convert.ToBase64String(bytes),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            Snackbar.Add("Excel indirildi.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Excel hatası: " + ex.Message, Severity.Error);
+        }
+    }
+
+    private static string Fmt(decimal d) =>
+        d == 0 ? "" : d.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("tr-TR"));
+}
+
+<style>
+    .im-table { width:100%; border-collapse:collapse; font-size:0.82rem; }
+    .im-table thead th {
+        position:sticky; top:0; background:#BBDEFB; font-weight:bold;
+        padding:6px 8px; border:1px solid #90caf9; text-align:left; z-index:3;
+    }
+    .im-table tbody td { padding:4px 8px; border:1px solid #eee; }
+    .im-table tbody tr:nth-child(odd) { background:#fafafa; }
+    .im-table tbody tr:hover { background:#e3f2fd; }
+    .im-table .num { text-align:right; font-variant-numeric: tabular-nums; }
+    .im-table .bold { font-weight: 600; }
+    .im-table tfoot .toplam-row td {
+        background:#FFFDE7; font-weight:bold; padding:6px 8px; border-top:2px solid #1976d2;
+    }
+</style>

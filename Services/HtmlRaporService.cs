@@ -375,6 +375,8 @@ public class HtmlRaporService
         };
 
         // ── HTML ──────────────────────────────────────────────
+        // ÖNEMLİ: Outlook/Gmail mail client'ları flexbox/grid'i RENDER ETMİYOR.
+        // Yatay yerleşim için tablo-tabanlı layout + inline style zorunlu.
         sb.AppendLine($@"<!DOCTYPE html>
 <html lang='tr'>
 <head>
@@ -382,14 +384,6 @@ public class HtmlRaporService
 <title>Pancar Raporu {tarih:dd.MM.yyyy}</title>
 <style>
   body {{ font-family:Arial,sans-serif; font-size:12px; margin:0; padding:6px; background:#f5f5f5; }}
-  .baslik-bar {{ background:#1a237e; color:#fff; padding:8px 12px; width:100%; box-sizing:border-box; margin-bottom:8px; }}
-  .section-title {{ background:#283593; color:#fff; padding:4px 10px; font-weight:bold; font-size:12px; margin:10px 0 0 0; }}
-  .ozet-wrap {{ display:flex; flex-wrap:wrap; gap:6px; padding:6px; background:#fff; margin-bottom:4px; }}
-  .ozet-kart {{ background:#e8eaf6; border-radius:4px; padding:6px 12px; text-align:center; min-width:100px; }}
-  .ozet-kart .deger {{ font-size:14px; font-weight:bold; color:#1a237e; }}
-  .ozet-kart .etiket {{ font-size:10px; color:#555; }}
-  .iki-sutun {{ display:flex; gap:8px; align-items:flex-start; }}
-  .sutun {{ flex:1; min-width:0; }}
   .at {{ border-collapse:collapse; width:100%; font-size:11px; }}
   .at td, .at th {{ padding:4px 8px; border:1px solid #bbb; }}
   .at td:last-child, .at th:last-child {{ text-align:right; white-space:nowrap; }}
@@ -398,41 +392,51 @@ public class HtmlRaporService
 </head>
 <body>");
 
-        // Başlık (kompakt modda daha dar)
+        // Başlık (kompakt modda daha dar) — table-based, Outlook uyumlu
         var pbFont = kompakt ? "13px" : "16px";
         var pbSub  = kompakt ? "10px" : "11px";
         var pbMt   = kompakt ? "2px"  : "4px";
-        sb.AppendLine($@"<div class='baslik-bar' style='text-align:center;padding:{(kompakt ? "5px 10px" : "8px 12px")};'>
-  <span style='font-size:{pbFont};font-weight:bold;letter-spacing:0.3px;'>PANCAR RAPORU — {tarih:dd.MM.yyyy}</span>
-  <div style='font-size:{pbSub};margin-top:{pbMt};opacity:.9;'>Afyon Şeker Fabrikası / Kampanya {PancarRaporService.KampanyaYili()}</div>
-</div>");
+        var pbPad  = kompakt ? "5px 10px" : "8px 12px";
+        sb.AppendLine($@"<table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='background:#1a237e;color:#fff;margin-bottom:8px;'>
+  <tr><td align='center' style='padding:{pbPad};'>
+    <div style='font-size:{pbFont};font-weight:bold;letter-spacing:0.3px;'>PANCAR RAPORU — {tarih:dd.MM.yyyy}</div>
+    <div style='font-size:{pbSub};margin-top:{pbMt};opacity:.9;'>Afyon Şeker Fabrikası / Kampanya {PancarRaporService.KampanyaYili()}</div>
+  </td></tr>
+</table>");
 
-        // Özet kartlar
+        // Özet kartlar — Outlook için <table> ile yan yana hücreler
         if (ozet != null || icmalDetay != null)
         {
-            sb.AppendLine("<div class='ozet-wrap'>");
+            string KartTd(string etiket, string deger, string degerRenk = "#1a237e") =>
+                $"<td align='center' valign='middle' style='background:#e8eaf6;border-radius:4px;padding:8px 12px;'>" +
+                $"<div style='font-size:10px;color:#555;'>{etiket}</div>" +
+                $"<div style='font-size:14px;font-weight:bold;color:{degerRenk};margin-top:2px;'>{deger}</div></td>";
+
+            sb.AppendLine("<table role='presentation' cellpadding='4' cellspacing='4' border='0' width='100%' style='background:#fff;margin-bottom:4px;'><tr>");
             if (ozet != null)
             {
-                sb.AppendLine($"<div class='ozet-kart'><div class='etiket'>Toplam Çiftçi</div><div class='deger'>{ozet.ToplamCiftci:N0}</div></div>");
-                sb.AppendLine($"<div class='ozet-kart'><div class='etiket'>Taahhüt</div><div class='deger'>{ozet.ToplamTaahhut/1000:N0} ton</div></div>");
+                sb.AppendLine(KartTd("Toplam Çiftçi", $"{ozet.ToplamCiftci:N0}"));
+                sb.AppendLine(KartTd("Taahhüt", $"{ozet.ToplamTaahhut/1000:N0} ton"));
             }
             if (icmalDetay != null)
-                sb.AppendLine($"<div class='ozet-kart'><div class='etiket'>Gelen Net</div><div class='deger'>{icmalDetay.NetMiktarTon:N1} ton</div></div>");
+                sb.AppendLine(KartTd("Gelen Net", $"{icmalDetay.NetMiktarTon:N1} ton"));
             if (ozet != null)
             {
-                sb.AppendLine($"<div class='ozet-kart'><div class='etiket'>Fire Oranı</div><div class='deger'>%{ozet.OrtFireOrani:N2}</div></div>");
-                sb.AppendLine($"<div class='ozet-kart'><div class='etiket'>Polar</div><div class='deger'>%{ozet.OrtPolar:N2}</div></div>");
+                sb.AppendLine(KartTd("Fire Oranı", $"%{ozet.OrtFireOrani:N2}"));
+                sb.AppendLine(KartTd("Polar", $"%{ozet.OrtPolar:N2}"));
             }
-            sb.AppendLine($"<div class='ozet-kart'><div class='etiket'>{(borcAlacak > 0 ? "Müstahsil Borçlu" : "Müstahsil Alacaklı")}</div><div class='deger' style='color:{(borcAlacak > 0 ? "#B71C1C" : "#1B5E20")}'>{Math.Abs(borcAlacak):N0} ₺</div></div>");
-            sb.AppendLine("</div>");
+            string borcEtk = borcAlacak > 0 ? "Müstahsil Borçlu" : "Müstahsil Alacaklı";
+            string borcRnk = borcAlacak > 0 ? "#B71C1C" : "#1B5E20";
+            sb.AppendLine(KartTd(borcEtk, $"{Math.Abs(borcAlacak):N0} ₺", borcRnk));
+            sb.AppendLine("</tr></table>");
         }
 
-        // İki sütun yan yana
-        sb.AppendLine("<div class='iki-sutun'>");
+        // İki sütun yan yana — table layout (Outlook uyumlu)
+        sb.AppendLine("<table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%'><tr>");
 
         // SOL: İCMAL (avans tablosu)
-        sb.AppendLine("<div class='sutun'>");
-        sb.AppendLine("<div class='section-title'>İCMAL</div>");
+        sb.AppendLine("<td valign='top' width='50%' style='padding-right:4px;'>");
+        sb.AppendLine("<div style='background:#283593;color:#fff;padding:4px 10px;font-weight:bold;font-size:12px;margin:10px 0 0 0;'>İCMAL</div>");
         sb.AppendLine("<table class='at'>");
         sb.AppendLine("<tr style='background:#C62828;color:white;font-weight:bold;'><td>AVANS ADI</td><td>TUTAR (₺)</td></tr>");
 
@@ -469,13 +473,13 @@ public class HtmlRaporService
         var borcRenk = borcAlacak > 0 ? "#B71C1C" : "#1B5E20";
         sb.AppendLine($"<tr style='background:{borcRenk};color:white;font-weight:bold;'><td>{(borcAlacak > 0 ? "MÜSTAHSİL BORÇLU" : "MÜSTAHSİL ALACAKLI")}</td><td>{Math.Abs(borcAlacak).ToString("N2", tr)}</td></tr>");
         sb.AppendLine("</table>");
-        sb.AppendLine("</div>"); // sol sutun bitti
+        sb.AppendLine("</td>"); // sol sutun bitti
 
         // SAĞ: GENEL İCMAL + PANCAR TÜRLERİ + NAKLİYE/MOUSE/KEPÇE
-        sb.AppendLine("<div class='sutun'>");
+        sb.AppendLine("<td valign='top' width='50%' style='padding-left:4px;'>");
 
         // Genel İcmal
-        sb.AppendLine("<div class='section-title'>GENEL İCMAL</div>");
+        sb.AppendLine("<div style='background:#283593;color:#fff;padding:4px 10px;font-weight:bold;font-size:12px;margin:10px 0 0 0;'>GENEL İCMAL</div>");
         sb.AppendLine("<table class='at'>");
         sb.AppendLine("<tr style='background:#283593;color:white;font-weight:bold;'><td>AÇIKLAMA</td><td>MİKTAR (ton)</td><td>TUTAR (₺)</td></tr>");
         sb.AppendLine($"<tr><td>Pancar Bedeli</td><td>{(icmalDetay?.NetMiktarTon ?? 0).ToString("N3", tr)}</td><td>{(icmalDetay?.PancarBedeliToplam ?? 0).ToString("N2", tr)}</td></tr>");
@@ -489,7 +493,7 @@ public class HtmlRaporService
         sb.AppendLine("</table>");
 
         // Pancar Türleri
-        sb.AppendLine("<div class='section-title'>PANCAR TÜRLERİ</div>");
+        sb.AppendLine("<div style='background:#283593;color:#fff;padding:4px 10px;font-weight:bold;font-size:12px;margin:10px 0 0 0;'>PANCAR TÜRLERİ</div>");
         sb.AppendLine("<table class='at'>");
         sb.AppendLine("<tr style='background:#2E7D32;color:white;font-weight:bold;'><td>TÜR</td><td>MİKTAR (ton)</td><td>TUTAR (₺)</td><td>BİRİM FİYAT</td></tr>");
         sb.AppendLine($"<tr><td>A Pancarı</td><td>{(icmalDetay?.APancariTon ?? 0).ToString("N3", tr)}</td><td>{(icmalDetay?.APancariBedeli ?? 0).ToString("N2", tr)}</td><td>{(icmalDetay?.ABirimFiyati ?? 0).ToString("N4", tr)}</td></tr>");
@@ -499,12 +503,12 @@ public class HtmlRaporService
         sb.AppendLine($"<tr style='background:#1B5E20;color:white;font-weight:bold;'><td>TOPLAM</td><td>{topPancarTon.ToString("N3", tr)}</td><td>{(icmalDetay?.PancarBedeliToplam ?? 0).ToString("N2", tr)}</td><td>—</td></tr>");
         sb.AppendLine("</table>");
 
-        // Nakliye / Mouse / Kepçe
+        // Nakliye / Mouse / Kepçe — programdaki ile uyum için her durumda göster (boş bile olsa)
+        sb.AppendLine("<div style='background:#283593;color:#fff;padding:4px 10px;font-weight:bold;font-size:12px;margin:10px 0 0 0;'>NAKLİYE / MOUSE / KEPÇE</div>");
+        sb.AppendLine("<table class='at'>");
+        sb.AppendLine("<tr style='background:#4527A0;color:white;font-weight:bold;'><td>TİP / AÇIKLAMA</td><td>NET (kg)</td><td>TUTAR (₺)</td><td>ORT. (₺/ton)</td></tr>");
         if (icmal.Count > 0)
         {
-            sb.AppendLine("<div class='section-title'>NAKLİYE / MOUSE / KEPÇE</div>");
-            sb.AppendLine("<table class='at'>");
-            sb.AppendLine("<tr style='background:#4527A0;color:white;font-weight:bold;'><td>TİP / AÇIKLAMA</td><td>NET (kg)</td><td>TUTAR (₺)</td><td>ORT. (₺/ton)</td></tr>");
             string? sonTip = null;
             foreach (var k in icmal)
             {
@@ -516,11 +520,15 @@ public class HtmlRaporService
                 var ort = k.Net > 0 ? (k.Tutar / k.Net * 1000).ToString("N2", tr) : "—";
                 sb.AppendLine($"<tr><td style='padding-left:16px;'>{k.Aciklama}</td><td>{k.Net.ToString("N0", tr)}</td><td>{k.Tutar.ToString("N2", tr)}</td><td>{ort}</td></tr>");
             }
-            sb.AppendLine("</table>");
         }
+        else
+        {
+            sb.AppendLine("<tr><td colspan='4' style='text-align:center;color:#888;font-style:italic;padding:8px;'>Henüz veri yok</td></tr>");
+        }
+        sb.AppendLine("</table>");
 
-        sb.AppendLine("</div>"); // sağ sutun bitti
-        sb.AppendLine("</div>"); // iki-sutun bitti
+        sb.AppendLine("</td>"); // sağ sutun bitti
+        sb.AppendLine("</tr></table>"); // iki-sutun bitti
 
         if (!kompakt)
             sb.AppendLine($"<p class='info'>Bu mail <strong>Mümin CEYLAN</strong> tarafından geliştirilen otomasyon ile otomatik olarak gönderilmiştir. | {DateTime.Now:dd.MM.yyyy HH:mm}</p>");

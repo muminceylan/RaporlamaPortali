@@ -2,6 +2,9 @@ using Dapper;
 using MudBlazor.Services;
 using RaporlamaPortali.Services;
 using System.Diagnostics;
+using System.Net;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication;
@@ -58,13 +61,37 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
     if (ovr.Count > 0) builder.Configuration.AddInMemoryCollection(ovr);
 }
 
-// IIS out-of-process altında çalışmıyorsa Kestrel portunu sabitle
+// IIS out-of-process altında çalışmıyorsa ve ASPNETCORE_URLS override edilmemişse
+// 5050'yi hem localhost'ta hem de tüm IPv4 ağ arayüzlerinde dinle.
+// VPN üzerinden telefon/diğer cihazlardan erişim mümkün olur.
+// Not: ListenAnyIP (wildcard bind) non-interactive modda Windows kısıtlaması
+// nedeniyle sessizce başarısız olabildiğinden, her IPv4 arayüzüne tek tek bind ediyoruz.
 if (Environment.GetEnvironmentVariable("ASPNETCORE_PORT") == null &&
-    Environment.GetEnvironmentVariable("ASPNETCORE_IIS_HTTPPORT") == null)
+    Environment.GetEnvironmentVariable("ASPNETCORE_IIS_HTTPPORT") == null &&
+    string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ASPNETCORE_URLS")))
 {
     builder.WebHost.ConfigureKestrel(options =>
     {
         options.ListenLocalhost(5050); // http://localhost:5050
+
+        try
+        {
+            var ipv4Addresses = NetworkInterface.GetAllNetworkInterfaces()
+                .Where(n => n.OperationalStatus == OperationalStatus.Up)
+                .SelectMany(n => n.GetIPProperties().UnicastAddresses)
+                .Where(a => a.Address.AddressFamily == AddressFamily.InterNetwork
+                            && !IPAddress.IsLoopback(a.Address))
+                .Select(a => a.Address)
+                .Distinct()
+                .ToList();
+
+            foreach (var ip in ipv4Addresses)
+            {
+                try { options.Listen(ip, 5050); }
+                catch { /* port çakışması veya bind izni yok — sessizce geç */ }
+            }
+        }
+        catch { /* interface enumerasyonu başarısız — sadece localhost yetsin */ }
     });
 }
 
@@ -138,9 +165,14 @@ builder.Services.AddSingleton<TarimKrediService>();
 builder.Services.AddScoped<MalzemeHareketService>();
 builder.Services.AddSingleton<MalzemeListeService>();
 builder.Services.AddSingleton<AfyonAmbarService>();
+builder.Services.AddScoped<IrsaliyeListeService>();
 
 // Finans Raporu — yıllık INF_MD_FINANS_PROJE_RAPORU_211_YYYY view'lerini birleştirir
 builder.Services.AddScoped<FinansRaporService>();
+
+// İşletme Malzemeleri Raporu — Yakıtlar / Torbalar / Kimyasallar (V1 + STLINE)
+builder.Services.AddSingleton<IsletmeMalzemeleriKonfigService>();
+builder.Services.AddScoped<IsletmeMalzemeleriService>();
 
 // Cari Mutabakatı — AI destekli (Anthropic Claude API ile PDF/Excel parse)
 builder.Services.AddHttpClient();
@@ -158,6 +190,7 @@ builder.Services.AddScoped<RaporlamaPortali.Services.Logo.LogoCariLookupService>
 builder.Services.AddScoped<RaporlamaPortali.Services.Logo.LogoMasterKartLookupService>();
 builder.Services.AddScoped<RaporlamaPortali.Services.Logo.LogoBirimSetiLookupService>();
 builder.Services.AddScoped<RaporlamaPortali.Services.Logo.LogoAccCodesLookupService>();
+builder.Services.AddSingleton<RaporlamaPortali.Services.Logo.LogoKdvHesapLookupService>();
 builder.Services.AddSingleton<EFaturaAktarimGecmisiService>();
 builder.Services.AddScoped<RaporlamaPortali.Services.Logo.LogoAktarimService>();
 

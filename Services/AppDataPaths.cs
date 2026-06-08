@@ -24,6 +24,7 @@ public static class AppDataPaths
     public static string EFaturaTotalsCacheDb => Path.Combine(DataRoot, "efatura_totals.db");
     public static string SabNetBaglantiJson  => Path.Combine(DataRoot, "sabnet_baglanti.json");
     public static string KantarLogoEslesmeleriJson => Path.Combine(DataRoot, "kantar_logo_eslesmeleri.json");
+    public static string IsletmeMalzemeleriJson    => Path.Combine(DataRoot, "isletme_malzemeleri.json");
     public static string WhatsAppDataDir     => Path.Combine(DataRoot, "WhatsApp");
 
     /// <summary>

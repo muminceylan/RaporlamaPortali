@@ -19,7 +19,12 @@
     <Company>Doğuş Çay - Afyon Şeker Fabrikası</Company>
     <Authors>Mumin Ceylan</Authors>
     <Description>Yan Ürünler, Şeker Satış ve Pancar Ödeme Raporları</Description>
-    <Version>1.0.0</Version>
+    <Version>1.0.19</Version>
+    <!-- Her değişiklikte patch +1 — sol alttaki versiyon etiketi bu numarayı gösterir.
+         Major/minor için isteyerek elden değiştirilir; patch otomatik artar. -->
+    <InformationalVersion>1.0.19</InformationalVersion>
+    <!-- InformationalVersion'a otomatik "+commit_hash" eklemeyi engelle (MSBuild default true). -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     
     <!-- Konsol penceresi gizle (Windows uygulaması gibi) -->
     <OutputType>WinExe</OutputType>
