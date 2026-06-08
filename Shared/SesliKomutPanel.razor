@@ -2,6 +2,7 @@
 @using RaporlamaPortali.Services
 @inject IJSRuntime JS
 @inject VoiceCommandService Voice
+@inject NavigationManager Nav
 @inject ISnackbar Snackbar
 @implements IAsyncDisposable
 
@@ -147,6 +148,13 @@
     [Parameter] public string? EkContext { get; set; }
     [Parameter] public EventCallback<VoiceIntent> OnAksiyon { get; set; }
 
+    /// <summary>
+    /// Sadece bu listedeki aksiyon adları için onay dialogu açılır.
+    /// Bu listede olmayan aksiyonlar anında çalışır.
+    /// Boş bırakılırsa (default) tüm aksiyonlar onay ister.
+    /// </summary>
+    [Parameter] public HashSet<string>? OnayGerektirenAksiyonlar { get; set; }
+
     private bool?            _destekVarMi;
     private bool             _dinleniyor;
     private bool             _isleniyor;
@@ -243,13 +251,105 @@
         StateHasChanged();
     }
 
+    // Tüm sayfalarda otomatik aktif olan global navigasyon tool'u.
+    // Sayfa eklemesi gerekmez — SesliKomutPanel her komut isteğinde bunu da ekler.
+    private static readonly SesliKomutTool _navigasyonTool = new()
+    {
+        Ad        = "sayfa_git",
+        Aciklama  = "Başka bir sayfaya gider. Kullanıcı 'X sayfasına git', 'X aç', 'X göster' derse bunu kullan.",
+        Parametreler = new()
+        {
+            ["sayfa_kodu"] = new SesliKomutParam
+            {
+                Tip = "string", Zorunlu = true,
+                Aciklama = "Gidilecek sayfanın kodu. Tam liste:\n" +
+                           "  - 'anasayfa' (Ana Sayfa)\n" +
+                           "  - 'uretim-giris' (Üretimden Giriş Fişi)\n" +
+                           "  - 'promosyon-cikis' (Promosyon Çıkış Fişi)\n" +
+                           "  - 'satinalma-irsaliyeleri' (Satın Alma İrsaliyeleri)\n" +
+                           "  - 'toptan-satis-irsaliyeleri' (Toptan Satış İrsaliyeleri)\n" +
+                           "  - 'kasa-hareketleri'\n  - 'kur-bilgileri'\n  - 'stok-durumu'\n" +
+                           "  - 'gubre-stok' (Gübre Stok Raporu)\n  - 'gubre-ciro' (Gübre Ciro Raporu)\n" +
+                           "  - 'cay-durum' (Çay Durum Raporu)\n" +
+                           "  - 'cari-bakiye' (Cari Hesap Bakiye Sorgulama)\n" +
+                           "  - 'cari-hareket' (Cari Hesap Hareketleri)\n" +
+                           "  - 'malzeme-hareket' (Malzeme Hareket Listesi)\n" +
+                           "  - 'efatura' (e-Fatura Görüntüleme)\n" +
+                           "  - 'efatura-aktar' (e-Fatura Aktar)\n" +
+                           "  - 'efatura-logo-kontrol' (e-Fatura Logo Kontrolü)\n" +
+                           "  - 'seker-dairesi' (Şeker Dairesi Raporu)\n" +
+                           "  - 'pancar' (Pancar Raporu)\n  - 'yan-urunler' (Yan Ürünler Raporu)\n" +
+                           "  - 'mutabakat'\n  - 'kur-farki'\n  - 'odeme-kontrol'\n" +
+                           "  - 'ayarlar'\n  - 'sirlar'",
+                Secenekler = new()
+                {
+                    "anasayfa", "uretim-giris", "promosyon-cikis",
+                    "satinalma-irsaliyeleri", "toptan-satis-irsaliyeleri",
+                    "kasa-hareketleri", "kur-bilgileri", "stok-durumu",
+                    "gubre-stok", "gubre-ciro", "cay-durum",
+                    "cari-bakiye", "cari-hareket", "malzeme-hareket",
+                    "efatura", "efatura-aktar", "efatura-logo-kontrol",
+                    "seker-dairesi", "pancar", "yan-urunler",
+                    "mutabakat", "kur-farki", "odeme-kontrol",
+                    "ayarlar", "sirlar"
+                },
+            }
+        }
+    };
+
+    private static readonly Dictionary<string, string> _navigasyonUrlMap = new()
+    {
+        ["anasayfa"]                  = "/",
+        ["uretim-giris"]              = "/uretimden-giris-fisi",
+        ["promosyon-cikis"]           = "/promosyon-cikis-fisi",
+        ["satinalma-irsaliyeleri"]    = "/satinalma-irsaliyeleri",
+        ["toptan-satis-irsaliyeleri"] = "/toptan-satis-irsaliyeleri",
+        ["kasa-hareketleri"]          = "/kasa-hareketleri",
+        ["kur-bilgileri"]             = "/kur-bilgileri",
+        ["stok-durumu"]               = "/stok-durumu",
+        ["gubre-stok"]                = "/gubre-stok",
+        ["gubre-ciro"]                = "/gubre-ciro",
+        ["cay-durum"]                 = "/cay-durum",
+        ["cari-bakiye"]               = "/cari-bakiye",
+        ["cari-hareket"]              = "/cari-hareket",
+        ["malzeme-hareket"]           = "/malzeme-hareket-listesi",
+        ["efatura"]                   = "/efatura",
+        ["efatura-aktar"]             = "/efatura-aktar",
+        ["efatura-logo-kontrol"]      = "/efatura-logo-kontrol",
+        ["seker-dairesi"]             = "/seker-dairesi",
+        ["pancar"]                    = "/pancar-raporu",
+        ["yan-urunler"]               = "/yan-urunler",
+        ["mutabakat"]                 = "/mutabakat",
+        ["kur-farki"]                 = "/karsi-firma-kur-farki",
+        ["odeme-kontrol"]             = "/odeme-kontrol",
+        ["ayarlar"]                   = "/ayarlar",
+        ["sirlar"]                    = "/sirlar",
+    };
+
     private async Task KomutuYorumla(string metin)
     {
         _isleniyor = true;
         StateHasChanged();
         try
         {
-            var intent = await Voice.KomutuYorumlaAsync(metin, SayfaAdi, ToolListesi, EkContext);
+            // Sayfanın tool'larına global navigasyon tool'unu otomatik ekle
+            var birlesik = new List<SesliKomutTool>(ToolListesi) { _navigasyonTool };
+            var intent = await Voice.KomutuYorumlaAsync(metin, SayfaAdi, birlesik, EkContext);
+
+            // Navigasyon aksiyonu — sayfa-bazlı handler'a gönderme, doğrudan yönlendir
+            if (intent.Anlasildi && intent.Action == "sayfa_git")
+            {
+                var kod = (intent.Params.GetValueOrDefault("sayfa_kodu") as string ?? "").ToLower();
+                if (_navigasyonUrlMap.TryGetValue(kod, out var url))
+                {
+                    Snackbar.Add(intent.OnayMetni, Severity.Info);
+                    Nav.NavigateTo(url);
+                    return;
+                }
+                _sonHata = $"Bilinmeyen sayfa kodu: {kod}";
+                StateHasChanged();
+                return;
+            }
             if (!intent.Anlasildi)
             {
                 _sonHata = intent.Hata ?? "Komut anlaşılamadı.";
@@ -258,10 +358,23 @@
             }
             else
             {
-                _bekleyenIntent = intent;
-                _onayAcik = true;
-                // Onay metnini sesli okumak istersen aşağıyı aç:
-                // await JS.InvokeVoidAsync("sesliOku", intent.OnayMetni);
+                // Onay gerektiren listede mi? Liste boşsa tümü onay ister (eski davranış).
+                bool onayGerek = OnayGerektirenAksiyonlar == null
+                                 || OnayGerektirenAksiyonlar.Count == 0
+                                 || OnayGerektirenAksiyonlar.Contains(intent.Action);
+
+                if (onayGerek)
+                {
+                    _bekleyenIntent = intent;
+                    _onayAcik = true;
+                }
+                else
+                {
+                    // Anında çalıştır — kısa bir bilgi mesajı göster
+                    Snackbar.Add(intent.OnayMetni, Severity.Info);
+                    if (OnAksiyon.HasDelegate)
+                        await OnAksiyon.InvokeAsync(intent);
+                }
             }
         }
         catch (Exception ex)

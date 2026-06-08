@@ -64,11 +64,12 @@ public class VoiceCommandService
         var systemPrompt = SystemPromptOlustur(sayfaAdi, ekContext);
 
         // Anthropic API body
+        // Önemli: tool_choice forcing (any / belirli tool) ile thinking aynı anda kullanılamıyor —
+        // Anthropic kısıtı. Intent çıkarımı basit sınıflandırma olduğundan thinking'e gerek yok.
         var body = new
         {
             model      = Model,
             max_tokens = 1500,
-            // System prompt cache — aynı sayfa içinde tekrar tekrar gönderilecek, prompt caching ucuzlatır
             system = new object[]
             {
                 new {
@@ -77,10 +78,7 @@ public class VoiceCommandService
                     cache_control = new { type = "ephemeral" }
                 }
             },
-            // Adaptive thinking + medium effort — komut anlama için yeterli
-            thinking = new { type = "adaptive" },
             output_config = new { effort = "medium" },
-            // Tool listesi + tool_choice = any → Claude mutlaka bir tool seçmeli
             tools = tools,
             tool_choice = new { type = "any" },
             messages = new object[]

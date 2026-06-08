@@ -23,6 +23,7 @@
 <SesliKomutPanel SayfaAdi="@_baslik"
                  ToolListesi="@_voiceTools"
                  EkContext="@VoiceContextOlustur()"
+                 OnayGerektirenAksiyonlar="@_voiceOnayAksiyonlar"
                  OnAksiyon="@SesliAksiyonCalistir" />
 
 <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
@@ -646,6 +647,9 @@
     // SESLİ KOMUT ENTEGRASYONU
     // ============================================================
 
+    // Sadece bu aksiyonlar onay penceresi açar. Diğerleri direkt çalışır.
+    private static readonly HashSet<string> _voiceOnayAksiyonlar = new() { "logo_ya_gonder" };
+
     private List<SesliKomutTool> _voiceTools => new()
     {
         new SesliKomutTool
@@ -718,6 +722,27 @@
                 {
                     Tip = "integer", Zorunlu = true,
                     Aciklama = "Yeni ambar numarası (örn 152, 803).",
+                },
+            }
+        },
+        new SesliKomutTool
+        {
+            Ad        = "birim_degistir",
+            Aciklama  = "Bir satırın veya tüm satırların birimini değiştirir (KG, TON, LT, ML, AD vb). "
+                      + "Kullanıcı 'kilogram', 'kilo', 'kile' derse → KG. 'ton' → TON. 'litre' → LT. "
+                      + "'adet', 'tane' → AD. 'mililitre' → ML.",
+            Parametreler = new()
+            {
+                ["sira"] = new SesliKomutParam
+                {
+                    Tip = "integer", Zorunlu = false,
+                    Aciklama = "Hangi satır (1-tabanlı). Verilmezse tüm satırlara uygulanır.",
+                },
+                ["birim"] = new SesliKomutParam
+                {
+                    Tip = "string", Zorunlu = true,
+                    Aciklama = "Yeni birim kodu — büyük harfle Logo birim koduyla yaz.",
+                    Secenekler = new() { "KG", "TON", "LT", "ML", "AD", "PK", "KT", "KL", "M", "M2", "M3", "GR" },
                 },
             }
         },
@@ -802,6 +827,33 @@
                     }
                     _model.Ambar = ambar;
                     Snackbar.Add($"Ambar {ambar} olarak ayarlandı.", Severity.Success);
+                    break;
+                }
+                case "birim_degistir":
+                {
+                    var birim = (intent.Params.GetValueOrDefault("birim") as string ?? "").Trim().ToUpper();
+                    if (string.IsNullOrEmpty(birim))
+                    {
+                        Snackbar.Add("Birim belirtilmedi.", Severity.Warning);
+                        return;
+                    }
+                    var sira = IntParam(intent, "sira");
+                    if (sira.HasValue && sira.Value >= 1 && sira.Value <= _model.Satirlar.Count)
+                    {
+                        _model.Satirlar[sira.Value - 1].Birim = birim;
+                        Snackbar.Add($"Satır {sira} birimi {birim} oldu.", Severity.Success);
+                    }
+                    else
+                    {
+                        // Tüm satırlara uygula
+                        if (_model.Satirlar.Count == 0)
+                        {
+                            Snackbar.Add("Satır yok.", Severity.Warning);
+                            return;
+                        }
+                        foreach (var s in _model.Satirlar) s.Birim = birim;
+                        Snackbar.Add($"Tüm satırların birimi {birim} oldu ({_model.Satirlar.Count} satır).", Severity.Success);
+                    }
                     break;
                 }
                 case "logo_ya_gonder":
