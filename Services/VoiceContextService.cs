@@ -34,6 +34,14 @@ public sealed class VoiceContextService
     /// </summary>
     public Queue<VoiceIntent>?       BekleyenAdimlar          { get; set; }
 
+    /// <summary>
+    /// Sayfa "verilerim hazır, sesli adımları artık çalıştırabilirsin" sinyali için
+    /// opsiyonel Func. Sayfa Register sırasında veya ardından bunu set eder; sesli
+    /// chain executor adımları başlatmadan önce bunu await eder (timeout korumalı).
+    /// Örnek (StokFisi): Son Fişlerim listesi yüklenene kadar bekle.
+    /// </summary>
+    public Func<Task>? HazirOl { get; set; }
+
     /// <summary>Tools veya handler değiştiğinde fırlatılır (UI yeniden render için).</summary>
     public event Action? Changed;
 
@@ -59,6 +67,7 @@ public sealed class VoiceContextService
         GetEkContext             = null;
         OnayGerektirenAksiyonlar = null;
         OnAksiyon                = null;
+        HazirOl                  = null;
         Changed?.Invoke();
     }
 }

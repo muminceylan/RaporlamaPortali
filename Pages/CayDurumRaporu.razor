@@ -5,6 +5,7 @@
 @inject ExcelExportService ExcelExportService
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
+@inject VoiceContextService VoiceCtx
 
 <PageTitle>Çay Durum Raporu</PageTitle>
 
@@ -103,7 +104,74 @@
 
     protected override async Task OnInitializedAsync()
     {
+        RegisterVoice();
         await VeriYukle();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (VoiceCtx.Tools.Count == 0) RegisterVoice();
+    }
+
+    private void RegisterVoice() =>
+        VoiceCtx.Register(_voiceTools, "Çay Durum Raporu",
+            getEkContext: VoiceContextOlustur,
+            onAksiyon:    SesliAksiyonCalistir);
+
+    private string VoiceContextOlustur()
+        => $"Kayıt: {_stoklar.Count}; Filtreli: {FiltreliKayit.Count}; Toplam stok: {StokToplam:N2}";
+
+    private List<SesliKomutTool> _voiceTools => new()
+    {
+        new SesliKomutTool { Ad = "sorgula",     Aciklama = "Çay durumunu yeniden yükler (Yenile butonu)." },
+        new SesliKomutTool { Ad = "rapor_getir", Aciklama = "sorgula ile aynı." },
+        new SesliKomutTool { Ad = "yenile",      Aciklama = "sorgula ile aynı." },
+        new SesliKomutTool { Ad = "excel_indir", Aciklama = "Sonuçları Excel'e indirir." },
+        new SesliKomutTool
+        {
+            Ad = "ara",
+            Aciklama = "Malzeme kodu veya adı içinde arama metnini ayarlar.",
+            Parametreler = new()
+            {
+                ["kod"] = new SesliKomutParam { Tip = "string", Aciklama = "Malzeme kodunda aranacak metin." },
+                ["ad"]  = new SesliKomutParam { Tip = "string", Aciklama = "Malzeme adında aranacak metin." },
+            }
+        },
+    };
+
+    private async Task SesliAksiyonCalistir(VoiceIntent intent)
+    {
+        try
+        {
+            switch (intent.Action)
+            {
+                case "sorgula":
+                case "rapor_getir":
+                case "yenile":
+                    await VeriYukle();
+                    break;
+                case "excel_indir":
+                    await ExcelIndir();
+                    break;
+                case "ara":
+                {
+                    var kod = intent.Params.GetValueOrDefault("kod") as string;
+                    var ad  = intent.Params.GetValueOrDefault("ad")  as string;
+                    if (kod != null) _aramaKod = kod;
+                    if (ad  != null) _aramaAd  = ad;
+                    Snackbar.Add($"Arama → Kod: {_aramaKod}, Ad: {_aramaAd}", Severity.Info);
+                    break;
+                }
+                default:
+                    Snackbar.Add($"Bilinmeyen aksiyon: {intent.Action}", Severity.Warning);
+                    break;
+            }
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Aksiyon hatası: {ex.Message}", Severity.Error);
+        }
     }
 
     private async Task VeriYukle()

@@ -1,0 +1,369 @@
+@page "/satis-siparis-aktar"
+@using Microsoft.AspNetCore.Components.Forms
+@using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
+@using RaporlamaPortali.Services.Logo
+@inject SatisSiparisExcelService ExcelService
+@inject LogoAccCodesLookupService MuhasebeKodu
+@inject LogoFiyatListesiLookupService FiyatLookup
+@inject LogoCariOdemePlaniLookupService OdemePlani
+@inject LogoUnityComService Unity
+@inject ISnackbar Snackbar
+
+<PageTitle>Satış Siparişi Aktarımı</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-2">
+    <MudIcon Icon="@Icons.Material.Filled.ShoppingCart" Class="mr-2" />
+    Satış Siparişi Aktarımı (Excel → Logo)
+</MudText>
+
+<MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+    Haftalık sipariş Excel'ini yükleyin — <b>CİPS</b> ve <b>İÇECEK</b> sheet'leri işlenir.
+    Her sütun bir <b>satış siparişi</b> olarak parse edilir. Fabrika Çıkışı (PENDİK / KARACABEY /
+    AKSARAY / ŞANLIURFA / ÖDEMİŞ) İŞ YERİ / BÖLÜM / FABRİKA / AMBAR'a otomatik çevrilir.
+    Fiyatlar müşterinin <b>satış fiyat listesinden</b> gelir, <b>kampanya/indirim</b>
+    otomatik uygulanır (ApplyCampaign). Satış elemanı kodu <i>{YY}W{hafta+1}</i>
+    (İÇECEK için <i>SC</i> prefix), teslim tarihi sonraki Pazartesi olarak hesaplanır.
+    <b>Ödeme:</b> Cari kartında plan varsa onunki, yoksa Excel'deki "Vadeli"→40, "Peşin"→PESIN CIPS
+    (CİPS) veya PESIN SC (İÇECEK). <b>Risk aşılırsa</b> fiş otomatik "Ö (Öneri)" olarak kaydedilir.
+</MudAlert>
+
+<MudPaper Class="pa-3 mb-3">
+    <MudGrid AlignItems="Center">
+        <MudItem xs="12" md="3">
+            <MudDatePicker @bind-Date="_referansTarihi" Label="Referans Tarih (genelde Salı)"
+                           DateFormat="dd.MM.yyyy" Editable="true"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" md="3" Class="d-flex flex-column">
+            <MudText Typo="Typo.caption">Hesaplanan Satış Elemanı:</MudText>
+            <MudChip T="string" Color="Color.Primary" Size="Size.Medium">
+                @SatisSiparisExcelService.HaftalikSatisElemaniKodu(_referansTarihi ?? DateTime.Today)
+            </MudChip>
+        </MudItem>
+        <MudItem xs="12" md="3" Class="d-flex flex-column">
+            <MudText Typo="Typo.caption">Hesaplanan Teslim Tarihi (sonraki Pzt):</MudText>
+            <MudChip T="string" Color="Color.Success" Size="Size.Medium">
+                @SatisSiparisExcelService.SonrakiPazartesi(_referansTarihi ?? DateTime.Today).ToString("dd.MM.yyyy (ddd)")
+            </MudChip>
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudFileUpload T="IBrowserFile" FilesChanged="DosyaSecildi" Accept=".xlsx">
+                <ButtonTemplate>
+                    <MudButton HtmlTag="label" for="@context.Id" Variant="Variant.Filled" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.UploadFile" FullWidth="true">
+                        Excel Yükle
+                    </MudButton>
+                </ButtonTemplate>
+            </MudFileUpload>
+        </MudItem>
+    </MudGrid>
+    @if (_dosyaAdi != null)
+    {
+        <MudText Typo="Typo.caption" Class="mt-2">
+            Seçilen dosya: <b>@_dosyaAdi</b> · @($"{_dosyaBoyut / 1024.0:N0} KB")
+        </MudText>
+    }
+</MudPaper>
+
+@if (_hata != null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-3">@_hata</MudAlert>
+}
+
+@if (_sonuc != null && _sonuc.Uyarilar.Count > 0)
+{
+    <MudAlert Severity="Severity.Warning" Class="mb-3" Dense="true">
+        @foreach (var u in _sonuc.Uyarilar) { <div>@u</div> }
+    </MudAlert>
+}
+
+@if (_sonuc != null && _sonuc.Fisler.Count > 0)
+{
+    <MudPaper Class="pa-3 mb-3">
+        <div class="d-flex align-center mb-2">
+            <MudText Typo="Typo.h6">
+                @_sonuc.Fisler.Count sipariş hazır
+                <MudText Typo="Typo.caption" Inline="true" Class="ml-2">
+                    Seçili: @_secililer.Count · Aktarılan: @_aktarilanSayisi
+                </MudText>
+            </MudText>
+            <MudSpacer />
+            <MudButton OnClick="HepsiniSec" Variant="Variant.Text">Hepsi</MudButton>
+            <MudButton OnClick="@(()=>_secililer.Clear())" Variant="Variant.Text">Hiçbiri</MudButton>
+            <MudButton OnClick="LogoyaGonder"
+                       Color="Color.Success" Variant="Variant.Filled"
+                       Disabled="@(_secililer.Count == 0 || _gonderiliyor)"
+                       StartIcon="@Icons.Material.Filled.CloudUpload"
+                       Class="ml-3">
+                @if (_gonderiliyor)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                }
+                Logo'ya Gönder (@_secililer.Count)
+            </MudButton>
+        </div>
+
+        <MudTable Items="_sonuc.Fisler" Dense="true" Hover="true" Bordered="true"
+                  Striped="true" FixedHeader="true" Height="600px">
+            <HeaderContent>
+                <MudTh Style="width:36px"></MudTh>
+                <MudTh>Sheet</MudTh>
+                <MudTh>Fabrika</MudTh>
+                <MudTh>Araç No</MudTh>
+                <MudTh>Cari Kodu</MudTh>
+                <MudTh>Müşteri</MudTh>
+                <MudTh>Sevkiyat Adresi</MudTh>
+                <MudTh>Sevk Tarihi</MudTh>
+                <MudTh>Ödeme</MudTh>
+                <MudTh Style="text-align:center">Satır</MudTh>
+                <MudTh Style="text-align:right">Toplam Koli</MudTh>
+                <MudTh Style="text-align:right">Toplam Tutar (TL)</MudTh>
+                <MudTh>Sonuç</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>
+                    <MudCheckBox T="bool" Value="@(_secililer.Contains(context.ExcelSutunIndex + ":" + context.Sheet))"
+                                 ValueChanged="@((bool v) => SeciliToggle(context, v))" Dense="true" />
+                </MudTd>
+                <MudTd>@context.Sheet</MudTd>
+                <MudTd>
+                    @{
+                        var fc = FabrikaCikisAyari.Coz(context.FabrikaCikis);
+                        var bilinmiyor = fc == null && !string.IsNullOrWhiteSpace(context.FabrikaCikis);
+                    }
+                    @if (bilinmiyor)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Error"
+                                 Title="Bu fabrika çıkışı tabloda tanımlı değil — aktarım reddedilir.">
+                            ⚠ @context.FabrikaCikis
+                        </MudChip>
+                    }
+                    else
+                    {
+                        @(fc?.Ad ?? context.FabrikaCikis)
+                    }
+                </MudTd>
+                <MudTd><b>@context.AracNo</b></MudTd>
+                <MudTd>@context.CariKodu</MudTd>
+                <MudTd>
+                    <MudText Typo="Typo.body2" Style="max-width:280px; white-space:normal;">
+                        @context.CariUnvani
+                    </MudText>
+                </MudTd>
+                <MudTd>@context.SevkiyatAdresi</MudTd>
+                <MudTd>@context.SevkTarihi.ToString("dd.MM.yyyy")</MudTd>
+                <MudTd>
+                    <span title="@context.OdemeTuru">
+                        @(string.IsNullOrWhiteSpace(context.OdemeTuru)
+                            ? "—"
+                            : context.OdemeTuru)
+                    </span>
+                </MudTd>
+                <MudTd Style="text-align:center">@context.Satirlar.Count</MudTd>
+                <MudTd Style="text-align:right">@context.Satirlar.Sum(x => x.KoliMiktari).ToString("N0")</MudTd>
+                <MudTd Style="text-align:right">
+                    @{
+                        var eksikFiyat = context.Satirlar.Count(x => x.BirimFiyat <= 0);
+                        var toplamTutar = context.Satirlar.Sum(x => x.BirimFiyat * x.KoliMiktari);
+                    }
+                    @toplamTutar.ToString("N2")
+                    @if (eksikFiyat > 0)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Warning" Class="ml-1"
+                                 Title="Bu sipariştek bazı malzemelerin satış fiyatı PRCLIST'te tanımlı değil.">
+                            @eksikFiyat eksik
+                        </MudChip>
+                    }
+                </MudTd>
+                <MudTd>
+                    @if (context.LogoyaGonderildi)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Success">
+                            ✓ @(context.LogoFisNo ?? "OK")
+                        </MudChip>
+                    }
+                    else if (context.LogoHata != null)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Error" Title="@context.LogoHata">
+                            ✗ Hata
+                        </MudChip>
+                    }
+                </MudTd>
+            </RowTemplate>
+            <ChildRowContent>
+                @if (_acikDetay.Contains(context.ExcelSutunIndex + ":" + context.Sheet))
+                {
+                    <MudTr>
+                        <td colspan="13" style="background:#f5f5f5; padding:8px 20px;">
+                            <b>Satırlar (@context.Satirlar.Count):</b>
+                            <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:4px 16px; margin-top:6px; font-size:0.85rem;">
+                                @foreach (var s in context.Satirlar)
+                                {
+                                    var fiyatRenk = s.BirimFiyat <= 0 ? "color:#c62828;font-weight:600;" : "";
+                                    <div>
+                                        @s.MalzemeKodu · @s.KoliMiktari.ToString("N0") koli ·
+                                        <span style="@fiyatRenk">
+                                            @(s.BirimFiyat > 0 ? s.BirimFiyat.ToString("N2") + " TL" : "fiyat yok")
+                                        </span>
+                                        · @s.MalzemeAdi
+                                    </div>
+                                }
+                            </div>
+                        </td>
+                    </MudTr>
+                }
+            </ChildRowContent>
+        </MudTable>
+    </MudPaper>
+}
+
+@code {
+    DateTime? _referansTarihi = DateTime.Today;
+    string? _dosyaAdi;
+    long _dosyaBoyut;
+    byte[]? _dosyaBytes;
+    string? _hata;
+    SatisSiparisExcelSonuc? _sonuc;
+    HashSet<string> _secililer = new();
+    HashSet<string> _acikDetay = new();
+    bool _gonderiliyor;
+    int _aktarilanSayisi;
+
+    string Anahtar(SatisSiparisFis f) => $"{f.ExcelSutunIndex}:{f.Sheet}";
+
+    async Task DosyaSecildi(IBrowserFile? f)
+    {
+        _hata = null; _sonuc = null; _secililer.Clear(); _aktarilanSayisi = 0;
+        if (f == null) { _dosyaAdi = null; _dosyaBytes = null; return; }
+        _dosyaAdi = f.Name;
+        _dosyaBoyut = f.Size;
+        if (f.Size > 20 * 1024 * 1024) { Snackbar.Add("Dosya 20 MB üzeri.", Severity.Error); return; }
+        using var ms = new MemoryStream();
+        await f.OpenReadStream(20 * 1024 * 1024).CopyToAsync(ms);
+        _dosyaBytes = ms.ToArray();
+
+        try
+        {
+            _sonuc = ExcelService.Parse(_dosyaBytes, _dosyaAdi!, _referansTarihi ?? DateTime.Today);
+            Snackbar.Add($"{_sonuc.Fisler.Count} sipariş okundu (CİPS + İÇECEK). Fiyatlar çekiliyor…", Severity.Info);
+            // default: hepsini seç
+            foreach (var fis in _sonuc.Fisler) _secililer.Add(Anahtar(fis));
+
+            // Fiyatları toplu çek — tüm malzemelerin satış fiyat listesinden (CLIENTCODE boş, en yeni tarih)
+            await FiyatlariDoldurAsync();
+        }
+        catch (Exception ex)
+        {
+            _hata = "Excel parse hatası: " + ex.Message;
+        }
+    }
+
+    /// <summary>
+    /// Bütün siparişlerin satırlarındaki benzersiz malzeme kodları için bir SQL atışıyla
+    /// PRCLIST satış fiyatlarını çeker ve her SatisSiparisSatir'a BirimFiyat olarak yazar.
+    /// </summary>
+    async Task FiyatlariDoldurAsync()
+    {
+        if (_sonuc == null) return;
+        var kodlar = _sonuc.Fisler.SelectMany(f => f.Satirlar)
+                                  .Select(s => s.MalzemeKodu)
+                                  .Distinct(StringComparer.OrdinalIgnoreCase)
+                                  .ToList();
+        var fiyatlar = await FiyatLookup.MalzemeSatisFiyatlariAsync(kodlar);
+        int bulundu = 0, eksik = 0;
+        foreach (var f in _sonuc.Fisler)
+            foreach (var s in f.Satirlar)
+            {
+                if (fiyatlar.TryGetValue(s.MalzemeKodu, out var fy) && fy > 0m)
+                {
+                    s.BirimFiyat = fy;
+                    bulundu++;
+                }
+                else
+                {
+                    s.BirimFiyat = 0m;
+                    eksik++;
+                }
+            }
+        Snackbar.Add($"Fiyatlar: {bulundu} bulundu, {eksik} eksik (PRCLIST'te tanım yok).",
+            eksik == 0 ? Severity.Success : Severity.Warning);
+    }
+
+    void SeciliToggle(SatisSiparisFis f, bool secili)
+    {
+        var k = Anahtar(f);
+        if (secili) _secililer.Add(k); else _secililer.Remove(k);
+    }
+
+    void HepsiniSec()
+    {
+        if (_sonuc == null) return;
+        foreach (var f in _sonuc.Fisler) _secililer.Add(Anahtar(f));
+    }
+
+    async Task LogoyaGonder()
+    {
+        if (_sonuc == null || _secililer.Count == 0) return;
+        if (string.IsNullOrWhiteSpace(SecretsService.LogoUnityKullanici) ||
+            string.IsNullOrWhiteSpace(SecretsService.LogoUnitySifre))
+        {
+            Snackbar.Add("Logo Unity kullanıcı bilgileri ayarlanmamış — Sırlar sayfasından gir.", Severity.Error);
+            return;
+        }
+
+        _gonderiliyor = true; _aktarilanSayisi = 0;
+        try
+        {
+            var cred = new LogoUnityCredentials
+            {
+                Kullanici = SecretsService.LogoUnityKullanici!,
+                Sifre     = SecretsService.LogoUnitySifre!,
+                FirmaNo   = 211,
+            };
+
+            var hedefler = _sonuc.Fisler.Where(f => _secililer.Contains(Anahtar(f))).ToList();
+
+            // Cari muhasebe kodlarını önceden çek (cache'lenir)
+            foreach (var f in hedefler)
+            {
+                if (string.IsNullOrWhiteSpace(f.MuhasebeHesabi))
+                    f.MuhasebeHesabi = await MuhasebeKodu.CariMuhasebeKoduAsync(f.CariKodu);
+            }
+
+            // Cari ödeme planı kodlarını TOPLU çek (CLCARD.PAYMENTREF → PAYPLANS.CODE)
+            // Logo Unity COM cari default'u uygulamadığı için elle göndereceğiz.
+            var planSozluk = await OdemePlani.ToplulukPlanKodlariAsync(
+                hedefler.Select(f => f.CariKodu).Distinct(StringComparer.OrdinalIgnoreCase));
+            foreach (var f in hedefler)
+            {
+                if (planSozluk.TryGetValue(f.CariKodu, out var pk))
+                    f.CariOdemePlanKodu = pk ?? "";
+            }
+            int planliAdet = hedefler.Count(f => !string.IsNullOrEmpty(f.CariOdemePlanKodu));
+            if (planliAdet > 0)
+                Snackbar.Add($"{planliAdet} carinin kayıtlı ödeme planı bulundu; PAYMENT_CODE olarak gönderilecek.", Severity.Info);
+
+            var sonuclar = await Unity.SatisSiparisBatchAktarAsync(cred, hedefler);
+
+            for (int i = 0; i < hedefler.Count; i++)
+            {
+                hedefler[i].LogoyaGonderildi = sonuclar[i].Basarili;
+                hedefler[i].LogoFisNo        = sonuclar[i].LogoFisNo;
+                hedefler[i].LogoHata         = sonuclar[i].Hata;
+                if (sonuclar[i].Basarili) _aktarilanSayisi++;
+            }
+
+            int hata = sonuclar.Count(x => !x.Basarili);
+            if (hata == 0)
+                Snackbar.Add($"Tüm {_aktarilanSayisi} sipariş başarıyla Logo'ya kaydedildi.", Severity.Success);
+            else
+                Snackbar.Add($"{_aktarilanSayisi} başarılı, {hata} hata. Satır hatasını görmek için fareyi 'Hata' chip'i üzerine getir.", Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Aktarım hatası: " + ex.Message, Severity.Error);
+        }
+        finally { _gonderiliyor = false; }
+    }
+}

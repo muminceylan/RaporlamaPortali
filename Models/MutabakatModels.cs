@@ -168,3 +168,19 @@ public class EslesenCari
     public string VergiNo { get; set; } = "";
     public int HareketSayisi { get; set; }
 }
+
+/// <summary>
+/// Mutabakatta bizdeki carileri filtreleme tipi.
+/// Logo hesap planında 12x = Alıcılar (satış yaptığımız), 32x = Satıcılar (mal aldığımız).
+/// Karşı firma ekstresi tek bir grup için geldiyse (örn sadece satıcı olarak alış faturaları)
+/// bizdeki 120 grubu karıştırmasın diye filtre uygulanır.
+/// </summary>
+public enum MutabakatCariTuru
+{
+    /// <summary>Hem 12x hem 32x — eski davranış (default).</summary>
+    Hepsi,
+    /// <summary>Sadece 12x (Alıcılar). Onlar bize fatura kesmiş olabilir ama bizim sattıklarımız.</summary>
+    Alici120,
+    /// <summary>Sadece 32x (Satıcılar). Bizim aldığımız mal/hizmet için kestikleri faturalar.</summary>
+    Satici320,
+}

@@ -14,7 +14,7 @@ public class OdemeService
     private const string SablonKlasor = @"C:\Users\muminceylan\Desktop\Ödeme Dosyaları";
     private const string ZiraatSablon  = "Ziraat Bankası Ödeme Dosyası.xlsm";
     private const string GarantiSablon = "Garanti Bankası Ödeme Dosyası.xlsx";
-    private const string IsSablon      = "İş Bankası Ödeme Dosyası.xls";   // orijinal .xls (Excel 97-2003)
+    private const string IsSablon      = "İş Bankası Ödeme Dosyası.xlsx";  // banka şablonu xlsx (makro/format aynen taşınır)
 
     private static readonly string CiktiKokKlasor = Path.Combine(AppDataPaths.DataRoot, "OdemeDosyalari");
 
@@ -354,8 +354,9 @@ ORDER BY CK.AdiSoyadi, AF.FormNo";
     private static string IsDosyasiUret(List<OdemeAvansSatiri> liste, string klasor,
         int avansNo, string avansAdi, DateTime odemeTarihi, string aciklama, BankaHesapAyarlari bankaAyari)
     {
-        // İş Bankası dosyası orijinali .xls (Excel 97-2003) — banka portali bu formatı bekliyor
-        var dst = Path.Combine(klasor, $"Is_Bankasi_{avansNo}_{odemeTarihi:yyyyMMdd}.xls");
+        // Banka portali xlsx (OpenXML) formatını bekliyor — şablon makroları/formatları aynen
+        // taşınır; format/formül/data-validation değiştirilirse banka iade gönderiyor.
+        var dst = Path.Combine(klasor, $"Is_Bankasi_{avansNo}_{odemeTarihi:yyyyMMdd}.xlsx");
         var src = Path.Combine(SablonKlasor, IsSablon);
 
         string gondSube  = bankaAyari.IsGondernSube;
@@ -366,9 +367,9 @@ ORDER BY CK.AdiSoyadi, AF.FormNo";
         {
             dynamic ws = wb.Worksheets["ÇALIŞMA SAYFASI"];
             const int ILK = 4;
-            // İş Bankası şablonu .xls (Excel 97-2003) — maksimum 65.536 satır destekler.
-            // 70000 ile clear etmek "Invalid range" (0x800A03EC) verir.
-            ws.Range[ws.Cells[ILK, 1], ws.Cells[65536, 23]].ClearContents();
+            // Şablon xlsx — banka 63.460 satır pre-format etmiş. ClearContents sadece
+            // hücre value'larını siler; format/formül/data-validation/makrolar korunur.
+            ws.Range[ws.Cells[ILK, 1], ws.Cells[63460, 23]].ClearContents();
 
             int n = liste.Count;
             if (n == 0) return;
@@ -409,7 +410,7 @@ ORDER BY CK.AdiSoyadi, AF.FormNo";
                 veri[i, 20] = "'" + (s.TcKimlikNo ?? ""); // U ALICIVERGİNO (TC) — text olsun diye apostrof
             }
             BulkYaz(ws, ILK, 1, veri);
-        }, fileFormat: 56);   // 56 = xls (Excel 97-2003) — banka portali bunu istiyor
+        }, fileFormat: 51);   // 51 = xlsx (OpenXML) — banka portali bu formatı bekliyor
         return dst;
     }
 

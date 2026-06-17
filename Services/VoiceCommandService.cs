@@ -127,12 +127,19 @@ public class VoiceCommandService
     private static string SystemPromptOlustur(string sayfaAdi, string? ekContext)
     {
         var sb = new StringBuilder();
+        var bugun = DateTime.Today;
         sb.AppendLine($"Sen RaporlamaPortali Blazor web uygulamasının sesli asistanısın.");
         sb.AppendLine($"Şu an kullanıcı '{sayfaAdi}' sayfasındadır. Kullanıcı Türkçe konuşuyor.");
+        sb.AppendLine($"BUGÜN: {bugun:yyyy-MM-dd} ({bugun:dddd, dd MMMM yyyy}).");
         sb.AppendLine();
         sb.AppendLine("GÖREVİN: Kullanıcının söylediği komutu anla ve sana sunulan tool'lardan UYGUN OLANI çağır.");
         sb.AppendLine("Tool parametrelerini komuttan çıkar. Sayısal değerleri Türkçe'den ondalık biçime çevir");
         sb.AppendLine("(\"yirmi beş kilo\" → 25, \"iki yüz elli\" → 250, \"bin\" → 1000).");
+        sb.AppendLine();
+        sb.AppendLine("TARİH PARAMETRELERİ:");
+        sb.AppendLine("- Tarih parametrelerini DAİMA `yyyy-MM-dd` (ISO) formatında ver. Türkçe yazı yazma.");
+        sb.AppendLine("- \"1 ocak 2025\" → \"2025-01-01\"; \"15 mart 2024\" → \"2024-03-15\".");
+        sb.AppendLine($"- \"bugün\" → \"{bugun:yyyy-MM-dd}\"; \"dün\" → \"{bugun.AddDays(-1):yyyy-MM-dd}\"; \"yıl başı\" → \"{bugun.Year}-01-01\".");
         sb.AppendLine();
         sb.AppendLine("Her tool çağrısının `_onay_metni` parametresinde, kullanıcıya gösterilecek 1 cümlelik onay");
         sb.AppendLine("Türkçe açıklaması yaz — örnek: \"Şu işlemi yapacağım: 152 ambardan dünkü üretim fişini kopyala\".");
@@ -147,6 +154,27 @@ public class VoiceCommandService
         sb.AppendLine("- Kullanıcı tek nefeste birden fazla işlem söylerse (örn '1. satırı 10000 yap birim KG yap'),");
         sb.AppendLine("  `komut_zinciri` tool'unu çağır. İçinde sırayla yapılacak aksiyonları liste olarak ver.");
         sb.AppendLine("- Tek bir işlem varsa direkt o aksiyonun tool'unu çağır, `komut_zinciri`'ne sokma.");
+        sb.AppendLine();
+        sb.AppendLine("SAYFA-ARASI ZİNCİR (kritik!):");
+        sb.AppendLine("- Kullanıcı başka sayfaya geçip orada işlem yapmak isterse, komut_zinciri içine:");
+        sb.AppendLine("    1) sayfa_git(sayfa_kodu=...)");
+        sb.AppendLine("    2) hedef sayfanın aksiyonları (sayfa tool listelerinde yoksa bile aşağıdaki STANDART AKSİYON ADLARI'ndan birini kullan)");
+        sb.AppendLine("- Hedef sayfanın tool'ları sana gösterilmemiş olsa bile, BU LİSTEDEKİ STANDART AKSİYON ADLARINI özgürce kullan:");
+        sb.AppendLine("    • tarih_ayarla(baslangic, bitis)   — ISO yyyy-MM-dd; tarih kutucuklarına yazar");
+        sb.AppendLine("    • tarih_araligi(aralik)            — enum: bugun, dun, bu_hafta, bu_ay, gecen_ay, bu_yil, son_7_gun, son_30_gun, son_90_gun");
+        sb.AppendLine("    • tarih_kisayol(aralik)            — özet rapor için: bu_ay, bu_yil, gecen_ay");
+        sb.AppendLine("    • rapor_getir / sorgula / yenile   — ana çalıştırma butonu");
+        sb.AppendLine("    • excel_indir                      — sonuçları Excel'e indirir");
+        sb.AppendLine("    • mail_gonder                      — raporu mailler");
+        sb.AppendLine("    • kopyala_fis, satir_ekle, satir_sil, miktar_degistir, ambar_degistir, birim_degistir, logo_ya_gonder, formu_temizle  — Üretim/Promosyon fişinde");
+        sb.AppendLine("    • ambar_filtre, malzeme_ara, sifirlari_goster  — stok durumunda");
+        sb.AppendLine("    • cari_sec, cari_filtre, faturalanmamis_filtre, yon_degistir, durum_filtre, tolerans, filtre_sifirla");
+        sb.AppendLine("- Örnek: \"Özet rapor sayfasına git, başlangıç 1 ocak 2025, bitiş bugün yap, raporu getir\" →");
+        sb.AppendLine("    komut_zinciri([");
+        sb.AppendLine("      sayfa_git(sayfa_kodu='ozet-rapor'),");
+        sb.AppendLine($"      tarih_ayarla(baslangic='{bugun.Year - (bugun.Month == 1 && bugun.Day == 1 ? 1 : 0)}-01-01', bitis='{bugun:yyyy-MM-dd}'),");
+        sb.AppendLine("      rapor_getir()");
+        sb.AppendLine("    ])");
 
         if (!string.IsNullOrWhiteSpace(ekContext))
         {
@@ -224,7 +252,11 @@ public class VoiceCommandService
                                 ["action"] = new Dictionary<string, object>
                                 {
                                     ["type"]        = "string",
-                                    ["description"] = "Yukarıdaki tool'lardan birinin adı (örn 'miktar_degistir'). 'sayfa_git' ve 'komut_zinciri' KULLANMA."
+                                    ["description"] = "Aksiyon adı. Üst düzey tool'lardan birinin adı VEYA sayfa-arası zincirde STANDART AKSİYON ADLARI'ndan biri "
+                                                    + "(tarih_ayarla, tarih_araligi, tarih_kisayol, rapor_getir, sorgula, yenile, excel_indir, mail_gonder, "
+                                                    + "ambar_filtre, malzeme_ara, sifirlari_goster, cari_sec, cari_filtre, faturalanmamis_filtre, yon_degistir, "
+                                                    + "durum_filtre, tolerans, filtre_sifirla, kopyala_fis, satir_ekle, satir_sil, miktar_degistir, "
+                                                    + "ambar_degistir, birim_degistir, logo_ya_gonder, formu_temizle). 'sayfa_git' kullanılabilir (sadece sıralamada navigation için)."
                                 },
                                 ["params"] = new Dictionary<string, object>
                                 {

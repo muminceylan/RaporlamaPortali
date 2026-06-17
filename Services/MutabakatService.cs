@@ -22,6 +22,7 @@ public class MutabakatService
         string vergiNo,
         DateTime baslangic, DateTime bitis,
         List<MutabakatKayit> karsiTarafEkstresi,
+        MutabakatCariTuru cariTuru = MutabakatCariTuru.Hepsi,
         CancellationToken ct = default)
     {
         var sonuc = new MutabakatSonuc
@@ -31,8 +32,9 @@ public class MutabakatService
             Bitis = bitis.Date
         };
 
-        // 1) VKN ile bizdeki cariler
-        var cariler = await _logo.VergiNoyaGoreCarilerAsync(vergiNo, ct);
+        // 1) VKN ile bizdeki cariler — istenirse 12x (alıcı) veya 32x (satıcı) ile sınırla
+        var tumCariler = await _logo.VergiNoyaGoreCarilerAsync(vergiNo, ct);
+        var cariler = FiltreleCariler(tumCariler, cariTuru);
         if (cariler.Count == 0)
         {
             // Boş sonuç: karşı tarafın hareketleri tamamen "sadece onlarda" olur
@@ -74,9 +76,9 @@ public class MutabakatService
     }
 
     /// <summary>
-    /// 2 aşamalı eşleştirme:
-    ///   1) Aynı tarih + ters yön + tutar 0 farkla eşit
-    ///   2) Belge no eşleşmesi (boş değilse) + ters yön
+    /// 2 aşamalı eşleştirme (sıralama önemli — belge no en kesin bilgidir, önce o):
+    ///   1) Belge no eşleşmesi (boş değilse) + ters yön + tutar tam
+    ///   2) Aynı tarih + ters yön + tutar tam (belge no eşleşmeyenler için fallback)
     /// Bir kez eşleşen kayıt tekrar kullanılmaz.
     /// </summary>
     private static void Eslestir(
@@ -89,31 +91,8 @@ public class MutabakatService
         var bizimKullanildi = new HashSet<int>();
         var onlarKullanildi = new HashSet<int>();
 
-        // 1) Aynı tarih, ters yön
-        for (int i = 0; i < bizimKalan.Count; i++)
-        {
-            if (bizimKullanildi.Contains(i)) continue;
-            var b = bizimKalan[i];
-            for (int j = 0; j < onlarKalan.Count; j++)
-            {
-                if (onlarKullanildi.Contains(j)) continue;
-                var o = onlarKalan[j];
-                if (b.Tarih.Date != o.Tarih.Date) continue;
-                if (!TersYonEslesir(b, o)) continue;
-
-                bizimKullanildi.Add(i); onlarKullanildi.Add(j);
-                sonuc.Eslesenler.Add(new MutabakatEslesme
-                {
-                    Bizim = b, Onlar = o,
-                    GunFarki = 0,
-                    TutarFarki = (b.Borc - b.Alacak) - (o.Alacak - o.Borc),
-                    EslesmeYontemi = "Aynı tarih + tutar"
-                });
-                break;
-            }
-        }
-
-        // 2) Belge no (boş olmayan)
+        // 1) Belge no (boş olmayan) — en kesin bilgi, önce bunu dene.
+        //    Aynı tarih + tutar başka bir satırla yanlış eşleşmesin diye sıralama önemli.
         for (int i = 0; i < bizimKalan.Count; i++)
         {
             if (bizimKullanildi.Contains(i)) continue;
@@ -139,6 +118,30 @@ public class MutabakatService
             }
         }
 
+        // 2) Aynı tarih + tutar — fallback (belge no boş veya farklı olan kayıtlar için)
+        for (int i = 0; i < bizimKalan.Count; i++)
+        {
+            if (bizimKullanildi.Contains(i)) continue;
+            var b = bizimKalan[i];
+            for (int j = 0; j < onlarKalan.Count; j++)
+            {
+                if (onlarKullanildi.Contains(j)) continue;
+                var o = onlarKalan[j];
+                if (b.Tarih.Date != o.Tarih.Date) continue;
+                if (!TersYonEslesir(b, o)) continue;
+
+                bizimKullanildi.Add(i); onlarKullanildi.Add(j);
+                sonuc.Eslesenler.Add(new MutabakatEslesme
+                {
+                    Bizim = b, Onlar = o,
+                    GunFarki = 0,
+                    TutarFarki = (b.Borc - b.Alacak) - (o.Alacak - o.Borc),
+                    EslesmeYontemi = "Aynı tarih + tutar"
+                });
+                break;
+            }
+        }
+
         for (int i = 0; i < bizimKalan.Count; i++)
             if (!bizimKullanildi.Contains(i)) sonuc.SadeceBizde.Add(bizimKalan[i]);
         for (int j = 0; j < onlarKalan.Count; j++)
@@ -151,29 +154,76 @@ public class MutabakatService
 
     /// <summary>
     /// Bizim BORÇ ↔ onların ALACAK ya da bizim ALACAK ↔ onların BORÇ?
-    /// Tutarlar 0.01 toleransıyla eşit mi?
+    /// Tutarlar 0.10 TL toleransıyla eşit mi? — KDV yuvarlama farkı, kuruş kayması vb.
     /// </summary>
     private static bool TersYonEslesir(MutabakatKayit b, MutabakatKayit o)
     {
-        const decimal eps = 0.01m;
+        const decimal eps = 0.10m;
         if (b.Borc > 0 && o.Alacak > 0)
-            return Math.Abs(b.Borc - o.Alacak) < eps;
+            return Math.Abs(b.Borc - o.Alacak) <= eps;
         if (b.Alacak > 0 && o.Borc > 0)
-            return Math.Abs(b.Alacak - o.Borc) < eps;
+            return Math.Abs(b.Alacak - o.Borc) <= eps;
         return false;
     }
 
     /// <summary>
-    /// Belge no'ları normalize ederek karşılaştır (boşluk, tire, başındaki sıfırları temizle).
-    /// "F00125" ve "F-125" eşleşir.
+    /// Türk e-Fatura / e-Arşiv ETTN formatı: 3 büyük harf + 4 hane yıl + 9 hane sıra = 16 karakter.
+    /// (örn GDL2024000005354, GIB2024000000287, 1OF2023000001936 — son örnek 1 rakam + 2 harf
+    /// öneki olduğu için klasik patern dışında, onu da yakalamak için her iki varyantı arıyoruz.)
+    /// Verilen metnin içinden bu formatı (varsa) çıkarır.
+    /// </summary>
+    private static string EFaturaNoCikar(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return "";
+        var temiz = new string(s.Where(c => char.IsLetterOrDigit(c)).ToArray()).ToUpperInvariant();
+        // En yaygın: 3 harf + 13 rakam (GDL2024..., GIB2024...)
+        var m = System.Text.RegularExpressions.Regex.Match(temiz, @"[A-Z]{3}\d{13}");
+        if (m.Success) return m.Value;
+        // Alternatif: 1 rakam + 2 harf + 13 rakam (1OF2023..., 1OFE...)
+        m = System.Text.RegularExpressions.Regex.Match(temiz, @"\d[A-Z]{2,3}\d{13}");
+        if (m.Success) return m.Value;
+        return "";
+    }
+
+    /// <summary>
+    /// Belge no eşleştirme:
+    ///   1) Önce e-Fatura/e-Arşiv ETTN deseni (16 karakter standart) çıkar — varsa tam karşılaştır.
+    ///      Bu en güvenli yöntem: PDF'te açıklamayla yapışık kalan fiş no'ları da yakalar
+    ///      (örn "GDL2024000005354Toptan Satış" → "GDL2024000005354").
+    ///   2) ETTN yoksa normalize edip karşılaştır (boşluk/tire/baştaki sıfır temizle).
+    ///   3) Norm eşit değilse, biri diğerinin başlangıcı mı bak (min 8 karakter ortak).
     /// </summary>
     private static bool FisNoEslesir(string a, string b)
     {
+        // 1) E-Fatura ETTN — en güçlü kural
+        var ea = EFaturaNoCikar(a);
+        var eb = EFaturaNoCikar(b);
+        if (!string.IsNullOrEmpty(ea) && !string.IsNullOrEmpty(eb))
+            return ea == eb;
+
         string Norm(string s) => new string((s ?? "")
             .Where(c => char.IsLetterOrDigit(c)).ToArray()).TrimStart('0').ToUpperInvariant();
         var na = Norm(a); var nb = Norm(b);
         if (string.IsNullOrEmpty(na) || string.IsNullOrEmpty(nb)) return false;
-        return na == nb;
+        if (na == nb) return true;
+
+        // 2) Prefix eşleşme (fiş no + bitişik metin durumu — ETTN dışı formatlar için)
+        const int minOrtak = 8;
+        if (na.Length >= minOrtak && nb.StartsWith(na)) return true;
+        if (nb.Length >= minOrtak && na.StartsWith(nb)) return true;
+        return false;
+    }
+
+    /// <summary>
+    /// VKN ile bulunan tüm carileri seçilen tipe göre filtreler.
+    /// 12x = Alıcılar (satış yaptıklarımız), 32x = Satıcılar (alış yaptıklarımız).
+    /// </summary>
+    private static List<CariSecenek> FiltreleCariler(
+        List<CariSecenek> cariler, MutabakatCariTuru tur)
+    {
+        if (tur == MutabakatCariTuru.Hepsi) return cariler;
+        string prefix = tur == MutabakatCariTuru.Alici120 ? "12" : "32";
+        return cariler.Where(c => (c.Kod ?? "").TrimStart().StartsWith(prefix)).ToList();
     }
 
     private static void HesaplaToplamlar(MutabakatSonuc s)

@@ -1,7 +1,9 @@
 @page "/yan-urunler"
 @using RaporlamaPortali.Models
 @using RaporlamaPortali.Services
+
 @inject YanUrunlerService YanUrunlerService
+@inject SekerSatisService SekerSatisService
 @inject ExcelExportService ExcelExportService
 @inject ZamanliMailService MailService
 @inject IServiceProvider Services
@@ -209,6 +211,80 @@
             <strong>Alkol Üretimi için Tüketilen Melas:</strong> @melasTuketim.ToString("N2") Ton
         </MudAlert>
     </MudPaper>
+
+    @* ŞEKER ÜRETİM–SATIŞ–STOK TABLOSU (mail içeriği ile birebir) *@
+    @if (_sekerler != null && _sekerler.Count > 0)
+    {
+        <MudPaper Class="pa-4 mb-4">
+            <MudText Typo="Typo.h6" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.Factory" Class="mr-2" />
+                Şeker Üretim – Satış – Stok Tablosu - <small>Birim: TON</small>
+            </MudText>
+
+            <MudSimpleTable Hover="true" Striped="true" Dense="true" Style="font-size: 0.85rem;" Bordered="true">
+                <thead>
+                    <tr style="background-color:#E3F2FD;">
+                        <th style="border: 1px solid #ccc;">Kategori</th>
+                        <th style="text-align: right; border: 1px solid #ccc;">Devir</th>
+                        <th style="text-align: right; border: 1px solid #ccc;">Üretim</th>
+                        <th style="text-align: right; border: 1px solid #ccc;">S. Alma</th>
+                        <th style="text-align: right; border: 1px solid #ccc;">S. İade</th>
+                        <th style="text-align: right; border: 1px solid #ccc;">SA. İade</th>
+                        <th style="text-align: right; border: 1px solid #ccc;">Satış</th>
+                        <th style="text-align: right; border: 1px solid #ccc;">Promo</th>
+                        <th style="text-align: right; border: 1px solid #ccc;">Sarf</th>
+                        <th style="text-align: right; background-color:#BBDEFB; border: 1px solid #ccc;"><strong>STOK</strong></th>
+                        <th style="text-align: right; border: 1px solid #ccc;">Satış Tutarı (TL)</th>
+                        <th style="text-align: right; border: 1px solid #ccc;">Ort. Fiyat (TL/Kg)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var s in _sekerler)
+                    {
+                        var stokRenk = s.StokTon < 0 ? "color:#c62828;font-weight:600;" : "";
+                        <tr>
+                            <td style="border:1px solid #ddd;">@s.KategoriAdi</td>
+                            <td style="text-align:right;border:1px solid #ddd;">@s.DevirStokTon.ToString("N2")</td>
+                            <td style="text-align:right;border:1px solid #ddd;">@s.UretimTon.ToString("N2")</td>
+                            <td style="text-align:right;border:1px solid #ddd;">@s.SatinAlmaTon.ToString("N2")</td>
+                            <td style="text-align:right;border:1px solid #ddd;">@s.IadeTon.ToString("N2")</td>
+                            <td style="text-align:right;border:1px solid #ddd;">@s.SatinAlmaIadeTon.ToString("N2")</td>
+                            <td style="text-align:right;border:1px solid #ddd;">@s.SatisTon.ToString("N2")</td>
+                            <td style="text-align:right;border:1px solid #ddd;">@s.PromosyonTon.ToString("N2")</td>
+                            <td style="text-align:right;border:1px solid #ddd;">@s.SarfTon.ToString("N2")</td>
+                            <td style="text-align:right;background-color:#E3F2FD;border:1px solid #ddd;@stokRenk"><strong>@s.StokTon.ToString("N2")</strong></td>
+                            <td style="text-align:right;border:1px solid #ddd;">@s.SatisTutari.ToString("N2")</td>
+                            <td style="text-align:right;border:1px solid #ddd;">@(s.OrtalamaFiyat > 0 ? s.OrtalamaFiyat.ToString("N2") : "-")</td>
+                        </tr>
+                    }
+                    @{
+                        var topSatisMiktar = _sekerler.Sum(x => x.SatisMiktari);
+                        var topSatisTutar  = _sekerler.Sum(x => x.SatisTutari);
+                        var ortFiyatTop    = topSatisMiktar > 0 ? topSatisTutar / topSatisMiktar : 0m;
+                    }
+                    <tr style="background-color:#FFF59D;font-weight:bold;">
+                        <td style="border:1px solid #ddd;">TOPLAM</td>
+                        <td style="text-align:right;border:1px solid #ddd;">@_sekerler.Sum(x => x.DevirStokTon).ToString("N2")</td>
+                        <td style="text-align:right;border:1px solid #ddd;">@_sekerler.Sum(x => x.UretimTon).ToString("N2")</td>
+                        <td style="text-align:right;border:1px solid #ddd;">@_sekerler.Sum(x => x.SatinAlmaTon).ToString("N2")</td>
+                        <td style="text-align:right;border:1px solid #ddd;">@_sekerler.Sum(x => x.IadeTon).ToString("N2")</td>
+                        <td style="text-align:right;border:1px solid #ddd;">@_sekerler.Sum(x => x.SatinAlmaIadeTon).ToString("N2")</td>
+                        <td style="text-align:right;border:1px solid #ddd;">@_sekerler.Sum(x => x.SatisTon).ToString("N2")</td>
+                        <td style="text-align:right;border:1px solid #ddd;">@_sekerler.Sum(x => x.PromosyonTon).ToString("N2")</td>
+                        <td style="text-align:right;border:1px solid #ddd;">@_sekerler.Sum(x => x.SarfTon).ToString("N2")</td>
+                        <td style="text-align:right;border:1px solid #ddd;">@_sekerler.Sum(x => x.StokTon).ToString("N2")</td>
+                        <td style="text-align:right;border:1px solid #ddd;">@topSatisTutar.ToString("N2")</td>
+                        <td style="text-align:right;border:1px solid #ddd;">@(ortFiyatTop > 0 ? ortFiyatTop.ToString("N2") : "-")</td>
+                    </tr>
+                </tbody>
+            </MudSimpleTable>
+
+            <MudAlert Severity="Severity.Info" Class="mt-3" Dense="true">
+                <strong>Hesaplama:</strong> Stok = Devir + Üretim + S.Alma + S.İade − SA.İade − Satış − Promo − Sarf
+                &nbsp;|&nbsp; Devir başlangıcı: 01.09.2025 (kampanya başı)
+            </MudAlert>
+        </MudPaper>
+    }
 }
 else if (!_yukleniyor)
 {
@@ -225,30 +301,55 @@ else if (!_yukleniyor)
 
     private List<YanUrunOzet>? _yanUrunler;
     private List<AlkolOzet>? _alkoller;
+    private List<SekerSatisOzet>? _sekerler;
 
     // Mail
     private bool    _mailGonderiliyor = false;
     private bool    _mailBasarili     = false;
     private string? _mailSonucu;
 
-    protected override void OnInitialized()
+    protected override void OnInitialized()    => RegisterVoice();
+
+    protected override void OnAfterRender(bool firstRender)
     {
+        // Backup: ServerPrerendered + circuit timing nedeniyle OnInitialized'deki
+        // Register bazen VoiceCtx.Clear() sonrası gelirse boşa düşer. Tools boşsa tekrar Register et.
+        if (VoiceCtx.Tools.Count == 0) RegisterVoice();
+    }
+
+    private void RegisterVoice() =>
         VoiceCtx.Register(_voiceTools, "Özet Rapor",
+            getEkContext: VoiceContextOlustur,
             onayList: _voiceOnayAksiyonlar,
             onAksiyon: SesliAksiyonCalistir);
-    }
 
     private static readonly HashSet<string> _voiceOnayAksiyonlar = new() { "mail_gonder" };
 
+    private string VoiceContextOlustur()
+        => $"Mevcut tarih: {_baslangicTarihi:dd.MM.yyyy} - {_bitisTarihi:dd.MM.yyyy}";
+
     private List<SesliKomutTool> _voiceTools => new()
     {
-        new SesliKomutTool { Ad = "rapor_getir",  Aciklama = "Raporu yeniler / getirir." },
+        new SesliKomutTool { Ad = "rapor_getir",  Aciklama = "Raporu yeniler / getirir (Rapor Getir butonu)." },
+        new SesliKomutTool { Ad = "sorgula",      Aciklama = "rapor_getir ile aynı — sorguyu çalıştırır." },
         new SesliKomutTool { Ad = "excel_indir",  Aciklama = "Excel olarak indirir." },
         new SesliKomutTool { Ad = "mail_gonder",  Aciklama = "Özet raporu mail olarak gönderir (Yan Ürünler + Şeker + Alkol)." },
         new SesliKomutTool
         {
+            Ad = "tarih_ayarla",
+            Aciklama = "Başlangıç ve/veya bitiş tarihini doğrudan ayarlar. ISO yyyy-MM-dd format. "
+                     + "Eksik bırakılan kenar mevcut değerini korur. Tek başına çağrıldığında raporu OTOMATİK getirmez "
+                     + "— komut_zinciri içinde sonra `rapor_getir` çağrılmalı.",
+            Parametreler = new()
+            {
+                ["baslangic"] = new SesliKomutParam { Tip = "string", Aciklama = "Başlangıç tarihi (yyyy-MM-dd)." },
+                ["bitis"]     = new SesliKomutParam { Tip = "string", Aciklama = "Bitiş tarihi (yyyy-MM-dd)." },
+            }
+        },
+        new SesliKomutTool
+        {
             Ad = "tarih_kisayol",
-            Aciklama = "Hızlı tarih seçimi: 'bu ay' / 'bu yıl' / 'geçen ay'.",
+            Aciklama = "Hızlı tarih seçimi: 'bu ay' / 'bu yıl' / 'geçen ay' — ayarlar VE raporu getirir.",
             Parametreler = new()
             {
                 ["aralik"] = new SesliKomutParam
@@ -267,9 +368,28 @@ else if (!_yukleniyor)
         {
             switch (intent.Action)
             {
-                case "rapor_getir": await RaporuGetir(); break;
+                case "rapor_getir":
+                case "sorgula":
+                case "yenile":
+                    await RaporuGetir();
+                    break;
                 case "excel_indir": await ExcelIndir(); break;
                 case "mail_gonder": await MailGonderAsync(); break;
+                case "tarih_ayarla":
+                {
+                    var (b, t) = VoiceDateHelper.ParseBaslangicBitis(intent.Params, _baslangicTarihi, _bitisTarihi);
+                    _baslangicTarihi = b; _bitisTarihi = t;
+                    Snackbar.Add($"Tarih: {b:dd.MM.yyyy} - {t:dd.MM.yyyy}", Severity.Success);
+                    break;
+                }
+                case "tarih_araligi":
+                {
+                    var (b, t) = VoiceDateHelper.AraligiCevir(intent.Params.GetValueOrDefault("aralik") as string);
+                    if (b == null) { Snackbar.Add("Aralık anlaşılamadı.", Severity.Warning); return; }
+                    _baslangicTarihi = b; _bitisTarihi = t;
+                    Snackbar.Add($"Tarih: {b:dd.MM.yyyy} - {t:dd.MM.yyyy}", Severity.Success);
+                    break;
+                }
                 case "tarih_kisayol":
                 {
                     var a = (intent.Params.GetValueOrDefault("aralik") as string ?? "").ToLower();
@@ -330,9 +450,15 @@ else if (!_yukleniyor)
             var baslangic = _baslangicTarihi.Value;
             var bitis = _bitisTarihi.Value;
             
-            _yanUrunler = await YanUrunlerService.GetYanUrunlerOzetAsync(baslangic, bitis);
-            _alkoller = await YanUrunlerService.GetAlkolOzetAsync(baslangic, bitis);
-            
+            // Üç ana servisi paralel çağır (Şeker eklenince mail içeriğiyle birebir uyumlu olur)
+            var tYan   = YanUrunlerService.GetYanUrunlerOzetAsync(baslangic, bitis);
+            var tAlk   = YanUrunlerService.GetAlkolOzetAsync(baslangic, bitis);
+            var tSeker = SekerSatisService.GetSekerSatisOzetAsync(baslangic, bitis);
+            await Task.WhenAll(tYan, tAlk, tSeker);
+            _yanUrunler = tYan.Result;
+            _alkoller   = tAlk.Result;
+            _sekerler   = tSeker.Result;
+
             Snackbar.Add("Rapor başarıyla yüklendi!", Severity.Success);
         }
         catch (Exception ex)
@@ -354,11 +480,12 @@ else if (!_yukleniyor)
         {
             var melasTuketim = _yanUrunler.FirstOrDefault(x => x.Kategori == "MELAS")?.TuketimMiktari ?? 0;
             var excelBytes = ExcelExportService.ExportYanUrunlerRaporu(
-                _yanUrunler, 
-                _alkoller, 
+                _yanUrunler,
+                _alkoller,
                 melasTuketim,
                 _baslangicTarihi!.Value,
-                _bitisTarihi!.Value);
+                _bitisTarihi!.Value,
+                _sekerler);
             
             var fileName = $"YanUrunler_{_baslangicTarihi:yyyyMMdd}_{_bitisTarihi:yyyyMMdd}.xlsx";
             

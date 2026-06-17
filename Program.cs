@@ -125,6 +125,7 @@ builder.Services.AddScoped<SekerSatisService>();
 builder.Services.AddScoped<SekerDairesiService>();
 builder.Services.AddScoped<PancarOdemeService>();
 builder.Services.AddScoped<ExcelExportService>();
+builder.Services.AddScoped<SatisSiparisExcelService>();
 builder.Services.AddScoped<OdemeService>();
 builder.Services.AddScoped<OdemeKontrolService>();
 builder.Services.AddScoped<OdemeKarsilastirService>();
@@ -174,6 +175,12 @@ builder.Services.AddScoped<FinansRaporService>();
 builder.Services.AddSingleton<IsletmeMalzemeleriKonfigService>();
 builder.Services.AddScoped<IsletmeMalzemeleriService>();
 
+// Satış Kıyaslama — tek cari × iki dönem × malzeme bazında
+builder.Services.AddScoped<SatisKiyaslamaService>();
+
+// Alış Kıyaslama — tek cari × iki dönem × Satın Alma + Alınan Hizmet (TRCODE 1 + 14)
+builder.Services.AddScoped<AlisKiyaslamaService>();
+
 // Cari Mutabakatı — AI destekli (Anthropic Claude API ile PDF/Excel parse)
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<ClaudeService>();
@@ -192,6 +199,8 @@ builder.Services.AddScoped<RaporlamaPortali.Services.Logo.LogoCariLookupService>
 builder.Services.AddScoped<RaporlamaPortali.Services.Logo.LogoMasterKartLookupService>();
 builder.Services.AddScoped<RaporlamaPortali.Services.Logo.LogoBirimSetiLookupService>();
 builder.Services.AddScoped<RaporlamaPortali.Services.Logo.LogoAccCodesLookupService>();
+builder.Services.AddScoped<RaporlamaPortali.Services.Logo.LogoFiyatListesiLookupService>();
+builder.Services.AddScoped<RaporlamaPortali.Services.Logo.LogoCariOdemePlaniLookupService>();
 builder.Services.AddSingleton<RaporlamaPortali.Services.Logo.LogoKdvHesapLookupService>();
 builder.Services.AddSingleton<EFaturaAktarimGecmisiService>();
 builder.Services.AddScoped<RaporlamaPortali.Services.Logo.LogoAktarimService>();

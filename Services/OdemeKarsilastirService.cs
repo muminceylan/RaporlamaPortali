@@ -235,6 +235,10 @@ public class OdemeKarsilastirService
             .GroupBy(o => NormalizeAd(o.Unvan))
             .ToDictionary(g => g.Key, g => g.ToList());
 
+        // Logo ödemelerinin Sabnet ile eşleşip eşleşmediği takibi — sonunda eşleşmemişler
+        // "Logo'da fazla (Sabnet'te yok)" listesine gider.
+        var kullanilanLogo = new HashSet<LogoOdeme>(ReferenceEqualityComparer.Instance);
+
         // 3) Karşılaştır
         foreach (var d in sabnetByTc)
         {
@@ -289,6 +293,8 @@ public class OdemeKarsilastirService
                 satir.LogoTarih   = adayLar[0].Tarih;
                 satir.Aciklama    = $"Logo'da {adayLar.Count} farklı tutarlı ödeme bulundu (toplam {satir.LogoTutar:N2}), Sabnet bekleneni {d.Tutar:N2}.";
                 sonuc.Odenmedi.Add(satir);
+                // Tutar tutmasa da TC/ad eşleşti — bu Logo kayıtları "sahipsiz fazla" değil; işaretle.
+                foreach (var a in adayLar) kullanilanLogo.Add(a);
                 continue;
             }
 
@@ -307,9 +313,56 @@ public class OdemeKarsilastirService
                 satir.Aciklama = $"Eşleşti ({eslesenKaynak}) — Logo: {tutarEslesen[0].Tarih:dd.MM.yyyy} — Cari: {tutarEslesen[0].CariKod}";
                 sonuc.Eslesen.Add(satir);
             }
+            // Eşleşmiş Logo kayıtlarını işaretle (tutar uyan tüm adaylar — mükerrer dahil)
+            foreach (var a in adayLar) kullanilanLogo.Add(a);
+        }
+
+        // 4) Logo'da var ama Sabnet ile hiç eşleşmemiş MÜSTAHSİL ödemeleri.
+        //    Sadece müstahsil cari kodları (Sxxxxxxxxxx[x] formatı: S + 10 hane VKN veya 11 hane TC)
+        //    listeye alınır — diğer ödemeler (banka, market, kira vb.) elenir.
+        //    Sahipsiz Logo ödemeleri: yetkili numara değişikliği, iptal/manuel ödeme,
+        //    başka bir avans formundan ödenmiş vb.
+        foreach (var o in odemeler)
+        {
+            if (kullanilanLogo.Contains(o)) continue;
+            if (!IsMustahsilCariKodu(o.CariKod)) continue;
+
+            var tcVkn = TcVknKodundanCikar(o.CariKod);
+            sonuc.LogoFazlasi.Add(new OdemeKarsilastirSatir
+            {
+                Banka       = "Logo",
+                AdSoyad     = o.Unvan,
+                TcKimlikNo  = tcVkn,
+                LogoTutar   = o.Tutar,
+                LogoAdet    = 1,
+                LogoCariKod = o.CariKod,
+                LogoTarih   = o.Tarih,
+                Aciklama    = $"Logo'da ödeme var ({o.Tarih:dd.MM.yyyy}) ama bu kişi Sabnet'teki '{avansAdi} {sozlesmeYili}' listesinde yok.",
+            });
         }
 
         return sonuc;
+    }
+
+    /// <summary>
+    /// Müstahsil cari kodu mu? S + 10 hane (VKN) veya S + 11 hane (TC) deseni.
+    /// </summary>
+    private static bool IsMustahsilCariKodu(string? cariKod)
+    {
+        if (string.IsNullOrWhiteSpace(cariKod)) return false;
+        var k = cariKod.Trim().ToUpperInvariant();
+        if (!k.StartsWith("S")) return false;
+        var rest = k.Substring(1);
+        return (rest.Length == 10 || rest.Length == 11) && rest.All(char.IsDigit);
+    }
+
+    /// <summary>
+    /// Logo cari kodundan TC (11) veya VKN (10) çıkarır: "S12345678901" → "12345678901".
+    /// </summary>
+    private static string TcVknKodundanCikar(string? cariKod)
+    {
+        if (!IsMustahsilCariKodu(cariKod)) return "";
+        return cariKod!.Trim().Substring(1);
     }
 
     // ----------------------------------------------------------------------
@@ -347,17 +400,21 @@ public class OdemeKarsilastirService
         ws.Cell(10, 2).Value = s.Mukerrer.Count;
         ws.Cell(10, 3).Value = s.MukerrerToplam;
         ws.Range(10, 1, 10, 3).Style.Fill.SetBackgroundColor(XLColor.LightYellow);
-        ws.Cell(11, 1).Value = "EŞLEŞEN";
-        ws.Cell(11, 2).Value = s.Eslesen.Count;
-        ws.Cell(11, 3).Value = s.Eslesen.Sum(x => x.DosyaTutar);
-        ws.Range(11, 1, 11, 3).Style.Fill.SetBackgroundColor(XLColor.LightGreen);
+        ws.Cell(11, 1).Value = "LOGO'DA FAZLA";
+        ws.Cell(11, 2).Value = s.LogoFazlasi.Count;
+        ws.Cell(11, 3).Value = s.LogoFazlasiToplam;
+        ws.Range(11, 1, 11, 3).Style.Fill.SetBackgroundColor(XLColor.FromHtml("#FCE4EC"));
+        ws.Cell(12, 1).Value = "EŞLEŞEN";
+        ws.Cell(12, 2).Value = s.Eslesen.Count;
+        ws.Cell(12, 3).Value = s.Eslesen.Sum(x => x.DosyaTutar);
+        ws.Range(12, 1, 12, 3).Style.Fill.SetBackgroundColor(XLColor.LightGreen);
 
-        ws.Range(7, 3, 11, 3).Style.NumberFormat.Format = "#,##0.00";
+        ws.Range(7, 3, 12, 3).Style.NumberFormat.Format = "#,##0.00";
         ws.Columns(1, 3).AdjustToContents();
 
         if (s.Hatalar.Count > 0)
         {
-            int r = 13;
+            int r = 14;
             ws.Cell(r, 1).Value = "Uyarılar/Hatalar";
             ws.Cell(r, 1).Style.Font.SetBold();
             r++;
@@ -373,6 +430,14 @@ public class OdemeKarsilastirService
         var wsM = wb.Worksheets.Add("MÜKERRER");
         SatirSheetYaz(wsM, s.Mukerrer, dosyaTutarliSheet: false);
         wsM.TabColor = XLColor.Orange;
+
+        // ---- LOGO'DA FAZLA (Sabnet'te yok)
+        if (s.LogoFazlasi.Count > 0)
+        {
+            var wsLF = wb.Worksheets.Add("LOGODA FAZLA");
+            SatirSheetYaz(wsLF, s.LogoFazlasi, dosyaTutarliSheet: false);
+            wsLF.TabColor = XLColor.FromHtml("#AD1457");
+        }
 
         // ---- EŞLEŞEN
         var wsE = wb.Worksheets.Add("Eşleşen");

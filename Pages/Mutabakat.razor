@@ -54,13 +54,22 @@
                            Editable="true" Mask="@(new DateMask("dd.MM.yyyy"))"
                            Variant="Variant.Outlined" Margin="Margin.Dense" />
         </MudItem>
-        <MudItem xs="12" md="3">
-            <MudTextField @bind-Value="_vkn" Label="Karşı Firma Vergi No (10 hane) / TC (11)"
+        <MudItem xs="12" md="2">
+            <MudTextField @bind-Value="_vkn" Label="Karşı Firma VKN (10) / TC (11)"
                           Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" />
         </MudItem>
-        <MudItem xs="12" md="3">
-            <MudNumericField @bind-Value="_gunKesim" Label="Gün Kesimi (bitişten N gün hariç)"
-                             Min="0" Max="30" Step="1" HelperText="Henüz karşı tarafa ulaşmamış olabilecek son hareketleri at"
+        <MudItem xs="12" md="2">
+            <MudSelect T="MutabakatCariTuru" @bind-Value="_cariTuru" Label="Bizdeki Cari Türü"
+                       Variant="Variant.Outlined" Margin="Margin.Dense"
+                       HelperText="Karşı ekstre hangi grupsa onu seç">
+                <MudSelectItem Value="MutabakatCariTuru.Hepsi">Tüm Cariler (12x + 32x)</MudSelectItem>
+                <MudSelectItem Value="MutabakatCariTuru.Alici120">Sadece 12x — Alıcılar (sattıklarımız)</MudSelectItem>
+                <MudSelectItem Value="MutabakatCariTuru.Satici320">Sadece 32x — Satıcılar (aldıklarımız)</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="2">
+            <MudNumericField @bind-Value="_gunKesim" Label="Gün Kesimi"
+                             Min="0" Max="30" Step="1" HelperText="Bitişten N gün hariç"
                              Variant="Variant.Outlined" Margin="Margin.Dense" />
         </MudItem>
 
@@ -299,6 +308,7 @@
     DateTime? _bitis     = SistemTarihi.Bugun();
     string _vkn = "";
     int _gunKesim = 0;
+    MutabakatCariTuru _cariTuru = MutabakatCariTuru.Hepsi;
 
     string? _dosyaAdi;
     long _dosyaBoyut;
@@ -352,10 +362,16 @@
             }
             var karsiKayitlar = aiHam.Where(k => k.Tarih.Date >= bas && k.Tarih.Date <= bit).ToList();
 
-            _sonuc = await MutabakatSrv.MutabakatYapAsync(_vkn, bas, bit, karsiKayitlar);
+            _sonuc = await MutabakatSrv.MutabakatYapAsync(_vkn, bas, bit, karsiKayitlar, _cariTuru);
             _sonuc.AIHamKayitlar = aiHam.OrderBy(x => x.Tarih).ToList();
             var kesimEtiketi = _gunKesim > 0 ? $" (son {_gunKesim} gün hariç)" : "";
-            Snackbar.Add($"Mutabakat tamamlandı{kesimEtiketi}. {_sonuc.Eslesenler.Count} eşleşme bulundu.", Severity.Success);
+            var turEtiketi = _cariTuru switch
+            {
+                MutabakatCariTuru.Alici120 => " · 12x Alıcılar",
+                MutabakatCariTuru.Satici320 => " · 32x Satıcılar",
+                _ => "",
+            };
+            Snackbar.Add($"Mutabakat tamamlandı{kesimEtiketi}{turEtiketi}. {_sonuc.Eslesenler.Count} eşleşme bulundu.", Severity.Success);
         }
         catch (Exception ex)
         {

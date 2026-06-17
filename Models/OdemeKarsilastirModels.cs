@@ -12,13 +12,15 @@ public class OdemeKarsilastirSonuc
     public decimal DosyaToplam    { get; set; }
     public decimal LogoToplam     { get; set; }
 
-    public List<OdemeKarsilastirSatir> Eslesen   { get; set; } = new();
-    public List<OdemeKarsilastirSatir> Odenmedi  { get; set; } = new(); // dosyada var, Logo'da yok
-    public List<OdemeKarsilastirSatir> Mukerrer  { get; set; } = new(); // Logo'da aynı kişiye 2+ ödeme
+    public List<OdemeKarsilastirSatir> Eslesen     { get; set; } = new();
+    public List<OdemeKarsilastirSatir> Odenmedi    { get; set; } = new(); // dosyada/sabnet'te var, Logo'da yok
+    public List<OdemeKarsilastirSatir> Mukerrer    { get; set; } = new(); // Logo'da aynı kişiye 2+ ödeme
+    public List<OdemeKarsilastirSatir> LogoFazlasi { get; set; } = new(); // Logo'da var ama Sabnet/dosyada yok
     public List<string> Hatalar { get; set; } = new();
 
-    public decimal OdenmediToplam => Odenmedi.Sum(x => x.DosyaTutar);
-    public decimal MukerrerToplam => Mukerrer.Sum(x => x.LogoTutar);
+    public decimal OdenmediToplam    => Odenmedi.Sum(x => x.DosyaTutar);
+    public decimal MukerrerToplam    => Mukerrer.Sum(x => x.LogoTutar);
+    public decimal LogoFazlasiToplam => LogoFazlasi.Sum(x => x.LogoTutar);
 }
 
 public class OdemeKarsilastirSatir

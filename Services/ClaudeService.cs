@@ -20,7 +20,9 @@ public class ClaudeService
     public ClaudeService(IHttpClientFactory httpFactory)
     {
         _http = httpFactory.CreateClient();
-        _http.Timeout = TimeSpan.FromMinutes(3);
+        // Büyük ekstreler (1+ yıl, yüzlerce satır) max_tokens=32000 ile 3-5 dk sürebiliyor.
+        // Streaming kullanmadığımız için tek bir HTTP isteğinde yanıtın tamamı beklenir.
+        _http.Timeout = TimeSpan.FromMinutes(10);
         _apiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY", EnvironmentVariableTarget.User)
                   ?? Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY", EnvironmentVariableTarget.Process)
                   ?? Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY", EnvironmentVariableTarget.Machine);
@@ -89,7 +91,7 @@ public class ClaudeService
         var body = new
         {
             model = Model,
-            max_tokens = 8192,
+            max_tokens = 32000,
             messages = new[]
             {
                 new { role = "user", content = userContent }
@@ -171,7 +173,7 @@ public class ClaudeService
         var body = new
         {
             model = Model,
-            max_tokens = 8192,
+            max_tokens = 32000,
             messages = new[] { new { role = "user", content = userContent } }
         };
 
@@ -449,7 +451,7 @@ KRİTİK KURALLAR:
     private static string? JsonBlokunuCikar(string s)
     {
         if (string.IsNullOrWhiteSpace(s)) return null;
-        // ```json ... ``` bloğunu temizle
+        // ```json ... ``` bloğunu temizle (alt sondaki ``` eksik olsa da çalışsın)
         var t = s.Trim();
         if (t.StartsWith("```"))
         {
@@ -459,11 +461,67 @@ KRİTİK KURALLAR:
             if (sonFence >= 0) t = t[..sonFence];
             t = t.Trim();
         }
-        // İlk '[' ve son ']' arasını al
+
         int bas = t.IndexOf('[');
+        if (bas < 0) return null;
+
+        // 1) Normal yol: ilk '[' ve son ']'
         int son = t.LastIndexOf(']');
-        if (bas < 0 || son <= bas) return null;
-        return t.Substring(bas, son - bas + 1);
+        if (son > bas)
+        {
+            var aday = t.Substring(bas, son - bas + 1);
+            if (GecerliJsonMu(aday)) return aday;
+        }
+
+        // 2) max_tokens'a takılıp yanıt yarıda kesildiyse — son geçerli `}`'i bul,
+        //    diziyi orada kapatıp `]` ekle. String içindeki '{' veya '}' karakterleri
+        //    derinliği bozmasın diye string-aware tarama yap.
+        return KesikJsonuKurtar(t, bas);
+    }
+
+    private static bool GecerliJsonMu(string s)
+    {
+        try { using var _ = JsonDocument.Parse(s); return true; }
+        catch { return false; }
+    }
+
+    /// <summary>
+    /// '[' ile başlayan bir JSON dizisi yarıda kesildiyse (max_tokens),
+    /// son tamamlanmış obje sonuna kadar olan kısmı alıp `]` ile kapatır.
+    /// String literal içindeki { } karakterleri sayılmaz (kaçışlı çift tırnak farkındalığı).
+    /// </summary>
+    private static string? KesikJsonuKurtar(string t, int bas)
+    {
+        int derinlik = 0;
+        bool stringIcinde = false;
+        bool kacis = false;
+        int sonTamObjeSonu = -1;
+        bool diziAcildi = false;
+
+        for (int i = bas; i < t.Length; i++)
+        {
+            char c = t[i];
+            if (kacis) { kacis = false; continue; }
+            if (stringIcinde)
+            {
+                if (c == '\\') { kacis = true; continue; }
+                if (c == '"') { stringIcinde = false; }
+                continue;
+            }
+            switch (c)
+            {
+                case '"': stringIcinde = true; break;
+                case '[': if (!diziAcildi) diziAcildi = true; break;
+                case '{': derinlik++; break;
+                case '}':
+                    derinlik--;
+                    if (derinlik == 0 && diziAcildi) sonTamObjeSonu = i;
+                    break;
+            }
+        }
+
+        if (sonTamObjeSonu < 0) return null;
+        return t.Substring(bas, sonTamObjeSonu - bas + 1) + "]";
     }
 
     private static List<MutabakatKayit> JsonuKayitlaraCevir(string jsonDizi)

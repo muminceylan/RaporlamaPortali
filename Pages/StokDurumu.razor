@@ -201,13 +201,21 @@
 
     protected override async Task OnInitializedAsync()
     {
-        VoiceCtx.Register(_voiceTools, "Stok Durumu",
-            getEkContext: VoiceContextOlustur,
-            onAksiyon:    SesliAksiyonCalistir);
+        RegisterVoice();
         _ambarlar = await Logo.AmbarSecenekleriAsync();
         _afyonListe = AfyonAmbar.Liste.ToList();
         await VeriYukle();
     }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (VoiceCtx.Tools.Count == 0) RegisterVoice();
+    }
+
+    private void RegisterVoice() =>
+        VoiceCtx.Register(_voiceTools, "Stok Durumu",
+            getEkContext: VoiceContextOlustur,
+            onAksiyon:    SesliAksiyonCalistir);
 
     private async Task VeriYukle()
     {

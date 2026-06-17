@@ -286,12 +286,17 @@ else
             _           => _kayitlar,
         };
 
-    protected override void OnInitialized()
+    protected override void OnInitialized() => RegisterVoice();
+
+    protected override void OnAfterRender(bool firstRender)
     {
+        if (VoiceCtx.Tools.Count == 0) RegisterVoice();
+    }
+
+    private void RegisterVoice() =>
         VoiceCtx.Register(_voiceTools, "e-Fatura Logo Kontrolü",
             getEkContext: VoiceContextOlustur,
             onAksiyon:    SesliAksiyonCalistir);
-    }
 
     private async Task Sorgula()
     {
@@ -413,8 +418,18 @@ else
     {
         new SesliKomutTool
         {
+            Ad        = "tarih_ayarla",
+            Aciklama  = "Tarih kutucuklarını doğrudan ayarlar. ISO yyyy-MM-dd. Sorgulamayı OTOMATİK yapmaz.",
+            Parametreler = new()
+            {
+                ["baslangic"] = new SesliKomutParam { Tip = "string", Aciklama = "Başlangıç tarihi (yyyy-MM-dd)." },
+                ["bitis"]     = new SesliKomutParam { Tip = "string", Aciklama = "Bitiş tarihi (yyyy-MM-dd)." },
+            }
+        },
+        new SesliKomutTool
+        {
             Ad        = "tarih_araligi",
-            Aciklama  = "Tarih aralığını ayarlar.",
+            Aciklama  = "Tarih aralığını kısayol enum ile ayarlar VE sorgular.",
             Parametreler = new()
             {
                 ["aralik"] = new SesliKomutParam
@@ -482,24 +497,16 @@ else
         {
             switch (intent.Action)
             {
+                case "tarih_ayarla":
+                {
+                    var (b, t) = VoiceDateHelper.ParseBaslangicBitis(intent.Params, _bas, _bit);
+                    _bas = b; _bit = t;
+                    Snackbar.Add($"Tarih: {b:dd.MM.yyyy} - {t:dd.MM.yyyy}", Severity.Success);
+                    break;
+                }
                 case "tarih_araligi":
                 {
-                    var aralik = (intent.Params.GetValueOrDefault("aralik") as string ?? "").ToLower();
-                    var bugun = DateTime.Today;
-                    (DateTime? b, DateTime? t) = aralik switch
-                    {
-                        "bugun"      => ((DateTime?)bugun, (DateTime?)bugun),
-                        "dun"        => (bugun.AddDays(-1), bugun.AddDays(-1)),
-                        "bu_hafta"   => (bugun.AddDays(-(((int)bugun.DayOfWeek + 6) % 7)), bugun),
-                        "bu_ay"      => (new DateTime(bugun.Year, bugun.Month, 1), bugun),
-                        "gecen_ay"   => (new DateTime(bugun.Year, bugun.Month, 1).AddMonths(-1),
-                                         new DateTime(bugun.Year, bugun.Month, 1).AddDays(-1)),
-                        "bu_yil"     => (new DateTime(bugun.Year, 1, 1), bugun),
-                        "son_7_gun"  => (bugun.AddDays(-7),  bugun),
-                        "son_30_gun" => (bugun.AddDays(-30), bugun),
-                        "son_90_gun" => (bugun.AddDays(-90), bugun),
-                        _ => (null, null),
-                    };
+                    var (b, t) = VoiceDateHelper.AraligiCevir(intent.Params.GetValueOrDefault("aralik") as string);
                     if (b == null) { Snackbar.Add("Aralık anlaşılamadı.", Severity.Warning); return; }
                     _bas = b; _bit = t;
                     Snackbar.Add($"Tarih: {b:dd.MM.yyyy} - {t:dd.MM.yyyy}", Severity.Success);

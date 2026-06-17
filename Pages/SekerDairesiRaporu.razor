@@ -1,7 +1,11 @@
 @page "/seker-dairesi"
+@using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
 @inject SekerDairesiService SekerDairesiService
+@inject ExcelExportService ExcelExportService
 @inject IJSRuntime JS
 @inject ISnackbar Snackbar
+@inject VoiceContextService VoiceCtx
 
 <PageTitle>Şeker Dairesi Raporu</PageTitle>
 
@@ -42,6 +46,16 @@
                         }
                         <MudIcon Icon="@Icons.Material.Filled.BarChart" Class="mr-1" />
                         Analiz Yap
+                    </MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Success"
+                               OnClick="ExcelIndir"
+                               Disabled="@(_analizSonuc == null || _analizSonuc.Count == 0 || _excelYukleniyor)"
+                               StartIcon="@Icons.Material.Filled.FileDownload">
+                        @if (_excelYukleniyor)
+                        {
+                            <MudProgressCircular Class="mr-2" Size="Size.Small" Indeterminate="true" />
+                        }
+                        Excel'e Aktar
                     </MudButton>
                     <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
                         <MudButton OnClick="@(() => SetAnalizAraligi(0))">Bu Ay</MudButton>
@@ -539,6 +553,7 @@
     private DateTime? _analizBaslangic = SekerDairesiService.KampanyaBaslangic;
     private DateTime? _analizBitis = DateTime.Today;
     private bool _analizYukleniyor   = false;
+    private bool _excelYukleniyor    = false;
     private string? _analizHata      = null;
     private List<SekerKategoriAnaliz>? _analizSonuc;
     private List<SatisIadeDipnot>?    _analizDipnotlar;
@@ -592,6 +607,47 @@
         finally
         {
             _analizYukleniyor = false;
+        }
+    }
+
+    // ── Excel'e Aktar ────────────────────────────────────────────────
+    private async Task ExcelIndir()
+    {
+        if (_analizSonuc == null || _analizSonuc.Count == 0)
+        {
+            Snackbar.Add("Önce 'Analiz Yap' butonuna tıklayın.", Severity.Warning);
+            return;
+        }
+        if (_analizBaslangic == null || _analizBitis == null)
+        {
+            Snackbar.Add("Tarih aralığı eksik.", Severity.Warning);
+            return;
+        }
+
+        _excelYukleniyor = true;
+        StateHasChanged();
+        try
+        {
+            var bytes = ExcelExportService.ExportSekerDairesiAnaliz(
+                _analizSonuc,
+                _analizDipnotlar,
+                _analizBaslangic.Value,
+                _analizBitis.Value);
+
+            var dosyaAdi = $"SekerDairesi_Analiz_{_analizBaslangic:yyyyMMdd}_{_analizBitis:yyyyMMdd}.xlsx";
+            await JS.InvokeVoidAsync("downloadFile", dosyaAdi, Convert.ToBase64String(bytes),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+
+            Snackbar.Add("Excel dosyası indirildi.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Excel oluşturulurken hata: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _excelYukleniyor = false;
+            StateHasChanged();
         }
     }
 
@@ -983,6 +1039,123 @@
             "S.T.0.0.7" or "S.705.00.0008"                 => "C Şekeri",
             _                                               => "Paketli Şeker",
         };
+    }
+
+    // ============================================================
+    // SESLİ KOMUT
+    // ============================================================
+
+    protected override void OnInitialized() => RegisterVoice();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (VoiceCtx.Tools.Count == 0) RegisterVoice();
+    }
+
+    private void RegisterVoice() =>
+        VoiceCtx.Register(_voiceTools, "Şeker Dairesi Raporu",
+            getEkContext: VoiceContextOlustur,
+            onAksiyon:    SesliAksiyonCalistir);
+
+    private string VoiceContextOlustur()
+        => $"Analiz tarihi: {_analizBaslangic:dd.MM.yyyy} - {_analizBitis:dd.MM.yyyy}, " +
+           $"Stok tarihi: {_stokTarihi:dd.MM.yyyy}";
+
+    private List<SesliKomutTool> _voiceTools => new()
+    {
+        new SesliKomutTool
+        {
+            Ad = "tarih_ayarla",
+            Aciklama = "Analiz başlangıç/bitiş tarihini doğrudan ayarlar. ISO yyyy-MM-dd.",
+            Parametreler = new()
+            {
+                ["baslangic"] = new SesliKomutParam { Tip = "string", Aciklama = "Başlangıç tarihi (yyyy-MM-dd)." },
+                ["bitis"]     = new SesliKomutParam { Tip = "string", Aciklama = "Bitiş tarihi (yyyy-MM-dd)." },
+            }
+        },
+        new SesliKomutTool { Ad = "analiz_yap",   Aciklama = "Sade Şeker Analizini çalıştırır (Analiz Yap butonu)." },
+        new SesliKomutTool { Ad = "rapor_getir",  Aciklama = "analiz_yap ile aynı." },
+        new SesliKomutTool { Ad = "sorgula",      Aciklama = "analiz_yap ile aynı." },
+        new SesliKomutTool { Ad = "excel_indir",  Aciklama = "Analiz sonucunu Excel dosyası olarak indirir." },
+        new SesliKomutTool { Ad = "stok_sorgula", Aciklama = "Stok Sorgula sekmesinde çalışır (stok tarihine göre)." },
+        new SesliKomutTool
+        {
+            Ad = "stok_tarih_ayarla",
+            Aciklama = "Stok sorgula sekmesindeki tarihi ayarlar. ISO yyyy-MM-dd.",
+            Parametreler = new()
+            {
+                ["tarih"] = new SesliKomutParam { Tip = "string", Aciklama = "Stok tarihi (yyyy-MM-dd)." },
+            }
+        },
+        new SesliKomutTool
+        {
+            Ad = "tarih_kisayol",
+            Aciklama = "Hızlı tarih seçimi: 'bu ay' / 'bu yıl' / 'geçen ay' — ayarlar ve analizi çalıştırır.",
+            Parametreler = new()
+            {
+                ["aralik"] = new SesliKomutParam
+                {
+                    Tip = "string", Zorunlu = true,
+                    Aciklama = "Hangi aralık.",
+                    Secenekler = new() { "bu_ay", "bu_yil", "gecen_ay" },
+                }
+            }
+        },
+    };
+
+    private async Task SesliAksiyonCalistir(VoiceIntent intent)
+    {
+        try
+        {
+            switch (intent.Action)
+            {
+                case "tarih_ayarla":
+                {
+                    var (b, t) = VoiceDateHelper.ParseBaslangicBitis(intent.Params, _analizBaslangic, _analizBitis);
+                    _analizBaslangic = b; _analizBitis = t;
+                    Snackbar.Add($"Tarih: {b:dd.MM.yyyy} - {t:dd.MM.yyyy}", Severity.Success);
+                    break;
+                }
+                case "stok_tarih_ayarla":
+                {
+                    intent.Params.TryGetValue("tarih", out var tVal);
+                    var t = VoiceDateHelper.Parse(tVal);
+                    if (t == null) { Snackbar.Add("Tarih anlaşılamadı.", Severity.Warning); return; }
+                    _stokTarihi = t;
+                    Snackbar.Add($"Stok tarihi: {t:dd.MM.yyyy}", Severity.Success);
+                    break;
+                }
+                case "analiz_yap":
+                case "rapor_getir":
+                case "sorgula":
+                case "yenile":
+                    await AnalizYap();
+                    break;
+                case "excel_indir":
+                    await ExcelIndir();
+                    break;
+                case "stok_sorgula":
+                    await StokSorgula();
+                    break;
+                case "tarih_kisayol":
+                {
+                    var a = (intent.Params.GetValueOrDefault("aralik") as string ?? "").ToLower();
+                    int tip = a switch { "bu_ay" => 0, "bu_yil" => 1, "gecen_ay" => 2, _ => -1 };
+                    if (tip < 0) { Snackbar.Add("Aralık anlaşılamadı.", Severity.Warning); return; }
+                    SetAnalizAraligi(tip);
+                    await AnalizYap();
+                    break;
+                }
+                default:
+                    Snackbar.Add($"Bu sayfada bilinmeyen aksiyon: {intent.Action}", Severity.Warning);
+                    break;
+            }
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Aksiyon hatası: {ex.Message}", Severity.Error);
+        }
     }
 
     // ── Hızlı tarih seçimi ───────────────────────────────────────────

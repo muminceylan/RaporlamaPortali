@@ -2503,4 +2503,463 @@ public class LogoUnityComService
         catch (Exception ex) { _log.LogDebug(ex, "SetSatirField({Name}) fallback başarısız", name); }
     }
 
+    // ============================================================================
+    // SATIŞ SİPARİŞİ (doSalesOrderSlip = 3) — Excel → Logo aktarımı
+    //
+    //   Enum sırası (KeyNet PMHS.dll v16.02.2026 decompile'ından):
+    //     0=doMaterial, 1=doMaterialSlip, 2=doPurchService, 3=doSalesOrderSlip ← BU
+    //
+    //   Akış:
+    //     1) NewDataObject(3) → slip; slip.New()
+    //     2) Header alanları (TYPE/ARP_CODE/SHIPLOC_CODE/GL_CODE/DATE/SOURCE_WH/
+    //        SALESMAN_CODE/PAYMENT_CODE/ORDER_STATUS/DOC_NUMBER vb.)
+    //     3) Her satır: TRANSACTIONS.Lines.AppendLine() + MASTER_CODE/QUANTITY/
+    //        UNIT_CODE/DUE_DATE + GetStockLinePrice(8, out price)  ← satış fiyat
+    //        listesinden fiyatı Logo otomatik çeker
+    //     4) slip.ApplyCampaign() — firmanın tanımlı kampanya/indirim oranlarını
+    //        uygular (sağ tık → "Kampanya Uygula" ile aynı işi yapar)
+    //     5) slip.Post()
+    // ============================================================================
+
+    private const int DO_SALES_ORDER = 3;
+
+    /// <summary>
+    /// Excel'deki ödeme türü metnini Logo PAYMENT_CODE'a çevirir. Sheet'e göre PEŞİN farklı:
+    ///   CİPS   → "PESIN CIPS"
+    ///   İÇECEK → "PESIN SC"
+    /// "Vadeli" her ikisinde de → "40"
+    /// Boş/tanımsız → "" (set edilmez)
+    /// Büyük/küçük harf + Türkçe karakter (Ş/İ/Ç vs.) duyarsız.
+    /// </summary>
+    private static string OdemePlaniCozumle(string odemeMetni, string sheet)
+    {
+        if (string.IsNullOrWhiteSpace(odemeMetni)) return "";
+        var n = odemeMetni.Trim().ToUpperInvariant()
+                          .Replace("Ş", "S").Replace("İ", "I")
+                          .Replace("Ç", "C").Replace("Ö", "O").Replace("Ü", "U").Replace("Ğ", "G");
+        if (n == "VADELI" || n.StartsWith("VAD")) return "40";
+        if (n == "PESIN" || n == "P" || n.StartsWith("PES"))
+        {
+            var tip = SatisSiparisExcelService.SheetTipi(sheet);
+            return tip == "ICECEK" ? "PESIN SC" : "PESIN CIPS";
+        }
+        return "";
+    }
+
+    /// <summary>
+    /// Sheet'e göre Logo Ticari İşlem Grubu kodu:
+    ///   CİPS   → "G"
+    ///   İÇECEK → "SC"
+    ///   diğer → "G" (varsayılan)
+    /// </summary>
+    private static string TradingGrpCozumle(string sheet)
+    {
+        var tip = SatisSiparisExcelService.SheetTipi(sheet);
+        if (tip == "ICECEK") return "SC";
+        return "G";
+    }
+
+    public Task<SatisSiparisAktarimSonuc> SatisSiparisAktarAsync(
+        LogoUnityCredentials cred,
+        SatisSiparisFis fis,
+        CancellationToken ct = default)
+    {
+        var tcs = new TaskCompletionSource<SatisSiparisAktarimSonuc>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var th = new Thread(() =>
+        {
+            try
+            {
+                var sonuc = ExecuteSatisSiparisOnStaThread(cred, fis, ct);
+                tcs.TrySetResult(sonuc);
+            }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "Logo Unity SatışSiparişi hata");
+                tcs.TrySetException(ex);
+            }
+        });
+        th.SetApartmentState(ApartmentState.STA);
+        th.IsBackground = true;
+        th.Name = "LogoUnityStaThread-SatisSiparis";
+        th.Start();
+        return tcs.Task;
+    }
+
+    /// <summary>
+    /// Tek seferde birden çok fişi aynı Login oturumunda gönderir. Login'i tekrar tekrar
+    /// kurmak yerine bir kez bağlanıp tüm fişler için sırayla NewDataObject + Post yapar.
+    /// </summary>
+    public Task<List<SatisSiparisAktarimSonuc>> SatisSiparisBatchAktarAsync(
+        LogoUnityCredentials cred,
+        IReadOnlyList<SatisSiparisFis> fisler,
+        CancellationToken ct = default)
+    {
+        var tcs = new TaskCompletionSource<List<SatisSiparisAktarimSonuc>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var th = new Thread(() =>
+        {
+            try
+            {
+                var sonuclar = ExecuteSatisSiparisBatchOnStaThread(cred, fisler, ct);
+                tcs.TrySetResult(sonuclar);
+            }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "Logo Unity SatışSiparişi batch hata");
+                tcs.TrySetException(ex);
+            }
+        });
+        th.SetApartmentState(ApartmentState.STA);
+        th.IsBackground = true;
+        th.Name = "LogoUnityStaThread-SatisSiparis-Batch";
+        th.Start();
+        return tcs.Task;
+    }
+
+    private SatisSiparisAktarimSonuc ExecuteSatisSiparisOnStaThread(
+        LogoUnityCredentials cred, SatisSiparisFis fis, CancellationToken ct)
+    {
+        object? app = null;
+        bool loggedIn = false;
+        try
+        {
+            app = CreateUnityApp();
+            bool ok;
+            try { ok = (bool)(Inv(app, "Login", cred.Kullanici, cred.Sifre, cred.FirmaNo) ?? false); }
+            catch (Exception ex) { return new SatisSiparisAktarimSonuc { Hata = "Login: " + ex.Message }; }
+            if (!ok)
+                return new SatisSiparisAktarimSonuc {
+                    Hata = $"Login reddedildi: {GetStr(app, "GetLastError")} - {GetStr(app, "GetLastErrorString")}" };
+            loggedIn = true;
+            return BirFisGonder(app, fis, ct);
+        }
+        finally
+        {
+            if (loggedIn && app != null) { try { Inv(app, "Logout"); } catch { } }
+            Release(app);
+        }
+    }
+
+    private List<SatisSiparisAktarimSonuc> ExecuteSatisSiparisBatchOnStaThread(
+        LogoUnityCredentials cred, IReadOnlyList<SatisSiparisFis> fisler, CancellationToken ct)
+    {
+        var sonuclar = new List<SatisSiparisAktarimSonuc>(fisler.Count);
+        object? app = null;
+        bool loggedIn = false;
+        try
+        {
+            app = CreateUnityApp();
+            bool ok;
+            try { ok = (bool)(Inv(app, "Login", cred.Kullanici, cred.Sifre, cred.FirmaNo) ?? false); }
+            catch (Exception ex)
+            {
+                foreach (var _ in fisler) sonuclar.Add(new SatisSiparisAktarimSonuc { Hata = "Login: " + ex.Message });
+                return sonuclar;
+            }
+            if (!ok)
+            {
+                var err = $"Login reddedildi: {GetStr(app, "GetLastError")} - {GetStr(app, "GetLastErrorString")}";
+                foreach (var _ in fisler) sonuclar.Add(new SatisSiparisAktarimSonuc { Hata = err });
+                return sonuclar;
+            }
+            loggedIn = true;
+
+            foreach (var fis in fisler)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                // İlk deneme: Sevkedilebilir (ORDER_STATUS=4)
+                var sonuc = BirFisGonder(app, fis, ct, orderStatus: 4);
+
+                // Risk aşılmışsa → fişi YENİ slip ile Öneri (ORDER_STATUS=1) olarak baştan dene.
+                // Logo'da reddedilmiş slip üzerinde STATUS değişikliği etkili olmuyor; tertemiz yeni nesne lazım.
+                if (!sonuc.Basarili && IsRiskAsildiHatasi(sonuc.Hata))
+                {
+                    var oneri = BirFisGonder(app, fis, ct, orderStatus: 1);
+                    if (oneri.Basarili)
+                    {
+                        if (!string.IsNullOrWhiteSpace(oneri.LogoFisNo))
+                            oneri.LogoFisNo = "Ö " + oneri.LogoFisNo;
+                        sonuc = oneri;
+                    }
+                    else
+                    {
+                        sonuc.Hata = "Risk aşıldı — Öneri retry de başarısız: " + oneri.Hata;
+                        sonuc.DiagLog = (sonuc.DiagLog ?? "") + Environment.NewLine
+                                      + "--- ÖNERİ RETRY ---" + Environment.NewLine + (oneri.DiagLog ?? "");
+                    }
+                }
+
+                sonuclar.Add(sonuc);
+            }
+            return sonuclar;
+        }
+        finally
+        {
+            if (loggedIn && app != null) { try { Inv(app, "Logout"); } catch { } }
+            Release(app);
+        }
+    }
+
+    /// <summary>
+    /// Logo Post() reddediş mesajından "Cari riski aşılmıştır" hatasını yakalar.
+    /// Logo hata kodu: 32436. Mesaj farklı dillerde olabilir — "risk" + "aş" anahtarları + 32436 kontrolü.
+    /// </summary>
+    private static bool IsRiskAsildiHatasi(string? err)
+    {
+        if (string.IsNullOrWhiteSpace(err)) return false;
+        var n = err.ToUpperInvariant()
+                   .Replace("Ş", "S").Replace("İ", "I")
+                   .Replace("Ç", "C").Replace("Ö", "O").Replace("Ü", "U").Replace("Ğ", "G");
+        if (n.Contains("32436")) return true;
+        if (n.Contains("RISK") && (n.Contains("ASIL") || n.Contains("ASMI"))) return true;
+        return false;
+    }
+
+    private SatisSiparisAktarimSonuc BirFisGonder(object app, SatisSiparisFis fis, CancellationToken ct, int orderStatus = 4)
+    {
+        var sonuc = new SatisSiparisAktarimSonuc { CariKodu = fis.CariKodu, AracNo = fis.AracNo };
+        var diag = new System.Text.StringBuilder();
+        object? slip = null;
+
+        // Fabrika çıkışına göre İŞ YERİ / BÖLÜM / FABRİKA / AMBAR seç
+        var fc = FabrikaCikisAyari.Coz(fis.FabrikaCikis);
+        if (fc == null)
+        {
+            sonuc.Hata = $"Bilinmeyen Fabrika Çıkışı: '{fis.FabrikaCikis}' — desteklenen: "
+                       + string.Join(", ", FabrikaCikisAyari.TanimliAdlar());
+            return sonuc;
+        }
+
+        try
+        {
+            slip = Inv(app, "NewDataObject", DO_SALES_ORDER);
+            if (slip == null) { sonuc.Hata = $"NewDataObject({DO_SALES_ORDER}=doSalesOrderSlip) null."; return sonuc; }
+            try { Inv(slip, "New"); } catch (Exception ex) { diag.AppendLine($"New(): {ex.Message}"); }
+
+            void TrySetH(string name, object value)
+            {
+                try { SetHeaderField(slip, name, value); diag.AppendLine($"H:{name}=OK ({value})"); }
+                catch (Exception ex) { diag.AppendLine($"H:{name}=FAIL ({ex.Message.Trim()})"); }
+            }
+
+            int LogoTimeEncode(int h, int mi, int s) => h * 16777216 + mi * 65536 + s * 256;
+
+            // ── HEADER ──
+            TrySetH("TYPE",            7);              // 7 = öneri/sevkedilebilir sınıfı (sales order TYPE)
+            TrySetH("TRCODE",          1);              // TRCODE 1 = standart sipariş
+            // Sipariş tarihi = aktarımın yapıldığı GÜN (Excel'deki "Sevk Tarihi" DEĞİL).
+            // Sevk/teslim tarihi satırların DUE_DATE'inde fis.TeslimTarihi olarak gider.
+            var siparisTarihi = DateTime.Today;
+            TrySetH("DATE",            siparisTarihi);
+            TrySetH("DATE_",           siparisTarihi);
+            TrySetH("TIME",            LogoTimeEncode(10, 0, 0));
+            TrySetH("FTIME",           LogoTimeEncode(10, 0, 0));
+            if (!string.IsNullOrWhiteSpace(fis.AracNo))
+            {
+                TrySetH("DOC_NUMBER", fis.AracNo);
+                TrySetH("DOCODE",     fis.AracNo);
+            }
+            TrySetH("ARP_CODE",        fis.CariKodu);
+            TrySetH("CLIENTCODE",      fis.CariKodu);
+            if (!string.IsNullOrWhiteSpace(fis.SevkiyatAdresi))
+            {
+                TrySetH("SHIPLOC_CODE", fis.SevkiyatAdresi);
+                TrySetH("SHIPADDR",     fis.SevkiyatAdresi);
+            }
+            if (!string.IsNullOrWhiteSpace(fis.MuhasebeHesabi))
+            {
+                TrySetH("GL_CODE",  fis.MuhasebeHesabi);
+                TrySetH("ACCCODE",  fis.MuhasebeHesabi);
+            }
+            // ── İş Yeri / Bölüm / Fabrika / Ambar — fabrika çıkışına göre DİNAMİK ──
+            // KeyNet decompile: Logo Unity COM doğru fabrika field adı "FACTORY" (NR yok!).
+            // DIVISION = İŞ YERİ (BÖLÜM değil — masaüstüde keşfedildi).
+            TrySetH("BRANCH",          fc.Branch);
+            TrySetH("DIVISION",        fc.Branch);
+            TrySetH("BRANCHNR",        fc.Branch);
+            TrySetH("DEPARTMENT",      fc.Department);
+            TrySetH("DEPNR",           fc.Department);
+            TrySetH("FACTORY",         fc.FactoryNr);
+            TrySetH("FACTORYNR",       fc.FactoryNr);
+            TrySetH("FACTORY_NR",      fc.FactoryNr);
+            TrySetH("SOURCE_WH",       fc.SourceWh);
+            TrySetH("SOURCEINDEX",     fc.SourceWh);
+            // 4 = Sevkedilebilir (S), 1 = Öneri (Ö). Default 4; risk aşımı retry'ında 1.
+            TrySetH("ORDER_STATUS",    orderStatus);
+            TrySetH("STATUS",          orderStatus);
+            // Ticari İşlem Grubu — sheet'e göre: CİPS→"G", İÇECEK→"SC"
+            TrySetH("TRADING_GRP",     TradingGrpCozumle(fis.Sheet));
+            TrySetH("SALESMAN_CODE",   fis.SatisElemani);
+
+            // Ödeme planı kuralı (öncelik):
+            //   1) Cari kartında plan VAR → PAYMENT_CODE = cari planı kodu
+            //      (Logo Unity COM cari default'unu otomatik uygulamıyor — elle yazıyoruz)
+            //   2) Yoksa Excel ödeme türü, sheet'e göre:
+            //        CİPS:   "Vadeli"→"40", "Peşin/P"→"PESIN CIPS"
+            //        İÇECEK: "Vadeli"→"40", "Peşin/P"→"PESIN SC"
+            string odemeKodu;
+            if (!string.IsNullOrWhiteSpace(fis.CariOdemePlanKodu))
+            {
+                odemeKodu = fis.CariOdemePlanKodu.Trim();
+                diag.AppendLine($"PAYMENT_CODE: cari planı = '{odemeKodu}'");
+            }
+            else
+            {
+                odemeKodu = OdemePlaniCozumle(fis.OdemeTuru, fis.Sheet);
+                if (!string.IsNullOrEmpty(odemeKodu))
+                    diag.AppendLine($"PAYMENT_CODE: Excel kuralı '{fis.OdemeTuru}' (sheet={fis.Sheet}) → '{odemeKodu}'");
+            }
+            if (!string.IsNullOrEmpty(odemeKodu))
+            {
+                TrySetH("PAYMENT_CODE", odemeKodu);
+                TrySetH("PAYDEFCODE",   odemeKodu);
+            }
+            TrySetH("CURRSEL_TOTAL",   1);
+
+            // ── TRANSACTIONS (satırlar) ──
+            object? dfRaw = GetProp(slip, "DataFields") ?? throw new InvalidOperationException("DataFields null");
+            object? txField = null;
+            try
+            {
+                int txIdx = Convert.ToInt32(Inv(dfRaw, "GetFieldIndex", "TRANSACTIONS") ?? -1);
+                if (txIdx >= 0) txField = IDispCall(dfRaw, "Item", DISPATCH_PROPERTYGET, new object?[] { txIdx });
+            }
+            catch { }
+            if (txField == null) try { txField = Inv(dfRaw, "FieldByName", "TRANSACTIONS"); } catch { }
+            if (txField == null) throw new InvalidOperationException("TRANSACTIONS alanı yok.");
+            object? txLines = GetProp(txField, "Lines") ?? throw new InvalidOperationException("TRANSACTIONS.Lines null.");
+
+            int sira = 0;
+            foreach (var sat in fis.Satirlar)
+            {
+                ct.ThrowIfCancellationRequested();
+                sira++;
+                try { Inv(txLines, "AppendLine"); }
+                catch (Exception ex) { diag.AppendLine($"L{sira}:AppendLine FAIL ({ex.Message})"); throw; }
+
+                int idx = Convert.ToInt32(GetProp(txLines, "Count") ?? 1) - 1;
+                object? line = GetLine(txLines, idx) ?? throw new InvalidOperationException($"Satır {sira} null.");
+
+                void TrySetS(string name, object value)
+                {
+                    try { SetField(line, name, value); diag.AppendLine($"L{sira}:{name}=OK ({value})"); }
+                    catch (Exception ex) { diag.AppendLine($"L{sira}:{name}=FAIL ({ex.Message.Trim()})"); }
+                }
+
+                TrySetS("TYPE",          0);
+                TrySetS("MASTER_CODE",   sat.MalzemeKodu);
+                TrySetS("ITEM_CODE",     sat.MalzemeKodu);
+                TrySetS("QUANTITY",      (double)sat.KoliMiktari);
+                TrySetS("AMOUNT",        (double)sat.KoliMiktari);
+                TrySetS("UNIT_CODE",     "KL");
+                TrySetS("UNIT_CONV1",    1);
+                TrySetS("UNIT_CONV2",    1);
+                TrySetS("DUE_DATE",      fis.TeslimTarihi);
+                // Satır seviyesi org alanları — fabrika çıkışına göre DİNAMİK
+                TrySetS("SOURCE_WH",     fc.SourceWh);
+                TrySetS("SOURCEINDEX",   fc.SourceWh);
+                TrySetS("DIVISION",      fc.Department);
+                TrySetS("DEPARTMENT",    fc.Department);
+                TrySetS("FACTORY",       fc.FactoryNr);
+                TrySetS("FACTORYNR",     fc.FactoryNr);
+                TrySetS("BRANCH",        fc.Branch);
+                TrySetS("LINE_NUMBER",   sira);
+                TrySetS("SALESMAN_CODE", fis.SatisElemani);
+                TrySetS("AFFECT_RISK",   1);
+                TrySetS("EDT_CURR",      1);
+
+                // Birim fiyatı manuel set ediyoruz — PRCLIST'ten okuduğumuz "genel" fiyat
+                // (cariye özel olmayan, en son tarihli). ApplyCampaign bu fiyat üzerinden
+                // indirim/komisyon satırlarını üretir.
+                if (sat.BirimFiyat > 0m)
+                {
+                    TrySetS("PRICE",      (double)sat.BirimFiyat);
+                    TrySetS("PC_PRICE",   (double)sat.BirimFiyat);
+                    TrySetS("EDT_PRICE",  (double)sat.BirimFiyat);
+                    TrySetS("ORG_PRICE",  (double)sat.BirimFiyat);
+                    TrySetS("TOTAL",      (double)(sat.BirimFiyat * sat.KoliMiktari));
+                    TrySetS("TOTAL_NET",  (double)(sat.BirimFiyat * sat.KoliMiktari));
+                }
+                else
+                {
+                    diag.AppendLine($"L{sira}: BirimFiyat=0 (PRCLIST'te bulunamadı)");
+                }
+            }
+
+            // ── Kampanyaları uygula ──
+            try
+            {
+                var camp = Inv(slip, "ApplyCampaign");
+                diag.AppendLine($"ApplyCampaign() ret={camp}");
+            }
+            catch (Exception ex) { diag.AppendLine($"ApplyCampaign FAIL ({ex.Message.Trim()})"); }
+
+            // ── ORG ALANLARINI YENİDEN ZORLA (son söz bizim olsun) ──
+            // Logo, ARP_CODE set edildikten sonra carinin default fabrikası/işyeri/ambarına göre
+            // header'ı override edebiliyor (924974: FACTORYNR=26 set ettik, 0 yazıldı).
+            // ApplyCampaign sonrası, Post'tan hemen önce bir kez daha set — Logo'nun override
+            // mantığını atlayarak doğru değerler kalır.
+            TrySetH("BRANCH",      fc.Branch);
+            TrySetH("DIVISION",    fc.Branch);
+            TrySetH("BRANCHNR",    fc.Branch);
+            TrySetH("DEPARTMENT",  fc.Department);
+            TrySetH("DEPNR",       fc.Department);
+            TrySetH("FACTORY",     fc.FactoryNr);
+            TrySetH("FACTORYNR",   fc.FactoryNr);
+            TrySetH("FACTORY_NR",  fc.FactoryNr);
+            TrySetH("SOURCE_WH",   fc.SourceWh);
+            TrySetH("SOURCEINDEX", fc.SourceWh);
+
+            // ── Post ──
+            bool posted;
+            try { posted = (bool)(Inv(slip, "Post") ?? false); }
+            catch (Exception ex) { sonuc.Hata = "Post: " + ex.Message; sonuc.DiagLog = diag.ToString(); return sonuc; }
+
+            if (!posted)
+            {
+                var err = CollectInvoiceError(slip);
+                sonuc.Hata = "Post reddedildi. " + err;
+                sonuc.DiagLog = diag.ToString();
+                return sonuc;
+            }
+
+            // Yeni fiş numarasını oku
+            try
+            {
+                object? dfPost = GetProp(slip, "DataFields");
+                if (dfPost != null)
+                {
+                    object? noField = FieldByName(slip, dfPost, "NUMBER")
+                                   ?? FieldByName(slip, dfPost, "FICHENO");
+                    if (noField != null) sonuc.LogoFisNo = (GetProp(noField, "Value"))?.ToString();
+                }
+            }
+            catch (Exception ex) { diag.AppendLine($"NUMBER oku: {ex.Message}"); }
+
+            sonuc.Basarili = true;
+            sonuc.DiagLog  = diag.ToString();
+            return sonuc;
+        }
+        catch (Exception ex)
+        {
+            sonuc.Hata = ex.Message;
+            sonuc.DiagLog = diag.ToString();
+            return sonuc;
+        }
+        finally { Release(slip); }
+    }
+
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+// Satış Siparişi aktarım sonuç DTO'su
+// ───────────────────────────────────────────────────────────────────────────────
+public class SatisSiparisAktarimSonuc
+{
+    public string CariKodu     { get; set; } = "";
+    public string AracNo       { get; set; } = "";
+    public bool   Basarili     { get; set; }
+    public string? Hata        { get; set; }
+    public string? LogoFisNo   { get; set; }
+    public string? DiagLog     { get; set; }
 }

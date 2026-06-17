@@ -5,6 +5,7 @@
 @inject ExcelExportService ExcelExportService
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
+@inject VoiceContextService VoiceCtx
 
 <PageTitle>Kur Bilgileri</PageTitle>
 
@@ -111,8 +112,96 @@
 
     protected override async Task OnInitializedAsync()
     {
+        RegisterVoice();
         _dovizler = await Logo.DovizSecenekleriAsync();
         await VeriYukle();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (VoiceCtx.Tools.Count == 0) RegisterVoice();
+    }
+
+    private void RegisterVoice() =>
+        VoiceCtx.Register(_voiceTools, "Kur Bilgileri",
+            getEkContext: VoiceContextOlustur,
+            onAksiyon:    SesliAksiyonCalistir);
+
+    private string VoiceContextOlustur()
+        => $"Mevcut tarih: {_baslangic:dd.MM.yyyy} - {_bitis:dd.MM.yyyy}; Kayıt: {_kurlar.Count}";
+
+    private List<SesliKomutTool> _voiceTools => new()
+    {
+        new SesliKomutTool
+        {
+            Ad = "tarih_ayarla",
+            Aciklama = "Başlangıç/bitiş tarihini doğrudan ayarlar. ISO yyyy-MM-dd. Sorgulamayı OTOMATİK yapmaz.",
+            Parametreler = new()
+            {
+                ["baslangic"] = new SesliKomutParam { Tip = "string", Aciklama = "Başlangıç tarihi (yyyy-MM-dd)." },
+                ["bitis"]     = new SesliKomutParam { Tip = "string", Aciklama = "Bitiş tarihi (yyyy-MM-dd)." },
+            }
+        },
+        new SesliKomutTool
+        {
+            Ad = "tarih_kisayol",
+            Aciklama = "Hızlı tarih aralığı seçer (bu_ay, bu_yil, gecen_ay, son_7_gun, son_30_gun, son_90_gun) — ayarlar ve sorgular.",
+            Parametreler = new()
+            {
+                ["aralik"] = new SesliKomutParam
+                {
+                    Tip = "string", Zorunlu = true,
+                    Aciklama = "Hangi aralık.",
+                    Secenekler = new() { "bugun", "dun", "bu_hafta", "bu_ay", "gecen_ay", "bu_yil", "son_7_gun", "son_30_gun", "son_90_gun" },
+                }
+            }
+        },
+        new SesliKomutTool { Ad = "sorgula",     Aciklama = "Kur kayıtlarını getirir." },
+        new SesliKomutTool { Ad = "rapor_getir", Aciklama = "sorgula ile aynı." },
+        new SesliKomutTool { Ad = "yenile",      Aciklama = "sorgula ile aynı." },
+        new SesliKomutTool { Ad = "excel_indir", Aciklama = "Sonuçları Excel'e indirir." },
+    };
+
+    private async Task SesliAksiyonCalistir(VoiceIntent intent)
+    {
+        try
+        {
+            switch (intent.Action)
+            {
+                case "tarih_ayarla":
+                {
+                    var (b, t) = VoiceDateHelper.ParseBaslangicBitis(intent.Params, _baslangic, _bitis);
+                    _baslangic = b; _bitis = t;
+                    Snackbar.Add($"Tarih: {b:dd.MM.yyyy} - {t:dd.MM.yyyy}", Severity.Success);
+                    break;
+                }
+                case "tarih_kisayol":
+                {
+                    var (b, t) = VoiceDateHelper.AraligiCevir(intent.Params.GetValueOrDefault("aralik") as string);
+                    if (b == null) { Snackbar.Add("Aralık anlaşılamadı.", Severity.Warning); return; }
+                    _baslangic = b; _bitis = t;
+                    Snackbar.Add($"Tarih: {b:dd.MM.yyyy} - {t:dd.MM.yyyy}", Severity.Success);
+                    await VeriYukle();
+                    break;
+                }
+                case "sorgula":
+                case "rapor_getir":
+                case "yenile":
+                    await VeriYukle();
+                    break;
+                case "excel_indir":
+                    await ExcelIndir();
+                    break;
+                default:
+                    Snackbar.Add($"Bilinmeyen aksiyon: {intent.Action}", Severity.Warning);
+                    break;
+            }
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Aksiyon hatası: {ex.Message}", Severity.Error);
+        }
     }
 
     private async Task VeriYukle()

@@ -35,6 +35,12 @@
         }
         else
         {
+            <MudChip T="string" Size="Size.Small" Class="mr-2"
+                     Color="@(EffTools.Count > 0 ? Color.Success : Color.Warning)"
+                     Icon="@Icons.Material.Filled.Build"
+                     Title="@($"Bu sayfa için kayıtlı sesli komut sayısı (sayfa adı: {EffSayfaAdi})")">
+                @EffTools.Count tool
+            </MudChip>
             <MudIconButton Icon="@(_dinleniyor ? Icons.Material.Filled.MicOff : Icons.Material.Filled.Mic)"
                            Color="@(_dinleniyor ? Color.Error : Color.Primary)"
                            Variant="Variant.Filled"
@@ -222,6 +228,16 @@
             await JS.InvokeVoidAsync("sesliKomutDurdur");
             return;
         }
+
+        // Tools boş olabilir — bu Ana Sayfa gibi yerlerde NORMALDİR (sadece navigation çalışır).
+        // O yüzden mikrofona izin veriyoruz. Sadece sayfa-içi araç bekleniyorsa ve henüz Register
+        // tamamlanmadıysa kısa bir polling — ama zorunlu değil, başarısız olsa da devam et.
+        if (EffTools.Count == 0 && ToolListesi == null)
+        {
+            for (int i = 0; i < 10 && EffTools.Count == 0; i++)
+                await Task.Delay(100);
+        }
+
         _sonHata = null;
         _dinlenenMetin = null;
         _finalAlindi = false;
@@ -407,21 +423,19 @@
             }
             else
             {
-                // Onay gerektiren listede mi? Liste boşsa tümü onay ister (eski davranış).
-                // Komut zinciri ise: içindeki herhangi bir adım onay gerektiriyorsa zincirin tamamı onay ister.
+                // YENİ DAVRANIŞ (v1.0.35): Default ONAY YOK. Sadece sayfa explicit olarak
+                // onay listesine eklediği aksiyonlar (örn mail_gonder, logo_ya_gonder)
+                // onay penceresi açar. Navigation ve normal komutlar direkt çalışır.
+                // Komut zinciri ise: içindeki herhangi bir adım onay listesinde varsa
+                // zincirin tamamı onay ister (güvenlik).
                 var effOnay = EffOnay;
-                bool onayGerek;
-                if (intent.Action == "komut_zinciri" && intent.Adimlar != null && intent.Adimlar.Count > 0)
+                bool onayGerek = false;
+                if (effOnay != null && effOnay.Count > 0)
                 {
-                    onayGerek = effOnay == null
-                                || effOnay.Count == 0
-                                || intent.Adimlar.Any(a => effOnay.Contains(a.Action));
-                }
-                else
-                {
-                    onayGerek = effOnay == null
-                                || effOnay.Count == 0
-                                || effOnay.Contains(intent.Action);
+                    if (intent.Action == "komut_zinciri" && intent.Adimlar != null && intent.Adimlar.Count > 0)
+                        onayGerek = intent.Adimlar.Any(a => effOnay.Contains(a.Action));
+                    else
+                        onayGerek = effOnay.Contains(intent.Action);
                 }
 
                 if (onayGerek)
@@ -499,7 +513,10 @@
 
                 Snackbar.Add($"[{i + 1}/{intent.Adimlar.Count}] {adim.Action}", Severity.Info);
                 await AksiyonuCalistir(adim);
-                await Task.Delay(150);
+                StateHasChanged();
+                // Adımlar arasında sayfa state'i güncellensin diye biraz nefes payı
+                // (örn tarih_ayarla → rapor_getir geçişinde DOM update).
+                await Task.Delay(400);
             }
             return;
         }
@@ -545,8 +562,26 @@
         var kuyruk = VoiceCtx.BekleyenAdimlar;
         VoiceCtx.BekleyenAdimlar = null;
 
-        // Sayfa data'sının yüklenmesi için kısa gecikme
-        await Task.Delay(700);
+        // 1) Kısa baz gecikme — DOM render + ilk async yüklemenin başlaması için.
+        await Task.Delay(800);
+
+        // 2) Sayfa kendi HazirOl sinyalini set ettiyse onu bekle (timeout 8sn).
+        //    Örn StokFisi → Son Fişlerim SQL'i; YanUrunler → tarih default'ları.
+        if (VoiceCtx.HazirOl != null)
+        {
+            try
+            {
+                var hazir = VoiceCtx.HazirOl();
+                var timeout = Task.Delay(8000);
+                await Task.WhenAny(hazir, timeout);
+            }
+            catch { /* HazirOl exception fırlatırsa adımları yine de dene */ }
+        }
+        else
+        {
+            // Sayfa HazirOl set etmediyse ek 1.5sn ver — çoğu rapor sayfası bu sürede dolar.
+            await Task.Delay(1500);
+        }
 
         int total = kuyruk.Count;
         int i = 0;
@@ -556,7 +591,11 @@
             var adim = kuyruk.Dequeue();
             Snackbar.Add($"[{i}/{total}] {adim.Action}", Severity.Info);
             await AksiyonuCalistir(adim);
-            await Task.Delay(200);
+            StateHasChanged();
+            // kopyala_fis gibi async data sokan adımlardan sonra biraz daha bekle —
+            // sonraki adım (örn miktar_degistir) satırların oluşmasını bekler.
+            var ekDelay = adim.Action is "kopyala_fis" or "sayfa_git" ? 1200 : 500;
+            await Task.Delay(ekDelay);
         }
     }
 }

@@ -16,6 +16,11 @@
         Sabnet'teki seçilen avans için kayıtlı müstahsil listesini, Logo'daki gerçekleşen
         ödemelerle karşılaştırır. <b>Ödenmeyenler</b> Sabnet'te fazladan kalan kayıtlardır
         (ödeme dönmüş ya da hiç gönderilmemiş olabilir).
+        <b>Logo'da fazla</b> ise Sabnet listesinde olmadığı halde Logo'da bu döneme ait
+        müstahsil ödemesi yapılmış kişilerdir (yetkili numara değişikliği, manuel ödeme,
+        başka bir avans formundan ödenmiş vb.). Sadece müstahsil cari kodları
+        (<code>S</code> + 11 hane TC veya <code>S</code> + 10 hane VKN) listelenir;
+        diğer cari ödemeleri (banka, kira, market vb.) elenir.
     </MudText>
 
     <MudGrid>
@@ -90,9 +95,16 @@
             </MudItem>
             <MudItem xs="12" md="3">
                 <MudCard Class="pa-3" Style="background:#FFF3E0;">
-                    <MudText Typo="Typo.body2" Color="Color.Warning">MÜKERRER (Logo'da fazla)</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Warning">MÜKERRER (Aynı kişiye 2+ ödeme)</MudText>
                     <MudText Typo="Typo.h5">@_sonuc.Mukerrer.Count kişi</MudText>
                     <MudText Typo="Typo.body1">@_sonuc.MukerrerToplam.ToString("N2") ₺</MudText>
+                </MudCard>
+            </MudItem>
+            <MudItem xs="12" md="3">
+                <MudCard Class="pa-3" Style="background:#FCE4EC;">
+                    <MudText Typo="Typo.body2" Style="color:#AD1457;">LOGO'DA FAZLA (Sabnet'te yok)</MudText>
+                    <MudText Typo="Typo.h5">@_sonuc.LogoFazlasi.Count kişi</MudText>
+                    <MudText Typo="Typo.body1">@_sonuc.LogoFazlasiToplam.ToString("N2") ₺</MudText>
                 </MudCard>
             </MudItem>
         </MudGrid>
@@ -161,6 +173,34 @@
         </MudPaper>
     }
 
+    @if (_sonuc.LogoFazlasi.Count > 0)
+    {
+        <MudPaper Class="pa-4 mt-4" Elevation="1">
+            <MudText Typo="Typo.h6" Style="color:#AD1457;" Class="mb-2">
+                <MudIcon Icon="@Icons.Material.Filled.PriorityHigh" Class="mr-1"/>
+                LOGO'DA FAZLA — Sabnet listesinde yok ama Logo'da bu döneme ödeme var (@_sonuc.LogoFazlasi.Count kişi)
+            </MudText>
+            <MudTable Items="_sonuc.LogoFazlasi" Dense="true" Hover="true" Bordered="true" Striped="true">
+                <HeaderContent>
+                    <MudTh>Ad Soyad (Logo Ünvan)</MudTh>
+                    <MudTh>TC / VKN (cari kodundan)</MudTh>
+                    <MudTh>Logo Cari</MudTh>
+                    <MudTh>Logo Tarih</MudTh>
+                    <MudTh Style="text-align:right">Logo Tutar</MudTh>
+                    <MudTh>Açıklama</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.AdSoyad</MudTd>
+                    <MudTd>@context.TcKimlikNo</MudTd>
+                    <MudTd>@context.LogoCariKod</MudTd>
+                    <MudTd>@(context.LogoTarih?.ToString("dd.MM.yyyy") ?? "-")</MudTd>
+                    <MudTd Style="text-align:right">@context.LogoTutar.ToString("N2")</MudTd>
+                    <MudTd>@context.Aciklama</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+    }
+
     @if (_sonuc.Eslesen.Count > 0)
     {
         <MudExpansionPanels Class="mt-4">
@@ -212,8 +252,11 @@
             _avansAdiBaslik = OdemeService.AvansAdlari.TryGetValue(_avansNo, out var ad)
                 ? $"{ad} ({_sozlesmeYili})" : $"Avans {_avansNo}";
 
-            Snackbar.Add($"Karşılaştırma tamamlandı. Sabnet'te fazla: {_sonuc.Odenmedi.Count}, Mükerrer: {_sonuc.Mukerrer.Count}",
-                _sonuc.Odenmedi.Count > 0 || _sonuc.Mukerrer.Count > 0 ? Severity.Warning : Severity.Success);
+            var uyariVar = _sonuc.Odenmedi.Count > 0 || _sonuc.Mukerrer.Count > 0 || _sonuc.LogoFazlasi.Count > 0;
+            Snackbar.Add(
+                $"Karşılaştırma tamamlandı. Sabnet'te fazla: {_sonuc.Odenmedi.Count}, " +
+                $"Mükerrer: {_sonuc.Mukerrer.Count}, Logo'da fazla: {_sonuc.LogoFazlasi.Count}",
+                uyariVar ? Severity.Warning : Severity.Success);
         }
         catch (Exception ex)
         {

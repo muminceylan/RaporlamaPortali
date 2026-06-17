@@ -6,6 +6,7 @@
 @inject ExcelExportService Excel
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
+@inject VoiceContextService VoiceCtx
 
 <PageTitle>İşletme Malzemeleri Raporu</PageTitle>
 
@@ -268,11 +269,129 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        RegisterVoice();
         _konfig = Konfig.Mevcut;
         if (_konfig.KampanyaBaslangic.HasValue) _kampanyaBas   = _konfig.KampanyaBaslangic;
         if (_konfig.KampanyaBitis.HasValue)     _kampanyaBitis = _konfig.KampanyaBitis;
         try { _ambarlar = await IsletmeService.AmbarSecenekleriAsync(); }
         catch { /* bağlantı hatası olsa bile sayfa açılsın */ }
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (VoiceCtx.Tools.Count == 0) RegisterVoice();
+    }
+
+    private void RegisterVoice() =>
+        VoiceCtx.Register(_voiceTools, "İşletme Malzemeleri Raporu",
+            getEkContext: VoiceContextOlustur,
+            onAksiyon:    SesliAksiyonCalistir);
+
+    private string VoiceContextOlustur()
+        => $"Devir tarihi: {_devirTarihi:dd.MM.yyyy}; Kampanya: {_kampanyaBas:dd.MM.yyyy} - {_kampanyaBitis:dd.MM.yyyy}; Aktif sekme: {_aktifSekme}";
+
+    private List<SesliKomutTool> _voiceTools => new()
+    {
+        new SesliKomutTool
+        {
+            Ad = "tarih_ayarla",
+            Aciklama = "Devir tarihini doğrudan ayarlar. ISO yyyy-MM-dd. Parametre adı: tarih veya baslangic.",
+            Parametreler = new()
+            {
+                ["tarih"]     = new SesliKomutParam { Tip = "string", Aciklama = "Devir tarihi (yyyy-MM-dd)." },
+                ["baslangic"] = new SesliKomutParam { Tip = "string", Aciklama = "Devir tarihi (yyyy-MM-dd) — alternatif isim." },
+            }
+        },
+        new SesliKomutTool
+        {
+            Ad = "tarih_kisayol",
+            Aciklama = "Hızlı tarih: devir tarihini bugün/dün gibi değerle ayarlar ve raporu getirir.",
+            Parametreler = new()
+            {
+                ["aralik"] = new SesliKomutParam
+                {
+                    Tip = "string", Zorunlu = true,
+                    Aciklama = "Hangi tarih.",
+                    Secenekler = new() { "bugun", "dun", "ay_basi", "yil_basi" },
+                }
+            }
+        },
+        new SesliKomutTool { Ad = "sorgula",     Aciklama = "Raporu getirir (Rapor Getir butonu)." },
+        new SesliKomutTool { Ad = "rapor_getir", Aciklama = "sorgula ile aynı." },
+        new SesliKomutTool { Ad = "yenile",      Aciklama = "sorgula ile aynı." },
+        new SesliKomutTool { Ad = "excel_indir", Aciklama = "Sonuçları Excel'e indirir." },
+        new SesliKomutTool
+        {
+            Ad = "sekme_sec",
+            Aciklama = "Aktif sekmeyi değiştirir (Yakıtlar, Torbalar, Kimyasallar).",
+            Parametreler = new()
+            {
+                ["sekme"] = new SesliKomutParam
+                {
+                    Tip = "string", Zorunlu = true,
+                    Aciklama = "Sekme adı.",
+                    Secenekler = new() { "yakitlar", "torbalar", "kimyasallar" },
+                }
+            }
+        },
+    };
+
+    private async Task SesliAksiyonCalistir(VoiceIntent intent)
+    {
+        try
+        {
+            switch (intent.Action)
+            {
+                case "tarih_ayarla":
+                {
+                    var deger = intent.Params.GetValueOrDefault("tarih") ?? intent.Params.GetValueOrDefault("baslangic");
+                    var t = VoiceDateHelper.Parse(deger);
+                    if (t == null) { Snackbar.Add("Tarih anlaşılamadı.", Severity.Warning); return; }
+                    _devirTarihi = t;
+                    Snackbar.Add($"Devir tarihi: {t:dd.MM.yyyy}", Severity.Success);
+                    break;
+                }
+                case "tarih_kisayol":
+                {
+                    var deger = intent.Params.GetValueOrDefault("aralik") as string;
+                    var t = VoiceDateHelper.Parse(deger);
+                    if (t == null) { Snackbar.Add("Aralık anlaşılamadı.", Severity.Warning); return; }
+                    _devirTarihi = t;
+                    Snackbar.Add($"Devir tarihi: {t:dd.MM.yyyy}", Severity.Success);
+                    await RaporGetir();
+                    break;
+                }
+                case "sorgula":
+                case "rapor_getir":
+                case "yenile":
+                    await RaporGetir();
+                    break;
+                case "excel_indir":
+                    await ExcelIndir();
+                    break;
+                case "sekme_sec":
+                {
+                    var s = (intent.Params.GetValueOrDefault("sekme") as string ?? "").ToLower();
+                    _aktifSekme = s switch
+                    {
+                        "yakitlar"    => 0,
+                        "torbalar"    => 1,
+                        "kimyasallar" => 2,
+                        _             => _aktifSekme
+                    };
+                    Snackbar.Add($"Sekme: {s}", Severity.Info);
+                    break;
+                }
+                default:
+                    Snackbar.Add($"Bilinmeyen aksiyon: {intent.Action}", Severity.Warning);
+                    break;
+            }
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Aksiyon hatası: {ex.Message}", Severity.Error);
+        }
     }
 
     private async Task RaporGetir()

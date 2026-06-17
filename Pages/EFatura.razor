@@ -663,9 +663,7 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        VoiceCtx.Register(_voiceTools, "e-Fatura Görüntüleme",
-            getEkContext: VoiceContextOlustur,
-            onAksiyon:    SesliAksiyonCalistir);
+        RegisterVoice();
         if (Svc.BaglantiTanimliMi)
         {
             try
@@ -678,6 +676,16 @@ else
             }
         }
     }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (VoiceCtx.Tools.Count == 0) RegisterVoice();
+    }
+
+    private void RegisterVoice() =>
+        VoiceCtx.Register(_voiceTools, "e-Fatura Görüntüleme",
+            getEkContext: VoiceContextOlustur,
+            onAksiyon:    SesliAksiyonCalistir);
 
     private async Task Sorgula()
     {
@@ -820,8 +828,19 @@ else
         },
         new SesliKomutTool
         {
+            Ad        = "tarih_ayarla",
+            Aciklama  = "Tarih kutucuklarını doğrudan ayarlar. ISO yyyy-MM-dd. Sorgulamayı OTOMATİK yapmaz "
+                      + "— komut_zinciri içinde sonra `sorgula` çağrılmalı.",
+            Parametreler = new()
+            {
+                ["baslangic"] = new SesliKomutParam { Tip = "string", Aciklama = "Başlangıç tarihi (yyyy-MM-dd)." },
+                ["bitis"]     = new SesliKomutParam { Tip = "string", Aciklama = "Bitiş tarihi (yyyy-MM-dd)." },
+            }
+        },
+        new SesliKomutTool
+        {
             Ad        = "tarih_araligi",
-            Aciklama  = "Tarih aralığını ayarlar (bu ay, geçen ay, son 30 gün vb).",
+            Aciklama  = "Tarih aralığını kısayol enum ile ayarlar VE sorgular (bu ay, geçen ay, son 30 gün vb).",
             Parametreler = new()
             {
                 ["aralik"] = new SesliKomutParam
@@ -885,10 +904,16 @@ else
                     await Sorgula();
                     break;
                 }
+                case "tarih_ayarla":
+                {
+                    var (b, t) = VoiceDateHelper.ParseBaslangicBitis(intent.Params, _bas, _bit);
+                    _bas = b; _bit = t;
+                    Snackbar.Add($"Tarih: {b:dd.MM.yyyy} - {t:dd.MM.yyyy}", Severity.Success);
+                    break;
+                }
                 case "tarih_araligi":
                 {
-                    var aralik = (intent.Params.GetValueOrDefault("aralik") as string ?? "").ToLower();
-                    var (b, t) = TarihAraligiCevir(aralik);
+                    var (b, t) = VoiceDateHelper.AraligiCevir(intent.Params.GetValueOrDefault("aralik") as string);
                     if (b == null) { Snackbar.Add("Aralık anlaşılamadı.", Severity.Warning); return; }
                     _bas = b; _bit = t;
                     Snackbar.Add($"Tarih: {b:dd.MM.yyyy} - {t:dd.MM.yyyy}", Severity.Success);

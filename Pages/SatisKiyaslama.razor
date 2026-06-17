@@ -1,0 +1,319 @@
+@page "/satis-kiyaslama"
+@using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
+@inject SatisKiyaslamaService Service
+@inject ExcelExportService Excel
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Satış Kıyaslama</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.CompareArrows" Class="mr-2" />
+    Satış Kıyaslama
+</MudText>
+
+<MudPaper Class="pa-4 mb-3">
+    <MudGrid>
+        <MudItem xs="12" md="6">
+            <MudAutocomplete T="CariBilgi" Label="Cari (kod veya ünvan ile ara)"
+                             @bind-Value="_cari"
+                             SearchFunc="@CariAra"
+                             ToStringFunc="@(c => c == null ? "" : $"{c.Kod} — {c.Unvan}")"
+                             ResetValueOnEmptyText="true"
+                             CoerceText="true"
+                             Variant="Variant.Outlined"
+                             Margin="Margin.Dense"
+                             Placeholder="örn 120.04.2485 veya METİNOĞULLARI"
+                             MinCharacters="3" DebounceInterval="350" />
+        </MudItem>
+        <MudItem xs="12" md="6" Class="d-flex align-end gap-2 flex-wrap">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Refresh"
+                       OnClick="Kiyasla" Disabled="@(_yukleniyor || _cari is null)">
+                @if (_yukleniyor) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+                Kıyasla
+            </MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Success"
+                       StartIcon="@Icons.Material.Filled.FileDownload"
+                       OnClick="ExcelIndir"
+                       Disabled="@(_sonuc == null || _sonuc.Satirlar.Count == 0)">
+                Excel
+            </MudButton>
+        </MudItem>
+
+        <MudItem xs="12" md="3">
+            <MudDatePicker Label="A — Başlangıç" @bind-Date="_aBas"
+                           DateFormat="dd.MM.yyyy" Editable="true"
+                           PickerVariant="PickerVariant.Dialog" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudDatePicker Label="A — Bitiş" @bind-Date="_aBit"
+                           DateFormat="dd.MM.yyyy" Editable="true"
+                           PickerVariant="PickerVariant.Dialog" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudDatePicker Label="B — Başlangıç" @bind-Date="_bBas"
+                           DateFormat="dd.MM.yyyy" Editable="true"
+                           PickerVariant="PickerVariant.Dialog" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudDatePicker Label="B — Bitiş" @bind-Date="_bBit"
+                           DateFormat="dd.MM.yyyy" Editable="true"
+                           PickerVariant="PickerVariant.Dialog" />
+        </MudItem>
+
+        <MudItem xs="12">
+            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
+                <MudButton OnClick="@(() => Hizli(0))">Bu yıl vs Geçen yıl</MudButton>
+                <MudButton OnClick="@(() => Hizli(1))">Son 12 ay vs Önceki 12 ay</MudButton>
+                <MudButton OnClick="@(() => Hizli(2))">Bu ay vs Geçen ay</MudButton>
+                <MudButton OnClick="@(() => Hizli(3))">Bu çeyrek vs Önceki çeyrek</MudButton>
+            </MudButtonGroup>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@if (_hata != null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-3">@_hata</MudAlert>
+}
+
+@if (_sonuc != null && _sonuc.Cari.LogicalRef > 0)
+{
+    <MudPaper Class="pa-3 mb-3" Style="background:#E3F2FD;">
+        <MudGrid>
+            <MudItem xs="12" md="6">
+                <MudText Typo="Typo.subtitle2" Color="Color.Primary">CARİ</MudText>
+                <MudText Typo="Typo.h6">@_sonuc.Cari.Kod</MudText>
+                <MudText Typo="Typo.body2">@_sonuc.Cari.Unvan</MudText>
+                @if (!string.IsNullOrEmpty(_sonuc.Cari.Vkn) || !string.IsNullOrEmpty(_sonuc.Cari.Sehir))
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        @_sonuc.Cari.Vkn @(string.IsNullOrEmpty(_sonuc.Cari.Sehir) ? "" : "— " + _sonuc.Cari.Sehir)
+                    </MudText>
+                }
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    <MudGrid Class="mb-3">
+        @OzetKart("A Dönemi", _sonuc.DonemA, "#1565C0", "#BBDEFB")
+        @OzetKart("B Dönemi", _sonuc.DonemB, "#6A1B9A", "#E1BEE7")
+        @FarkKart(_sonuc.DonemA, _sonuc.DonemB)
+    </MudGrid>
+
+    <MudPaper Class="pa-2">
+        <div style="overflow:auto; max-height:calc(100vh - 460px);">
+            <table class="kiyas-table">
+                <thead>
+                    <tr class="baslik-row">
+                        <th rowspan="2">Malzeme Kodu</th>
+                        <th rowspan="2" style="width:28%">Malzeme Adı</th>
+                        <th rowspan="2">Birim</th>
+                        <th colspan="3" class="grup-a">A Dönemi</th>
+                        <th colspan="3" class="grup-b">B Dönemi</th>
+                        <th colspan="3" class="grup-f">Fark (A−B)</th>
+                    </tr>
+                    <tr class="baslik-row">
+                        <th class="grup-a num">Miktar</th>
+                        <th class="grup-a num">Net Tutar</th>
+                        <th class="grup-a num">Ort. Fiyat</th>
+                        <th class="grup-b num">Miktar</th>
+                        <th class="grup-b num">Net Tutar</th>
+                        <th class="grup-b num">Ort. Fiyat</th>
+                        <th class="grup-f num">Miktar</th>
+                        <th class="grup-f num">Tutar</th>
+                        <th class="grup-f num">Tutar %</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var x in _sonuc.Satirlar)
+                    {
+                        var farkSinif = x.FarkTutar > 0 ? "art" : (x.FarkTutar < 0 ? "azal" : "");
+                        <tr>
+                            <td>@x.MalzemeKodu</td>
+                            <td>@x.MalzemeAdi</td>
+                            <td>@x.Birim</td>
+                            <td class="num">@Fmt(x.A_Miktar)</td>
+                            <td class="num">@Fmt(x.A_NetTutar)</td>
+                            <td class="num">@Fmt(x.A_OrtFiyat)</td>
+                            <td class="num">@Fmt(x.B_Miktar)</td>
+                            <td class="num">@Fmt(x.B_NetTutar)</td>
+                            <td class="num">@Fmt(x.B_OrtFiyat)</td>
+                            <td class="num @farkSinif">@Fmt(x.FarkMiktar)</td>
+                            <td class="num @farkSinif">@Fmt(x.FarkTutar)</td>
+                            <td class="num @farkSinif">@Yuzde(x.FarkYuzdeTutar)</td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot>
+                    <tr class="toplam-row">
+                        <td colspan="3">TOPLAM (@_sonuc.Satirlar.Count malzeme)</td>
+                        <td class="num">@Fmt(_sonuc.DonemA.ToplamMiktar)</td>
+                        <td class="num">@Fmt(_sonuc.DonemA.NetTutar)</td>
+                        <td></td>
+                        <td class="num">@Fmt(_sonuc.DonemB.ToplamMiktar)</td>
+                        <td class="num">@Fmt(_sonuc.DonemB.NetTutar)</td>
+                        <td></td>
+                        <td class="num">@Fmt(_sonuc.DonemA.ToplamMiktar - _sonuc.DonemB.ToplamMiktar)</td>
+                        <td class="num">@Fmt(_sonuc.DonemA.NetTutar - _sonuc.DonemB.NetTutar)</td>
+                        <td class="num">@Yuzde(YuzdeFark(_sonuc.DonemA.NetTutar, _sonuc.DonemB.NetTutar))</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </MudPaper>
+}
+else if (!_yukleniyor && _sonuc != null && _sonuc.Cari.LogicalRef == 0)
+{
+    <MudAlert Severity="Severity.Warning">Cari bulunamadı.</MudAlert>
+}
+else if (!_yukleniyor)
+{
+    <MudAlert Severity="Severity.Info">Cariyi seçip iki dönem tarihi girin, sonra <b>Kıyasla</b>'ya basın.</MudAlert>
+}
+
+@code {
+    RenderFragment OzetKart(string baslik, DonemOzeti ozet, string accent, string bg) => @<MudItem xs="12" md="4">
+        <MudPaper Class="pa-3" Style="@($"background:{bg};")">
+            <MudText Typo="Typo.caption" Style="@($"color:{accent};")"><b>@baslik</b> — @ozet.Etiket</MudText>
+            <MudText Typo="Typo.h6">@Fmt(ozet.NetTutar) ₺</MudText>
+            <MudText Typo="Typo.body2">@ozet.FisSayisi fiş · KDV @Fmt(ozet.KdvTutar) · Brüt @Fmt(ozet.BrutTutar)</MudText>
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Toplam miktar (satış satırı): @Fmt(ozet.ToplamMiktar)</MudText>
+        </MudPaper>
+    </MudItem>;
+
+    RenderFragment FarkKart(DonemOzeti a, DonemOzeti b) => @<MudItem xs="12" md="4">
+        <MudPaper Class="pa-3" Style="background:#FFF9C4;">
+            <MudText Typo="Typo.caption" Color="Color.Warning"><b>FARK (A − B)</b></MudText>
+            @{
+                var fark    = a.NetTutar - b.NetTutar;
+                var yuzde   = YuzdeFark(a.NetTutar, b.NetTutar);
+                var renk    = fark >= 0 ? "#2E7D32" : "#C62828";
+            }
+            <MudText Typo="Typo.h6" Style="@($"color:{renk};")">@Fmt(fark) ₺  (@Yuzde(yuzde))</MudText>
+            <MudText Typo="Typo.body2">Fiş farkı: @((a.FisSayisi - b.FisSayisi).ToString("N0"))</MudText>
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Miktar farkı: @Fmt(a.ToplamMiktar - b.ToplamMiktar)</MudText>
+        </MudPaper>
+    </MudItem>;
+
+    private CariBilgi? _cari;
+    private DateTime? _aBas = new DateTime(DateTime.Today.Year, 1, 1);
+    private DateTime? _aBit = DateTime.Today;
+    private DateTime? _bBas = new DateTime(DateTime.Today.Year - 1, 1, 1);
+    private DateTime? _bBit = new DateTime(DateTime.Today.Year - 1, DateTime.Today.Month, DateTime.Today.Day);
+
+    private SatisKiyaslamaSonuc? _sonuc;
+    private bool _yukleniyor;
+    private string? _hata;
+
+    private async Task<IEnumerable<CariBilgi>> CariAra(string val)
+    {
+        if (string.IsNullOrWhiteSpace(val) || val.Length < 3) return Array.Empty<CariBilgi>();
+        try { return await Service.CariAraAsync(val); }
+        catch { return Array.Empty<CariBilgi>(); }
+    }
+
+    private void Hizli(int tip)
+    {
+        var bugun = DateTime.Today;
+        switch (tip)
+        {
+            case 0: // bu yıl vs geçen yıl (1 Oca - bugün)
+                _aBas = new DateTime(bugun.Year, 1, 1);
+                _aBit = bugun;
+                _bBas = new DateTime(bugun.Year - 1, 1, 1);
+                _bBit = new DateTime(bugun.Year - 1, bugun.Month, bugun.Day);
+                break;
+            case 1: // son 12 ay vs önceki 12 ay
+                _aBas = bugun.AddYears(-1).AddDays(1);
+                _aBit = bugun;
+                _bBas = bugun.AddYears(-2).AddDays(1);
+                _bBit = bugun.AddYears(-1);
+                break;
+            case 2: // bu ay vs geçen ay
+                _aBas = new DateTime(bugun.Year, bugun.Month, 1);
+                _aBit = bugun;
+                var ga = bugun.AddMonths(-1);
+                _bBas = new DateTime(ga.Year, ga.Month, 1);
+                _bBit = new DateTime(ga.Year, ga.Month, DateTime.DaysInMonth(ga.Year, ga.Month));
+                break;
+            case 3: // bu çeyrek vs önceki çeyrek
+                int q = (bugun.Month - 1) / 3;
+                _aBas = new DateTime(bugun.Year, q * 3 + 1, 1);
+                _aBit = bugun;
+                var oc = _aBas.Value.AddMonths(-3);
+                _bBas = oc;
+                _bBit = _aBas.Value.AddDays(-1);
+                break;
+        }
+    }
+
+    private async Task Kiyasla()
+    {
+        if (_cari == null) { Snackbar.Add("Cari seçin.", Severity.Warning); return; }
+        if (_aBas == null || _aBit == null || _bBas == null || _bBit == null)
+        { Snackbar.Add("Tüm tarihleri doldurun.", Severity.Warning); return; }
+        if (_aBit < _aBas || _bBit < _bBas)
+        { Snackbar.Add("Bitiş başlangıçtan küçük olamaz.", Severity.Warning); return; }
+
+        _yukleniyor = true; _hata = null;
+        try
+        {
+            _sonuc = await Service.KiyaslaAsync(_cari.Kod,
+                _aBas.Value, _aBit.Value, _bBas.Value, _bBit.Value);
+            Snackbar.Add($"{_sonuc.Satirlar.Count} malzeme yüklendi.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _hata = ex.Message;
+            Snackbar.Add("Hata: " + ex.Message, Severity.Error);
+        }
+        finally { _yukleniyor = false; }
+    }
+
+    private async Task ExcelIndir()
+    {
+        if (_sonuc == null) return;
+        try
+        {
+            var bytes = Excel.ExportSatisKiyaslama(_sonuc);
+            var dosya = $"SatisKiyaslama_{_sonuc.Cari.Kod}_{_aBas:yyyyMMdd}-{_aBit:yyyyMMdd}_vs_{_bBas:yyyyMMdd}-{_bBit:yyyyMMdd}.xlsx";
+            await JS.InvokeVoidAsync("downloadFile", dosya, Convert.ToBase64String(bytes),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            Snackbar.Add("Excel indirildi.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Excel hatası: " + ex.Message, Severity.Error);
+        }
+    }
+
+    private static string Fmt(decimal d) => d == 0 ? "" :
+        d.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("tr-TR"));
+    private static string Yuzde(decimal y) =>
+        y.ToString("+#,##0.0;-#,##0.0;0", System.Globalization.CultureInfo.GetCultureInfo("tr-TR")) + " %";
+    private static decimal YuzdeFark(decimal a, decimal b) =>
+        b == 0 ? (a == 0 ? 0 : 100m) : (a - b) / b * 100m;
+}
+
+<style>
+    .kiyas-table { width:100%; border-collapse:collapse; font-size:0.82rem; }
+    .kiyas-table thead th {
+        position:sticky; top:0; background:#BBDEFB; font-weight:bold;
+        padding:6px 8px; border:1px solid #90caf9; text-align:left; z-index:3;
+    }
+    .kiyas-table thead th.grup-a { background:#BBDEFB; }
+    .kiyas-table thead th.grup-b { background:#E1BEE7; }
+    .kiyas-table thead th.grup-f { background:#FFF59D; }
+    .kiyas-table tbody td { padding:4px 8px; border:1px solid #eee; }
+    .kiyas-table tbody tr:nth-child(odd) { background:#fafafa; }
+    .kiyas-table tbody tr:hover { background:#e3f2fd; }
+    .kiyas-table .num { text-align:right; font-variant-numeric: tabular-nums; }
+    .kiyas-table .art  { color:#2E7D32; font-weight:600; }
+    .kiyas-table .azal { color:#C62828; font-weight:600; }
+    .kiyas-table tfoot .toplam-row td {
+        background:#FFFDE7; font-weight:bold; padding:6px 8px; border-top:2px solid #1976d2;
+    }
+</style>

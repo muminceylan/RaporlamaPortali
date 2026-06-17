@@ -412,11 +412,19 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        RegisterVoice();
+        await YenileAsync();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (VoiceCtx.Tools.Count == 0) RegisterVoice();
+    }
+
+    private void RegisterVoice() =>
         VoiceCtx.Register(_voiceTools, "Pancar Raporu",
             onayList: _voiceOnayAksiyonlar,
             onAksiyon: SesliAksiyonCalistir);
-        await YenileAsync();
-    }
 
     // ============================================================
     // SESLİ KOMUT

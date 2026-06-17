@@ -171,9 +171,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        VoiceCtx.Register(_voiceTools, "Cari Hesap Hareketleri",
-            getEkContext: VoiceContextOlustur,
-            onAksiyon:    SesliAksiyonCalistir);
+        RegisterVoice();
         try
         {
             _tumCariler = await Logo.CariSecenekleriAsync();
@@ -183,6 +181,16 @@
             Snackbar.Add($"Cari listesi yüklenemedi: {ex.Message}", Severity.Error);
         }
     }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (VoiceCtx.Tools.Count == 0) RegisterVoice();
+    }
+
+    private void RegisterVoice() =>
+        VoiceCtx.Register(_voiceTools, "Cari Hesap Hareketleri",
+            getEkContext: VoiceContextOlustur,
+            onAksiyon:    SesliAksiyonCalistir);
 
     private static readonly System.Globalization.CompareInfo _ci = System.Globalization.CultureInfo.InvariantCulture.CompareInfo;
     private const System.Globalization.CompareOptions _cmp =
@@ -287,8 +295,18 @@
     {
         new SesliKomutTool
         {
+            Ad        = "tarih_ayarla",
+            Aciklama  = "Tarih kutucuklarını doğrudan ayarlar. ISO yyyy-MM-dd.",
+            Parametreler = new()
+            {
+                ["baslangic"] = new SesliKomutParam { Tip = "string", Aciklama = "Başlangıç tarihi (yyyy-MM-dd)." },
+                ["bitis"]     = new SesliKomutParam { Tip = "string", Aciklama = "Bitiş tarihi (yyyy-MM-dd)." },
+            }
+        },
+        new SesliKomutTool
+        {
             Ad        = "tarih_araligi",
-            Aciklama  = "Tarih aralığını ayarlar (bu ay, geçen ay, son 30 gün, bu yıl vb).",
+            Aciklama  = "Tarih aralığını kısayol enum ile ayarlar (bu ay, geçen ay, son 30 gün, bu yıl vb).",
             Parametreler = new()
             {
                 ["aralik"] = new SesliKomutParam
@@ -343,24 +361,16 @@
         {
             switch (intent.Action)
             {
+                case "tarih_ayarla":
+                {
+                    var (b, t) = VoiceDateHelper.ParseBaslangicBitis(intent.Params, _baslangic, _bitis);
+                    _baslangic = b; _bitis = t;
+                    Snackbar.Add($"Tarih: {b:dd.MM.yyyy} - {t:dd.MM.yyyy}", Severity.Success);
+                    break;
+                }
                 case "tarih_araligi":
                 {
-                    var aralik = (intent.Params.GetValueOrDefault("aralik") as string ?? "").ToLower();
-                    var bugun = DateTime.Today;
-                    (DateTime? b, DateTime? t) = aralik switch
-                    {
-                        "bugun"      => ((DateTime?)bugun, (DateTime?)bugun),
-                        "dun"        => (bugun.AddDays(-1), bugun.AddDays(-1)),
-                        "bu_hafta"   => (bugun.AddDays(-(((int)bugun.DayOfWeek + 6) % 7)), bugun),
-                        "bu_ay"      => (new DateTime(bugun.Year, bugun.Month, 1), bugun),
-                        "gecen_ay"   => (new DateTime(bugun.Year, bugun.Month, 1).AddMonths(-1),
-                                         new DateTime(bugun.Year, bugun.Month, 1).AddDays(-1)),
-                        "bu_yil"     => (new DateTime(bugun.Year, 1, 1), bugun),
-                        "son_7_gun"  => (bugun.AddDays(-7),  bugun),
-                        "son_30_gun" => (bugun.AddDays(-30), bugun),
-                        "son_90_gun" => (bugun.AddDays(-90), bugun),
-                        _ => (null, null),
-                    };
+                    var (b, t) = VoiceDateHelper.AraligiCevir(intent.Params.GetValueOrDefault("aralik") as string);
                     if (b == null) { Snackbar.Add("Aralık anlaşılamadı.", Severity.Warning); return; }
                     _baslangic = b; _bitis = t;
                     Snackbar.Add($"Tarih: {b:dd.MM.yyyy} - {t:dd.MM.yyyy}", Severity.Success);

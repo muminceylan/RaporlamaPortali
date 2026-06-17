@@ -63,6 +63,12 @@
                 <MudNavLink Href="/isletme-malzemeleri-raporu" Icon="@Icons.Material.Filled.Factory" IconColor="Color.Success">
                     İşletme Malzemeleri Raporu
                 </MudNavLink>
+                <MudNavLink Href="/satis-kiyaslama" Icon="@Icons.Material.Filled.CompareArrows" IconColor="Color.Success">
+                    Satış Kıyaslama
+                </MudNavLink>
+                <MudNavLink Href="/alis-kiyaslama" Icon="@Icons.Material.Filled.SwapHoriz" IconColor="Color.Success">
+                    Alış Kıyaslama
+                </MudNavLink>
             </MudNavGroup>
 
             <MudNavGroup Title="Avans İşlemleri" Icon="@Icons.Material.Filled.Payments"
@@ -83,6 +89,9 @@
                 </MudNavLink>
                 <MudNavLink Href="/satis-faturasi-aktar" Icon="@Icons.Material.Filled.ReceiptLong" IconColor="Color.Tertiary">
                     Satış Faturası → Logo
+                </MudNavLink>
+                <MudNavLink Href="/satis-siparis-aktar" Icon="@Icons.Material.Filled.ShoppingCart" IconColor="Color.Tertiary">
+                    Satış Siparişi → Logo (Excel)
                 </MudNavLink>
                 <MudNavLink Href="/banka-hesap-ayarlari" Icon="@Icons.Material.Filled.Settings" IconColor="Color.Tertiary">
                     Banka Hesap Ayarları
@@ -316,7 +325,7 @@
     private void SenkronizeEt(string uri)
     {
         var path = new Uri(uri).AbsolutePath.ToLowerInvariant().TrimEnd('/');
-        if (path is "/yan-urunler" or "/pancar-raporu" or "/seker-dairesi" or "/seker-dairesi-yan-urunler" or "/tarim-kredi-raporu" or "/finans-raporu" or "/isletme-malzemeleri-raporu")
+        if (path is "/yan-urunler" or "/pancar-raporu" or "/seker-dairesi" or "/seker-dairesi-yan-urunler" or "/tarim-kredi-raporu" or "/finans-raporu" or "/isletme-malzemeleri-raporu" or "/satis-kiyaslama" or "/alis-kiyaslama")
             _acikGrup = "raporlar";
         else if (path is "/odeme-karsilastir" or "/sabnet-logo-karsilastir" or "/odeme-kontrol" or "/odeme-dosyasi" or "/satis-faturasi-aktar" or "/banka-hesap-ayarlari")
             _acikGrup = "avans";

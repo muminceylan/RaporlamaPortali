@@ -1,10 +1,12 @@
 @page "/malzeme-hareket-listesi"
 @using RaporlamaPortali.Models
+@using RaporlamaPortali.Services
 @inject MalzemeHareketService HareketService
 @inject MalzemeListeService ListeService
 @inject ExcelExportService ExcelService
 @inject IJSRuntime JS
 @inject ISnackbar Snackbar
+@inject VoiceContextService VoiceCtx
 
 <PageTitle>Malzeme Hareket Listesi</PageTitle>
 
@@ -377,10 +379,12 @@ else if (!_yukleniyor)
     protected override void OnInitialized()
     {
         _listeler = ListeService.Listele().ToList();
+        RegisterVoice();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (VoiceCtx.Tools.Count == 0) RegisterVoice();
         if (firstRender)
         {
             try
@@ -390,6 +394,118 @@ else if (!_yukleniyor)
                 StateHasChanged();
             }
             catch { _apiUrl = "http://localhost:5050/api/malzeme-hareket"; }
+        }
+    }
+
+    private void RegisterVoice() =>
+        VoiceCtx.Register(_voiceTools, "Malzeme Hareket Listesi",
+            getEkContext: VoiceContextOlustur,
+            onAksiyon:    SesliAksiyonCalistir);
+
+    private string VoiceContextOlustur()
+        => $"Mevcut tarih: {_baslangic:dd.MM.yyyy} - {_bitis:dd.MM.yyyy}; Mod: {_mod}; Kod sayısı: {_kodlar.Count}; Tek kod: {_tekKod}";
+
+    private List<SesliKomutTool> _voiceTools => new()
+    {
+        new SesliKomutTool
+        {
+            Ad = "tarih_ayarla",
+            Aciklama = "Başlangıç/bitiş tarihini doğrudan ayarlar. ISO yyyy-MM-dd. Sorgulamayı OTOMATİK yapmaz.",
+            Parametreler = new()
+            {
+                ["baslangic"] = new SesliKomutParam { Tip = "string", Aciklama = "Başlangıç tarihi (yyyy-MM-dd)." },
+                ["bitis"]     = new SesliKomutParam { Tip = "string", Aciklama = "Bitiş tarihi (yyyy-MM-dd)." },
+            }
+        },
+        new SesliKomutTool
+        {
+            Ad = "tarih_kisayol",
+            Aciklama = "Hızlı tarih aralığı seçer (bu_ay, bu_yil, gecen_ay, son_7_gun, son_30_gun, son_90_gun) — ayarlar ve sorgular.",
+            Parametreler = new()
+            {
+                ["aralik"] = new SesliKomutParam
+                {
+                    Tip = "string", Zorunlu = true,
+                    Aciklama = "Hangi aralık.",
+                    Secenekler = new() { "bugun", "dun", "bu_hafta", "bu_ay", "gecen_ay", "bu_yil", "son_7_gun", "son_30_gun", "son_90_gun" },
+                }
+            }
+        },
+        new SesliKomutTool
+        {
+            Ad = "malzeme_kodu_ayarla",
+            Aciklama = "Tek kod modunda malzeme kodunu ayarlar ve sorgular.",
+            Parametreler = new()
+            {
+                ["kod"] = new SesliKomutParam { Tip = "string", Zorunlu = true, Aciklama = "Malzeme kodu (örn: S.706.04.0001)." },
+            }
+        },
+        new SesliKomutTool { Ad = "sorgula",     Aciklama = "Hareket listesini getirir." },
+        new SesliKomutTool { Ad = "rapor_getir", Aciklama = "sorgula ile aynı." },
+        new SesliKomutTool { Ad = "yenile",      Aciklama = "sorgula ile aynı." },
+        new SesliKomutTool { Ad = "excel_indir", Aciklama = "Sonuçları Excel'e indirir." },
+        new SesliKomutTool
+        {
+            Ad = "filtreleri_temizle",
+            Aciklama = "Sütun filtrelerini temizler."
+        },
+    };
+
+    private async Task SesliAksiyonCalistir(VoiceIntent intent)
+    {
+        try
+        {
+            switch (intent.Action)
+            {
+                case "tarih_ayarla":
+                {
+                    var (b, t) = VoiceDateHelper.ParseBaslangicBitis(intent.Params, _baslangic, _bitis);
+                    _baslangic = b; _bitis = t;
+                    Snackbar.Add($"Tarih: {b:dd.MM.yyyy} - {t:dd.MM.yyyy}", Severity.Success);
+                    break;
+                }
+                case "tarih_kisayol":
+                {
+                    var (b, t) = VoiceDateHelper.AraligiCevir(intent.Params.GetValueOrDefault("aralik") as string);
+                    if (b == null) { Snackbar.Add("Aralık anlaşılamadı.", Severity.Warning); return; }
+                    _baslangic = b; _bitis = t;
+                    Snackbar.Add($"Tarih: {b:dd.MM.yyyy} - {t:dd.MM.yyyy}", Severity.Success);
+                    if (_mod == "tek" && !string.IsNullOrWhiteSpace(_tekKod)) await TekKodSorgula();
+                    else if (_kodlar.Count > 0) await RaporGetir();
+                    break;
+                }
+                case "malzeme_kodu_ayarla":
+                {
+                    var kod = (intent.Params.GetValueOrDefault("kod") as string ?? "").Trim();
+                    if (string.IsNullOrEmpty(kod)) { Snackbar.Add("Kod boş.", Severity.Warning); return; }
+                    _mod = "tek";
+                    _tekKod = kod;
+                    Snackbar.Add($"Kod: {kod}", Severity.Success);
+                    await TekKodSorgula();
+                    break;
+                }
+                case "sorgula":
+                case "rapor_getir":
+                case "yenile":
+                    if (_mod == "tek") await TekKodSorgula();
+                    else await RaporGetir();
+                    break;
+                case "excel_indir":
+                    await ExcelIndir();
+                    break;
+                case "filtreleri_temizle":
+                    FiltreleriTemizle();
+                    Snackbar.Add("Filtreler temizlendi.", Severity.Info);
+                    break;
+                default:
+                    Snackbar.Add($"Bilinmeyen aksiyon: {intent.Action}", Severity.Warning);
+                    break;
+            }
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Aksiyon hatası: {ex.Message}", Severity.Error);
         }
     }
 

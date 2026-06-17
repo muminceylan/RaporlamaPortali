@@ -79,5 +79,41 @@ public class LogoAccCodesLookupService
         }
     }
 
+    /// <summary>
+    /// CARİ kartının muhasebe hesap kodu — CRDACREF.TRCODE=5 (CLCARD bağlantısı).
+    /// XML'deki GL_CODE alanı için kullanılır (örn 120.00.02.0001).
+    /// Cari kartlarında birden fazla TYP olabilir — ilk bulunanı döndürür.
+    /// </summary>
+    public async Task<string> CariMuhasebeKoduAsync(string? cariKodu, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(cariKodu)) return "";
+        var cacheKey = $"{_db.FirmaNo}:CARI:5:{cariKodu}";
+        if (_cache.TryGetValue(cacheKey, out var cached)) return cached;
+
+        try
+        {
+            var sql = $@"
+                SELECT TOP 1 e.CODE
+                FROM LG_{_db.FirmaNo}_CRDACREF c WITH(NOLOCK)
+                INNER JOIN LG_{_db.FirmaNo}_CLCARD k WITH(NOLOCK) ON k.LOGICALREF = c.CARDREF
+                INNER JOIN LG_{_db.FirmaNo}_EMUHACC e WITH(NOLOCK) ON e.LOGICALREF = c.ACCOUNTREF
+                WHERE k.CODE = @code AND c.TRCODE = 5
+                ORDER BY c.LOGICALREF DESC";
+            using var conn = _db.CreateConnection();
+            var kod = await conn.QueryFirstOrDefaultAsync<string?>(
+                new CommandDefinition(sql, new { code = cariKodu }, cancellationToken: ct));
+            kod = (kod ?? "").Trim();
+            _cache[cacheKey] = kod;
+            if (!string.IsNullOrEmpty(kod))
+                _log.LogDebug("CRDACREF (cari): {Code} → {Hesap}", cariKodu, kod);
+            return kod;
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Cari muhasebe kodu lookup başarısız (cariKodu={C})", cariKodu);
+            return "";
+        }
+    }
+
     public void CacheTemizle() => _cache.Clear();
 }

@@ -7,6 +7,7 @@
 @inject IJSRuntime JS
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
+@inject VoiceContextService VoiceCtx
 
 <PageTitle>Finans Raporu</PageTitle>
 
@@ -540,12 +541,101 @@ else if (!_yukleniyor)
 
     protected override async Task OnInitializedAsync()
     {
+        RegisterVoice();
         try
         {
             var yillar = await FinansService.MevcutYillarAsync();
             _hizliYillar = yillar.Where(y => y >= 2025).OrderBy(y => y).ToList();
         }
         catch { /* bağlantı hatası olsa bile sayfa açılsın */ }
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (VoiceCtx.Tools.Count == 0) RegisterVoice();
+    }
+
+    private void RegisterVoice() =>
+        VoiceCtx.Register(_voiceTools, "Finans Raporu",
+            getEkContext: VoiceContextOlustur,
+            onAksiyon:    SesliAksiyonCalistir);
+
+    private string VoiceContextOlustur()
+        => $"Mevcut tarih: {_baslangic:dd.MM.yyyy} - {_bitis:dd.MM.yyyy}; Hareket türü: {_filtreHareketTuru ?? "Hepsi"}; Modül: {_filtreModul ?? "Hepsi"}";
+
+    private List<SesliKomutTool> _voiceTools => new()
+    {
+        new SesliKomutTool
+        {
+            Ad = "tarih_ayarla",
+            Aciklama = "Başlangıç/bitiş tarihini doğrudan ayarlar. ISO yyyy-MM-dd. Sorgulamayı OTOMATİK yapmaz.",
+            Parametreler = new()
+            {
+                ["baslangic"] = new SesliKomutParam { Tip = "string", Aciklama = "Başlangıç tarihi (yyyy-MM-dd)." },
+                ["bitis"]     = new SesliKomutParam { Tip = "string", Aciklama = "Bitiş tarihi (yyyy-MM-dd)." },
+            }
+        },
+        new SesliKomutTool
+        {
+            Ad = "tarih_kisayol",
+            Aciklama = "Hızlı tarih aralığı seçer (bu_ay, bu_yil, gecen_ay, son_7_gun, son_30_gun, son_90_gun) — ayarlar ve sorgular.",
+            Parametreler = new()
+            {
+                ["aralik"] = new SesliKomutParam
+                {
+                    Tip = "string", Zorunlu = true,
+                    Aciklama = "Hangi aralık.",
+                    Secenekler = new() { "bugun", "dun", "bu_hafta", "bu_ay", "gecen_ay", "bu_yil", "son_7_gun", "son_30_gun", "son_90_gun" },
+                }
+            }
+        },
+        new SesliKomutTool { Ad = "sorgula",     Aciklama = "Finans raporunu getirir (Rapor Getir butonu)." },
+        new SesliKomutTool { Ad = "rapor_getir", Aciklama = "sorgula ile aynı." },
+        new SesliKomutTool { Ad = "yenile",      Aciklama = "sorgula ile aynı." },
+        new SesliKomutTool { Ad = "filtreleri_temizle", Aciklama = "Tüm sütun ve genel filtreleri temizler." },
+    };
+
+    private async Task SesliAksiyonCalistir(VoiceIntent intent)
+    {
+        try
+        {
+            switch (intent.Action)
+            {
+                case "tarih_ayarla":
+                {
+                    var (b, t) = VoiceDateHelper.ParseBaslangicBitis(intent.Params, _baslangic, _bitis);
+                    _baslangic = b; _bitis = t;
+                    Snackbar.Add($"Tarih: {b:dd.MM.yyyy} - {t:dd.MM.yyyy}", Severity.Success);
+                    break;
+                }
+                case "tarih_kisayol":
+                {
+                    var (b, t) = VoiceDateHelper.AraligiCevir(intent.Params.GetValueOrDefault("aralik") as string);
+                    if (b == null) { Snackbar.Add("Aralık anlaşılamadı.", Severity.Warning); return; }
+                    _baslangic = b; _bitis = t;
+                    Snackbar.Add($"Tarih: {b:dd.MM.yyyy} - {t:dd.MM.yyyy}", Severity.Success);
+                    await RaporGetir();
+                    break;
+                }
+                case "sorgula":
+                case "rapor_getir":
+                case "yenile":
+                    await RaporGetir();
+                    break;
+                case "filtreleri_temizle":
+                    FiltreleriTemizle();
+                    Snackbar.Add("Filtreler temizlendi.", Severity.Info);
+                    break;
+                default:
+                    Snackbar.Add($"Bilinmeyen aksiyon: {intent.Action}", Severity.Warning);
+                    break;
+            }
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Aksiyon hatası: {ex.Message}", Severity.Error);
+        }
     }
 
     private void YilSec(int yil)

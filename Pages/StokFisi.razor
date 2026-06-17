@@ -366,15 +366,41 @@
     private bool                _sonFislerYukleniyor;
     private bool                _kopyalaniyor;
 
-    protected override async Task OnInitializedAsync()
-    {
-        ResolveModFromUrl();
-        Nav.LocationChanged += OnLocationChanged;
+    private bool _voiceRegistered;
 
+    private void RegisterVoice()
+    {
         VoiceCtx.Register(_voiceTools, _baslik,
             getEkContext: VoiceContextOlustur,
             onayList:     _voiceOnayAksiyonlar,
             onAksiyon:    SesliAksiyonCalistir);
+        // Bekleyen sesli adımlar (sayfa-arası chain), kopyala_fis için son fişlerin yüklü olmasını bekler.
+        VoiceCtx.HazirOl = SonFislerimHazirOlBekle;
+        _voiceRegistered = true;
+    }
+
+    private async Task SonFislerimHazirOlBekle()
+    {
+        // _sonFislerim yüklenene veya max 6sn'ye kadar bekle.
+        for (int i = 0; i < 60; i++)
+        {
+            if (_sonFislerim.Count > 0) return;
+            if (!_sonFislerYukleniyor && i > 5) return; // yükleme bitti ama hala boş — devam et
+            await Task.Delay(100);
+        }
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        // Pre-render → circuit geçişinde Register kaybolmuşsa garanti et
+        if (firstRender || VoiceCtx.Tools.Count == 0) RegisterVoice();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        ResolveModFromUrl();
+        Nav.LocationChanged += OnLocationChanged;
+        RegisterVoice();
 
         _ambarlar   = await Org.AmbarlarAsync();
         _fabrikalar = await Org.FabrikalarAsync();
@@ -809,9 +835,12 @@
                 {
                     var sira = IntParam(intent, "sira") ?? 0;
                     var miktar = DecimalParam(intent, "miktar") ?? 0m;
+                    // Zincirde kopyala_fis hemen önündeyse satırlar henüz oluşmamış olabilir — kısa bekleyiş
+                    for (int i = 0; i < 20 && _model.Satirlar.Count < sira && _kopyalaniyor; i++)
+                        await Task.Delay(150);
                     if (sira < 1 || sira > _model.Satirlar.Count)
                     {
-                        Snackbar.Add($"Geçersiz sıra: {sira}", Severity.Warning);
+                        Snackbar.Add($"Geçersiz sıra: {sira} (mevcut {_model.Satirlar.Count} satır)", Severity.Warning);
                         return;
                     }
                     _model.Satirlar[sira - 1].Miktar = miktar;
